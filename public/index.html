@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>National Geospatial Intelligence System</title>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        :root { --primary: #003366; --bg: #f4f7f9; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #1c2e42; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); margin-bottom: 20px; padding-bottom: 10px; }
+        h1 { font-size: 1.4rem; color: var(--primary); font-weight: 800; text-transform: uppercase; }
+        .map-frame { height: 550px; border-radius: 8px; border: 1px solid #ccd6dd; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        #map { height: 100%; width: 100%; }
+        .input-group { margin-top: 20px; display: flex; gap: 12px; }
+        input { flex: 1; padding: 15px; border-radius: 6px; border: 2px solid #ccd6dd; font-size: 1rem; outline: none; }
+        input:focus { border-color: var(--primary); }
+        button { padding: 0 30px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; transition: 0.2s; }
+        button:hover { background: #0056b3; }
+        #status { margin-top: 12px; font-size: 0.85rem; color: #5a6484; font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Geospatial Data Center</h1>
+            <div style="font-size: 0.7rem; color: #5a6484;">SYSTEM STATUS: <span style="color: #27ae60; font-weight: bold;">ONLINE</span></div>
+        </header>
+        
+        <div class="map-frame"><div id="map"></div></div>
+
+        <div class="input-group">
+            <input type="text" id="aiInput" placeholder="Example: 'Build a 10-story hospital in Central Jakarta'...">
+            <button onclick="sendPrompt()" id="btnSend">SIMULATE</button>
+        </div>
+        <div id="status">System ready for commands.</div>
+    </div>
+
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
+    <script>
+        // Make sure to use your actual valid token here if the map is still black
+        Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1NjZiYjBjZS00NjhjLTQxZGYtODY1Yi02MTAwNGViZTdmZDIiLCJpZCI6NDE0NjE5LCJpYXQiOjE3NzU1MTkzMzF9.Mu7xvGow42DA5PYXwVL_eh-ubt7dpbMnKvNyMOowF-A";
+        
+        // FIX 1: Add Sentinel-2 to bypass the Bing Maps 404 error
+        const viewer = new Cesium.Viewer('map', {
+            terrain: Cesium.Terrain.fromWorldTerrain(),
+            baseLayer: Cesium.ImageryLayer.fromWorldImagery({
+                style: Cesium.IonWorldImageryStyle.SENTINEL2
+            })
+        });
+
+        // FIX 2: Explicitly unlock the camera controls for tilting
+        viewer.scene.screenSpaceCameraController.enableTilt = true;
+        viewer.scene.screenSpaceCameraController.enableRotate = true;
+        viewer.scene.screenSpaceCameraController.enableTranslate = true;
+        viewer.scene.screenSpaceCameraController.enableZoom = true;
+
+        // FIX 3: Modern method to load 3D buildings (replaces the broken createOsmBuildings)
+        async function loadBuildings() {
+            try {
+                const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
+                viewer.scene.primitives.add(tileset);
+            } catch (error) {
+                console.error("Error loading 3D buildings:", error);
+            }
+        }
+        loadBuildings();
+
+        async function sendPrompt() {
+            const input = document.getElementById('aiInput');
+            const btn = document.getElementById('btnSend');
+            const status = document.getElementById('status');
+            if (!input.value.trim()) return;
+
+            btn.disabled = true;
+            status.innerText = "AI is designing the building blueprint...";
+
+            try {
+                const res = await fetch('/api/map-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: input.value })
+                });
+
+                const data = await res.json();
+
+                // Remove previous simulations (if any)
+                viewer.entities.removeAll();
+
+                // Get dimensions from AI (or use defaults if AI fails to guess)
+                const height = data.building ? data.building.height : 50;
+                const length = data.building ? data.building.length : 30;
+                const width = data.building ? data.building.width : 30;
+
+                // Create 3D Hologram Building (Box)
+                viewer.entities.add({
+                    name: 'Construction Simulation',
+                    position: Cesium.Cartesian3.fromDegrees(data.center[1], data.center[0], height / 2),
+                    box: {
+                        dimensions: new Cesium.Cartesian3(length, width, height),
+                        material: Cesium.Color.CYAN.withAlpha(0.6), // Transparent Cyan hologram color
+                        outline: true,
+                        outlineColor: Cesium.Color.CYAN
+                    }
+                });
+
+                // ZOOM & TILT CAMERA: Approach the earth and tilt to make 3D visible
+                viewer.camera.flyTo({
+                    destination: Cesium.Cartesian3.fromDegrees(data.center[1], data.center[0], height * 5 + 600), 
+                    orientation: {
+                        heading: Cesium.Math.toRadians(0.0), // Facing North
+                        pitch: Cesium.Math.toRadians(-35.0), // Tilted 35 degrees downward
+                        roll: 0.0
+                    },
+                    duration: 3.0
+                });
+
+                viewer.scene.globe.enableLighting = true;
+                viewer.scene.skyBox.show = true; 
+
+                status.innerText = "Simulation Complete: " + data.description;
+
+            } catch (err) {
+                status.innerText = "Error: Please ensure Node.js server is running.";
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
