@@ -2,14 +2,11 @@ import requests
 import re
 import time
 import math
-import json
 from geopy.geocoders import Nominatim
 from flask import Flask, jsonify, request
 import json
 
 app = Flask(__name__)
-model = None
-
 
 geolocator = Nominatim(user_agent="my_hackathon_kl_mapper_v2")
 
@@ -417,10 +414,10 @@ def buildingAgentHelper():
     if not entities:
         return jsonify({
             "status": "error",
-            "message": entities 
+            "message": json.dumps(entities, indent=2) 
         }), 500
     else:
         return jsonify({
                 "status": "ok",
-                "message": entities
+                "message": json.dumps(entities, indent=2)
         })
