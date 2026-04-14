@@ -422,3 +422,19 @@ def buildingAgentHelper():
                 "status": "ok",
                 "message": entities
         })
+
+
+if __name__ == "__main__":
+    input_text = """
+        [POLYLINE_EXISTING | x1 | Priority Transit Lane | Jalan Tun Razak | color:red, width:thick | This is a 2.5km dedicated bus lane painted in high-visibility red along the outer edge of the main arterial road. It physically separates public transport from private vehicle queues to ensure buses are not trapped in gridlock. This intervention aims to increase bus speeds from 12 km/h to over 30 km/h during peak hours.]
+        [POINT | x1 | AI Signal Controller | Jalan Ampang | color:yellow, size:medium | This is a localized smart traffic light hardware unit installed at the major intersection of Jalan Ampang and Jalan Tun Razak. It uses real-time data to dynamically adjust green-light durations based on actual vehicle volume rather than fixed timers. This prevents "dead time" at the intersection and reduces the average wait time for commuters.]
+        [POINT | x1 | AI Signal Controller | Jalan Yap Kwan Seng | color:yellow, size:medium | This is a localized smart traffic light hardware unit installed at the major intersection of Jalan Ampang and Jalan Tun Razak. It uses real-time data to dynamically adjust green-light durations based on actual vehicle volume rather than fixed timers. This prevents "dead time" at the intersection and reduces the average wait time for commuters.]
+        [POINT | x1 | LIDAR Flow Sensor | Menara Citibank | color:cyan, size:small | This is a high-precision laser-based sensor mounted on existing street furniture to track vehicle count and speed across all lanes. It provides the ground-truth data needed for the AI signal controllers to make split-second timing decisions. These sensors help the system identify when average speeds drop below the critical 20 km/h threshold.]
+        [POINT | x1 | LIDAR Flow Sensor | G Tower | color:cyan, size:small | This is a high-precision laser-based sensor mounted on existing street furniture to track vehicle count and speed across all lanes. It provides the ground-truth data needed for the AI signal controllers to make split-second timing decisions. These sensors help the system identify when average speeds drop below the critical 20 km/h threshold.]
+        [BOX | x1 | Edge Processing Unit | DBKL Traffic Management Centre | color:grey, height:low | This is a reinforced outdoor server cabinet housing the compute power required for local traffic analytics. By processing data at the site rather than the cloud, it eliminates latency in signal switching. This unit acts as the "brain" for the immediate intersection cluster.]      
+    """
+
+    enriched_assets = process_agent_assets(input_text)
+    entities        = format_entities(enriched_assets)
+
+    print(entities)
