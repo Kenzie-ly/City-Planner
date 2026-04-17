@@ -1,0 +1,4 @@
+requests
+geopy
+flask
+flask-cors
