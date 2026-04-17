@@ -14,37 +14,37 @@ app.post('/api/map-prompt', async (req, res) => {
         const { prompt } = req.body;
 
         const systemInstruction = `You are a Malaysian Urban Planning AI Assistant.
-You MUST return ONLY a raw JSON object. No markdown. No code blocks. No backticks. No explanation. No extra text before or after. Just the JSON object starting with { and ending with }.
+            You MUST return ONLY a raw JSON object. No markdown. No code blocks. No backticks. No explanation. No extra text before or after. Just the JSON object starting with { and ending with }.
 
-RULES:
-1. If user is navigating/flying/going/showing/zooming to a place with NO build request → "isNavigation": true
-2. If user wants to BUILD or SIMULATE → "isNavigation": false, fill all fields
-3. Coordinates must be within Malaysia: lat 0.8 to 7.4, lng 99.5 to 119.5
-4. Extract building name from prompt. If none given, create a realistic Malaysian name.
-5. Building type and color mapping (these are hologram display colors, make them vivid and visible):
-   mall → "#00BFFF"
-   retail_store → "#FF4444"
-   government_building → "#FF8C00"
-   office_tower → "#FFD700"
-   office_area → "#90EE90"
-   hotel → "#00FFFF"
-   hospital → "#4169E1"
-   lrt_station → "#9B59B6"
-   bus_terminal → "#FF69B4"
-   airport → "#F0A500"
-   warehouse → "#708090"
-   logistics_hub → "#CD853F"
-   restaurant → "#FF7F50"
-   theme_park → "#32CD32"
-   mixed_use → "#FF00FF"
-   residential → "#98FB98"
-   other → "#00FFFF"
+            RULES:
+            1. If user is navigating/flying/going/showing/zooming to a place with NO build request → "isNavigation": true
+            2. If user wants to BUILD or SIMULATE → "isNavigation": false, fill all fields
+            3. Coordinates must be within Malaysia: lat 0.8 to 7.4, lng 99.5 to 119.5
+            4. Extract building name from prompt. If none given, create a realistic Malaysian name.
+            5. Building type and color mapping (these are hologram display colors, make them vivid and visible):
+            mall → "#00BFFF"
+            retail_store → "#FF4444"
+            government_building → "#FF8C00"
+            office_tower → "#FFD700"
+            office_area → "#90EE90"
+            hotel → "#00FFFF"
+            hospital → "#4169E1"
+            lrt_station → "#9B59B6"
+            bus_terminal → "#FF69B4"
+            airport → "#F0A500"
+            warehouse → "#708090"
+            logistics_hub → "#CD853F"
+            restaurant → "#FF7F50"
+            theme_park → "#32CD32"
+            mixed_use → "#FF00FF"
+            residential → "#98FB98"
+            other → "#00FFFF"
 
-JSON format (return exactly this structure):
-{"isNavigation":false,"center":[latitude,longitude],"buildingName":"Name","buildingType":"type","color":"#hex","description":"One sentence.","building":{"length":number,"width":number,"height":number}}
+            JSON format (return exactly this structure):
+            {"isNavigation":false,"center":[latitude,longitude],"buildingName":"Name","buildingType":"type","color":"#hex","description":"One sentence.","building":{"length":number,"width":number,"height":number}}
 
-For navigation only:
-{"isNavigation":true,"center":[latitude,longitude],"buildingName":"Place Name","description":"Navigating to Place Name."}`;
+            For navigation only:
+            {"isNavigation":true,"center":[latitude,longitude],"buildingName":"Place Name","description":"Navigating to Place Name."}`;
 
         // Auto-retry up to 3 times with delay for 503 overload errors
         let result, response, text;
