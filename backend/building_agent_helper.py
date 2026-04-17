@@ -399,15 +399,7 @@ def format_entities(enriched_assets):
 
 
 @app.route("/buildingAgentHelper", methods=["POST"])
-def buildingAgentHelper():
-    input_text = """
-        [POLYLINE | x1 | Improved Connector | Lebuhraya Persekutuan to Jalan Kerinchi | color:blue, width:thick | 357m trunk_link connector segment targeted for restriping and lane optimization]
-        [POINT | x1 | Diverge Point | Lebuhraya Persekutuan | color:orange, size:large | Diverge node for auxiliary lane extension and channelizer installation]
-        [POLYGON | x1 | Deceleration Zone | Lebuhraya Persekutuan | color:yellow, opacity:0.4 | 300m footprint for auxiliary lane extension and shoulder reallocation]
-        [POINT | x1 | Merge Point | Jalan Kerinchi | color:green, size:large | Merge node for reconfiguration into a protected add-lane entry]    
-        [LABEL | x1 | Project Title | Federal Highway Kerinchi Segment | color:white | Federal Highway - Kerinchi High-Efficiency Connector Optimization]
-    """
-
+def buildingAgentHelper(input_text):
     enriched_assets = process_agent_assets(input_text)
     entities        = format_entities(enriched_assets)
 
