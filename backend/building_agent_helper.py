@@ -400,39 +400,37 @@ def format_entities(enriched_assets):
 
 @app.route("/buildingAgentHelper", methods=["POST"])
 def buildingAgentHelper():
-    input_text = """
-        [POLYLINE_NEW | x1 | Elevated Micromobility Spine | Start: Ampang Park MRT, Waypoint: Jalan Ampang, End: Jalan Tun Razak | color:green, height:high | This is a 2.5km modular steel bridge built 6 meters above the street level. It provides a dedicated, signal-free path for bicycles and scooters to bypass street-level congestion.]
-        [POINT | x1 | Mobility Pod North | Ampang Park MRT | color:blue, size:large | This is a 50-square-meter modular structure for vehicle docking and charging. It serves as the primary gateway for commuters transitioning from rail to the micromobility spine.]
-        [POINT | x1 | Mobility Pod South | Jalan Tun Razak | color:blue, size:large | This is a 50-square-meter modular structure for vehicle docking and charging. It serves as the primary gateway for commuters transitioning from rail to the micromobility spine.]
-        [BOX | x1 | Corridor Management Station | Jalan Ampang | color:black, height:medium | This is a two-story facility housing the technical support and security team for the elevated path. It ensures the physical integrity and safety of the multi-modal corridor.]
-        [POLYLINE_EXISTING | x1 | Green Buffer Zone | Jalan Tun Razak | color:cyan, width:medium | This is a 1.5km stretch of road where the curb has been extended with planters and bollards. It protects pedestrians and provides a landing area for users descending from the elevated spine.]
-        [POINT | x1 | Information Kiosk | Intermark Mall | color:yellow, size:small | This is a digital touchscreen pillar providing real-time transit and corridor data. It helps users navigate the multi-modal connections at the heart of the district.]   
-    """
+    try:
+        data = request.get_json()
+        enriched_assets = process_agent_assets(data["text"])
+        entities        = format_entities(enriched_assets)
 
-    enriched_assets = process_agent_assets(input_text)
-    entities        = format_entities(enriched_assets)
+        if not entities:
+            return jsonify({
+                "status": "error",
+                "message": "format_entities returned empty result"
+            }), 500
 
-    if not entities:
+        return jsonify({
+            "status": "ok",
+            "message": entities
+        })
+
+    except Exception as e:
         return jsonify({
             "status": "error",
-            "message": entities
+            "message": str(e) 
         }), 500
-    else:
-        return jsonify({
-                "status": "ok",
-                "message": entities
-        })
 
 
 if __name__ == "__main__":
     input_text = """
-        [POLYLINE_EXISTING | x1 | Priority Transit Lane | Jalan Tun Razak | color:red, width:thick | This is a 2.5km dedicated bus lane painted in high-visibility red along the outer edge of the main arterial road. It physically separates public transport from private vehicle queues to ensure buses are not trapped in gridlock. This intervention aims to increase bus speeds from 12 km/h to over 30 km/h during peak hours.]
-        [POINT | x1 | AI Signal Controller | Jalan Ampang | color:yellow, size:medium | This is a localized smart traffic light hardware unit installed at the major intersection of Jalan Ampang and Jalan Tun Razak. It uses real-time data to dynamically adjust green-light durations based on actual vehicle volume rather than fixed timers. This prevents "dead time" at the intersection and reduces the average wait time for commuters.]
-        [POINT | x1 | AI Signal Controller | Jalan Yap Kwan Seng | color:yellow, size:medium | This is a localized smart traffic light hardware unit installed at the major intersection of Jalan Ampang and Jalan Tun Razak. It uses real-time data to dynamically adjust green-light durations based on actual vehicle volume rather than fixed timers. This prevents "dead time" at the intersection and reduces the average wait time for commuters.]
-        [POINT | x1 | LIDAR Flow Sensor | Menara Citibank | color:cyan, size:small | This is a high-precision laser-based sensor mounted on existing street furniture to track vehicle count and speed across all lanes. It provides the ground-truth data needed for the AI signal controllers to make split-second timing decisions. These sensors help the system identify when average speeds drop below the critical 20 km/h threshold.]
-        [POINT | x1 | LIDAR Flow Sensor | G Tower | color:cyan, size:small | This is a high-precision laser-based sensor mounted on existing street furniture to track vehicle count and speed across all lanes. It provides the ground-truth data needed for the AI signal controllers to make split-second timing decisions. These sensors help the system identify when average speeds drop below the critical 20 km/h threshold.]
-        [BOX | x1 | Edge Processing Unit | DBKL Traffic Management Centre | color:grey, height:low | This is a reinforced outdoor server cabinet housing the compute power required for local traffic analytics. By processing data at the site rather than the cloud, it eliminates latency in signal switching. This unit acts as the "brain" for the immediate intersection cluster.]      
-    """
+        [POLYLINE | x1 | Improved Connector | Lebuhraya Persekutuan to Jalan Kerinchi | color:blue, width:thick | 357m trunk_link connector segment targeted for restriping and lane optimization]
+        [POINT | x1 | Diverge Point | Lebuhraya Persekutuan | color:orange, size:large | Diverge node for auxiliary lane extension and channelizer installation]
+        [POLYGON | x1 | Deceleration Zone | Lebuhraya Persekutuan | color:yellow, opacity:0.4 | 300m footprint for auxiliary lane extension and shoulder reallocation]   
+        [POINT | x1 | Merge Point | Jalan Kerinchi | color:green, size:large | Merge node for reconfiguration into a protected add-lane entry]    
+        [LABEL | x1 | Project Title | Federal Highway Kerinchi Segment | color:white | Federal Highway - Kerinchi High-Efficiency Connector Optimization]
+        """
 
     enriched_assets = process_agent_assets(input_text)
     entities        = format_entities(enriched_assets)
