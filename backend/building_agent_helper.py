@@ -400,20 +400,27 @@ def format_entities(enriched_assets):
 
 @app.route("/buildingAgentHelper", methods=["POST"])
 def buildingAgentHelper():
-    data = request.get_json()
-    enriched_assets = process_agent_assets(data["text"])
-    entities        = format_entities(enriched_assets)
+    try:
+        data = request.get_json()
+        enriched_assets = process_agent_assets(data["text"])
+        entities        = format_entities(enriched_assets)
 
-    if not entities:
+        if not entities:
+            return jsonify({
+                "status": "error",
+                "message": "format_entities returned empty result"
+            }), 500
+
+        return jsonify({
+            "status": "ok",
+            "message": entities
+        })
+
+    except Exception as e:
         return jsonify({
             "status": "error",
-            "message": entities
+            "message": str(e) 
         }), 500
-    else:
-        return jsonify({
-                "status": "ok",
-                "message": entities
-        })
 
 
 if __name__ == "__main__":
