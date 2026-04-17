@@ -9,6 +9,9 @@ from pydantic import ConfigDict
 import asyncio
 import os
 from dotenv import load_dotenv
+from RAG import personas
+
+persona = personas["sustainability"]
 
 # Load API key from .env file (Google ADK will use this automatically)
 load_dotenv()

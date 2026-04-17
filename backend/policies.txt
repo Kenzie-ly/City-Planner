@@ -1,0 +1,15 @@
+1. Heavy industrial facilities must not be placed within residential zones.
+2. Monumental buildings must not be placed within green zones.
+3. Public spaces must be limited within green zones; maximum one per zone.
+4. Industrial buildings must be at least 5 km from schools and hospitals.
+5. High-density public spaces (shopping malls, food streets, amusement parks) must not be within residential zones.
+6. Public transport stations must be placed within 500m of large public spaces.
+7. Roadways must not be built through or around residential zones.
+8. Buildings must not be placed within 50m of riverbanks.
+9. Green zones must cover at least 10% of each district.
+10. Commercial buildings above 5 storeys must be within 400m of an LRT/MRT/BRT station.
+11. Highways must not pass through heritage zones.
+12. Waste processing facilities must be at least 3km from hospitals and schools.
+13. Petrol stations must not be within 50m of residential buildings.
+14. Each residential zone must have at least one public park within 1km.
+15. Hawker centres must be within 500m of residential zones.
