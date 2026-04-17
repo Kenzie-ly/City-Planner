@@ -6,115 +6,617 @@
     <title>National Geospatial Intelligence System</title>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
-        :root { --primary: #003366; --bg: #f4f7f9; }
-        * { box-sizing: border-box; }
+        :root {
+            --primary: #003366;
+            --bg: #f4f7f9;
+            --border: #ccd6dd;
+            --text: #1c2e42;
+            --muted: #5a6484;
+            --panel: rgba(0, 20, 50, 0.90);
+            --panel-soft: rgba(0, 20, 50, 0.75);
+            --accent: #7ec8f7;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: var(--bg);
-            margin: 0; padding: 16px 20px;
-            color: #1c2e42;
-            overflow: hidden; height: 100vh;
+            margin: 0;
+            padding: 16px 20px;
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
         }
+
         .container {
-            max-width: 1100px; margin: 0 auto;
-            display: flex; flex-direction: column;
-            height: calc(100vh - 32px); gap: 10px;
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 32px);
+            gap: 10px;
         }
+
         header {
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 2px solid var(--primary); padding-bottom: 8px; flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 8px;
+            flex-shrink: 0;
         }
-        h1 { font-size: 1.2rem; color: var(--primary); font-weight: 800; text-transform: uppercase; margin: 0; }
+
+        h1 {
+            font-size: 1.2rem;
+            color: var(--primary);
+            font-weight: 800;
+            text-transform: uppercase;
+            margin: 0;
+        }
+
+        /* ===== FRAME ===== */
         .map-frame {
-            flex: 1; min-height: 0;
-            border-radius: 8px; border: 2px solid #ccd6dd;
-            overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            flex: 1;
+            min-height: 0;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             position: relative;
+            background: #eef3f8;
         }
-        #map { height: 100%; width: 100%; }
+
+        /* Both views live inside the same frame */
+        .frame-view {
+            position: absolute;
+            inset: 0;
+            display: none;
+        }
+
+        .frame-view.active {
+            display: block;
+        }
+
+        /* ===== CHAT VIEW ===== */
+        #chatView {
+            display: none;
+            flex-direction: column;
+            background:
+                radial-gradient(circle at top right, rgba(126,200,247,0.18), transparent 28%),
+                linear-gradient(180deg, #f8fbff 0%, #eef4fa 100%);
+            padding: 14px;
+        }
+
+        #chatView.active {
+            display: flex;
+        }
+
+        .chat-header {
+            flex-shrink: 0;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #d7e1ea;
+            margin-bottom: 12px;
+        }
+
+        .chat-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: var(--primary);
+            letter-spacing: 0.02em;
+        }
+
+        .chat-subtitle {
+            font-size: 0.78rem;
+            color: var(--muted);
+            margin-top: 4px;
+            line-height: 1.45;
+        }
+
+        .chat-messages {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-right: 4px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(0, 51, 102, 0.18);
+            border-radius: 999px;
+        }
+
+        .chat-bubble {
+            padding: 10px;
+            margin: 8px;
+            border-radius: 10px;
+            max-width: 80%;
+        }
+
+        .chat-bubble.assistant {
+            background: #f5f5f5;
+        }
+
+        .json-block {
+            background: #1e1e1e;
+            color: #00ffcc;
+            padding: 10px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+
+        .final-question {
+            margin-top: 12px;
+            padding: 10px;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+
+        .chat-bubble.user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-bubble.agent {
+            align-self: flex-start;
+            background: #ffffff;
+            color: var(--text);
+            border: 1px solid #d6e0ea;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble.system {
+            align-self: center;
+            background: rgba(0, 51, 102, 0.08);
+            color: var(--primary);
+            border: 1px solid rgba(0, 51, 102, 0.12);
+            font-size: 0.76rem;
+            font-weight: 600;
+            text-align: center;
+            max-width: 90%;
+        }
+
+        .chat-input-row {
+            flex-shrink: 0;
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #d7e1ea;
+        }
+
+        .chat-input-row input,
+        #aiInput {
+            flex: 1;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            font-size: 0.9rem;
+            outline: none;
+            font-family: inherit;
+            background: #fff;
+        }
+
+        .chat-input-row input:focus,
+        #aiInput:focus {
+            border-color: var(--primary);
+        }
+
+        .chat-input-row button,
+        button#btnSend {
+            padding: 0 22px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+
+        .chat-input-row button:hover,
+        button#btnSend:hover {
+            background: #0056b3;
+        }
+
+        .chat-input-row button:disabled,
+        button#btnSend:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .chat-top-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .chat-mini-btn {
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--primary);
+            background: transparent;
+            color: var(--primary);
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .chat-mini-btn:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        /* ===== MAP VIEW ===== */
+        #mapView {
+            display: none;
+        }
+
+        #mapView.active {
+            display: block;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Optional back-to-chat button */
+        #backToChatBtn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 25;
+            padding: 7px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0, 20, 50, 0.88);
+            color: #fff;
+            font-size: 0.74rem;
+            font-weight: 700;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+            transition: 0.2s;
+        }
+
+        #backToChatBtn:hover {
+            background: rgba(0, 51, 102, 0.96);
+        }
 
         /* Banner */
         #placeBanner {
-            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,51,102,0.88); color: #fff;
-            padding: 7px 20px; border-radius: 50px;
-            font-size: 0.78rem; font-weight: 600;
-            pointer-events: none; z-index: 10;
-            letter-spacing: 0.04em; backdrop-filter: blur(4px);
-            transition: background 0.3s; white-space: nowrap;
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,51,102,0.88);
+            color: #fff;
+            padding: 7px 20px;
+            border-radius: 50px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            pointer-events: none;
+            z-index: 10;
+            letter-spacing: 0.04em;
+            backdrop-filter: blur(4px);
+            transition: background 0.3s;
+            white-space: nowrap;
         }
-        #placeBanner.placed { background: rgba(39,174,96,0.92); }
 
-        /* Legend — 2 columns so it never overflows the map height */
+        #placeBanner.placed {
+            background: rgba(39,174,96,0.92);
+        }
+
+        /* Legend */
         #legend {
-            position: absolute; bottom: 12px; left: 12px;
-            background: rgba(0,20,50,0.90); color: #fff;
-            border-radius: 10px; padding: 10px 14px;
-            font-size: 0.67rem; z-index: 10;
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,20,50,0.90);
+            color: #fff;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.67rem;
+            z-index: 10;
             backdrop-filter: blur(6px);
             border: 1px solid rgba(255,255,255,0.1);
             max-width: 320px;
             line-height: 1.7;
         }
-        #legend b { display: block; font-size: 0.7rem; margin-bottom: 6px; color: #7ec8f7; letter-spacing: 0.07em; }
+
+        #legend b {
+            display: block;
+            font-size: 0.7rem;
+            margin-bottom: 6px;
+            color: var(--accent);
+            letter-spacing: 0.07em;
+        }
+
         .leg-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1px 14px;
         }
-        .leg-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-        .leg-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.3); }
 
-        /* OSM legend section */
+        .leg-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .leg-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
         .leg-divider {
             grid-column: 1 / -1;
             border-top: 1px solid rgba(255,255,255,0.15);
             margin: 4px 0 2px;
             font-size: 0.67rem;
-            color: #7ec8f7;
+            color: var(--accent);
             letter-spacing: 0.07em;
             font-weight: 700;
             padding-top: 4px;
         }
 
-        /* OSM buildings note */
+        /* OSM note */
         #osmNote {
-            position: absolute; bottom: 12px; right: 12px;
-            background: rgba(0,20,50,0.75); color: #aac4e0;
-            border-radius: 8px; padding: 6px 12px;
-            font-size: 0.65rem; z-index: 10;
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(0,20,50,0.75);
+            color: #aac4e0;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.65rem;
+            z-index: 10;
             backdrop-filter: blur(4px);
             border: 1px solid rgba(255,255,255,0.08);
         }
 
-        /* City chips */
-        .city-chips { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-        .city-chips-label { font-size: 0.72rem; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; white-space: nowrap; }
-        .chip { padding: 5px 12px; border-radius: 50px; border: 1px solid var(--primary); background: transparent; color: var(--primary); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; }
-        .chip:hover { background: var(--primary); color: #fff; }
+        /* Loader inside frame */
+        #mapLoader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 20, 50, 0.75);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
 
-        /* Input */
-        .input-group { flex-shrink: 0; display: flex; gap: 10px; }
-        input { flex: 1; padding: 12px 16px; border-radius: 6px; border: 2px solid #ccd6dd; font-size: 0.9rem; outline: none; font-family: inherit; }
-        input:focus { border-color: var(--primary); }
-        button#btnSend { padding: 0 28px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.9rem; transition: 0.2s; white-space: nowrap; }
-        button#btnSend:hover { background: #0056b3; }
-        button#btnSend:disabled { opacity: 0.6; cursor: not-allowed; }
+        .loader-content {
+            text-align: center;
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .spinner {
+            border: 5px solid rgba(255,255,255,0.2);
+            border-top: 5px solid #00ccff;
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Popup */
+        #map-popup {
+            position: absolute;
+            display: none;
+            width: 220px;
+            background: rgba(0, 20, 50, 0.95);
+            color: white;
+            border-radius: 10px;
+            padding: 12px;
+            z-index: 30;
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+            pointer-events: none;
+        }
+
+        #popup-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 6px;
+        }
+
+        #popup-name {
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        #popup-blurb {
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: #d5e3f0;
+        }
+
+        /* City chips */
+        .city-chips {
+            flex-shrink: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .city-chips-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-right: 4px;
+            white-space: nowrap;
+        }
+
+        .chip {
+            padding: 5px 12px;
+            border-radius: 50px;
+            border: 1px solid var(--primary);
+            background: transparent;
+            color: var(--primary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            white-space: nowrap;
+        }
+
+        .chip:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        /* External input row below frame, if you still keep it */
+        .input-group {
+            flex-shrink: 0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 2px solid var(--border);
+            font-size: 0.9rem;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .input-group input:focus {
+            border-color: var(--primary);
+        }
 
         /* Clear row */
-        .clear-row { flex-shrink: 0; display: flex; gap: 8px; align-items: center; }
-        .btn-clear { padding: 6px 16px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: 0.2s; border: 2px solid; font-family: inherit; }
-        .btn-clear-last { background: transparent; border-color: #e67e22; color: #e67e22; }
-        .btn-clear-last:hover { background: #e67e22; color: #fff; }
-        .btn-clear-all { background: transparent; border-color: #c0392b; color: #c0392b; }
-        .btn-clear-all:hover { background: #c0392b; color: #fff; }
-        .btn-clear:disabled { opacity: 0.35; cursor: not-allowed; }
-        .buildings-count { margin-left: auto; font-size: 0.75rem; color: #5a6484; font-weight: 600; }
+        .clear-row {
+            flex-shrink: 0;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
 
-        #status { flex-shrink: 0; font-size: 0.8rem; color: #5a6484; font-weight: 500; min-height: 18px; }
+        .btn-clear {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 2px solid;
+            font-family: inherit;
+        }
+
+        .btn-clear-last {
+            background: transparent;
+            border-color: #e67e22;
+            color: #e67e22;
+        }
+
+        .btn-clear-last:hover {
+            background: #e67e22;
+            color: #fff;
+        }
+
+        .btn-clear-all {
+            background: transparent;
+            border-color: #c0392b;
+            color: #c0392b;
+        }
+
+        .btn-clear-all:hover {
+            background: #c0392b;
+            color: #fff;
+        }
+
+        .btn-clear:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .buildings-count {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        #status {
+            flex-shrink: 0;
+            font-size: 0.8rem;
+            color: var(--muted);
+            font-weight: 500;
+            min-height: 18px;
+        }
 
         .cesium-viewer-animationContainer,
-        .cesium-viewer-timelineContainer { display: none !important; }
+        .cesium-viewer-timelineContainer {
+            display: none !important;
+        }
+
+        body.chat-mode .city-chips,
+        body.chat-mode .clear-row,
+        body.chat-mode #status {
+            display: none !important;
+        }
+
+        body.chat-mode .input-group {
+            display: flex;
+        }
+
+        body.map-mode .city-chips,
+        body.map-mode .clear-row {
+            display: flex;
+        }
+
+        body.map-mode #status {
+            display: block;
+        }
+
+        body.map-mode .input-group {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -125,43 +627,70 @@
     </header>
 
     <div class="map-frame">
-        <div id="map"></div>
-        <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
-
-        <!-- LEGEND -->
-        <div id="legend">
-            <b>AI BUILDING TYPES</b>
-            <div class="leg-grid">
-                <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
-
-                <!-- OSM real-world buildings section -->
-                <div class="leg-divider">REAL-WORLD BUILDINGS</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
-                <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
+        <!-- CHAT MODE -->
+        <div id="chatView" class="frame-view active">
+            <div class="chat-header">
+                <div class="chat-title">Infrastructure Planning Agent</div>
+                <div class="chat-subtitle">
+                    Describe the place, issue, or improvement you want to plan.
+                </div>
             </div>
+
+            <div id="chatMessages" class="chat-messages"></div>
         </div>
 
-        <!-- OSM note -->
-        <div id="osmNote">🏙️ Grey buildings = existing real-world structures</div>
+        <div id="mapView" class="frame-view">
+            <div id="map"></div>
+            <div id="mapLoader">
+                <div class="loader-content">
+                    <div class="spinner"></div>
+                    <p>Loading map data...</p>
+                </div>
+            </div>
+
+            <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
+
+            <!-- popups card for description-->
+            <div id="map-popup">
+                <div id="popup-badge"></div>
+                <div id="popup-name"></div>
+                <div id="popup-blurb"></div>
+            </div>
+
+             <!-- LEGEND -->
+            <div id="legend">
+                <b>AI BUILDING TYPES</b>
+                <div class="leg-grid">
+                    <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
+
+                    <!-- OSM real-world buildings section -->
+                    <div class="leg-divider">REAL-WORLD BUILDINGS</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
+                </div>
+            </div>
+            <!-- OSM note -->
+            <div id="osmNote">🏙️ Grey buildings = existing real-world structures</div>
+        </div>
     </div>
 
     <div class="city-chips">
@@ -178,11 +707,21 @@
         <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
     </div>
 
-    <div class="input-group">
+    <!-- <div class="input-group">
         <input type="text" id="aiInput"
             placeholder="1️⃣ Click map to place  →  2️⃣ Type your prompt  →  3️⃣ SIMULATE"
             onkeydown="if(event.key==='Enter') sendPrompt()">
         <button onclick="sendPrompt()" id="btnSend">SIMULATE</button>
+    </div> -->
+
+    <div class="input-group">
+        <input
+            type="text"
+            id="aiInput"
+            placeholder="Type your message to the agent..."
+            onkeydown="if(event.key==='Enter') submitPrompt()"
+        >
+        <button onclick="submitPrompt()" id="btnSend">SEND</button>
     </div>
 
     <div class="clear-row">
@@ -195,85 +734,113 @@
 </div>
 
 <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
+<script src="cesiumRenderer.js"></script>
 <script>
+    let appMode = "chat";
+
     Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1NjZiYjBjZS00NjhjLTQxZGYtODY1Yi02MTAwNGViZTdmZDIiLCJpZCI6NDE0NjE5LCJpYXQiOjE3NzU1MTkzMzF9.Mu7xvGow42DA5PYXwVL_eh-ubt7dpbMnKvNyMOowF-A";
 
     const MY = { minLat:0.8, maxLat:7.4, minLng:99.5, maxLng:119.5, maxAlt:820000 };
+    let viewer = null;
 
-    const viewer = new Cesium.Viewer('map', {
-        terrain: Cesium.Terrain.fromWorldTerrain(),
-        baseLayer: Cesium.ImageryLayer.fromWorldImagery({
-            style: Cesium.IonWorldImageryStyle.SENTINEL2
-        }),
-        animation: false, timeline: false,
-        geocoder: false, homeButton: false,
-        sceneModePicker: false, baseLayerPicker: false,
-        navigationHelpButton: false, fullscreenButton: false,
-        infoBox: true, selectionIndicator: true
-    });
+    function initMapIfNeeded() {
+        if (viewer) return;
 
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80;
-    viewer.scene.screenSpaceCameraController.maximumZoomDistance = MY.maxAlt;
-    viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(109.5, 4.0, MY.maxAlt - 30000),
-        orientation: { heading:0, pitch: Cesium.Math.toRadians(-90), roll:0 }
-    });
+        viewer = new Cesium.Viewer('map', {
+            terrain: Cesium.Terrain.fromWorldTerrain(),
+            baseLayer: Cesium.ImageryLayer.fromWorldImagery({
+                style: Cesium.IonWorldImageryStyle.SENTINEL2
+            }),
+            animation: false,
+            timeline: false,
+            geocoder: false,
+            homeButton: false,
+            sceneModePicker: false,
+            baseLayerPicker: false,
+            navigationHelpButton: false,
+            fullscreenButton: false,
+            infoBox: true,
+            selectionIndicator: true
+        });
 
-    // Bounds clamp
-    viewer.camera.changed.addEventListener(() => {
-        const c   = Cesium.Cartographic.fromCartesian(viewer.camera.position);
-        const lat = Cesium.Math.toDegrees(c.latitude);
-        const lng = Cesium.Math.toDegrees(c.longitude);
-        const alt = c.height;
-        const cLat = Math.min(Math.max(lat, MY.minLat), MY.maxLat);
-        const cLng = Math.min(Math.max(lng, MY.minLng), MY.maxLng);
-        const cAlt = Math.min(alt, MY.maxAlt);
-        if (Math.abs(lat-cLat)>0.01 || Math.abs(lng-cLng)>0.01 || alt > MY.maxAlt+5000) {
-            viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, cAlt),
-                orientation: { heading: viewer.camera.heading, pitch: viewer.camera.pitch, roll: viewer.camera.roll }
-            });
-        }
-    });
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80;
+        viewer.scene.screenSpaceCameraController.maximumZoomDistance = MY.maxAlt;
 
-    // ── OSM 3D BUILDINGS — styled as warm grey so they don't look white ──
-    (async () => {
-        try {
-            const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(109.5, 4.0, MY.maxAlt - 30000),
+            orientation: {
+                heading: 0,
+                pitch: Cesium.Math.toRadians(-90),
+                roll: 0
+            }
+        });
 
-            // Apply a style so buildings render as a consistent warm dark grey
-            // instead of the default texture-less white
-            // Color OSM buildings by their type tag — matches our legend colors
-            tileset.style = new Cesium.Cesium3DTileStyle({
-                color: {
-                    conditions: [
-                        // Commercial / retail / office
-                        ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop'",
-                            "color('#c8a97a', 0.85)"],
-                        // Residential / apartments / housing
-                        ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace'",
-                            "color('#7a88b8', 0.85)"],
-                        // Industrial / warehouse / factory
-                        ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank'",
-                            "color('#7ab87a', 0.85)"],
-                        // Public / civic / government / hospital / school
-                        ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic'",
-                            "color('#b87a7a', 0.85)"],
-                        // Religious
-                        ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple'",
-                            "color('#b8a07a', 0.85)"],
-                        // Hotel
-                        ["${feature['building']} === 'hotel'",
-                            "color('#6ab8b8', 0.85)"],
-                        // Default — all other buildings
-                        ["true", "color('#9a9aaa', 0.82)"]
-                    ]
-                }
-            });
+        // Bounds clamp
+        viewer.camera.changed.addEventListener(() => {
+            const c = Cesium.Cartographic.fromCartesian(viewer.camera.position);
+            const lat = Cesium.Math.toDegrees(c.latitude);
+            const lng = Cesium.Math.toDegrees(c.longitude);
+            const alt = c.height;
 
-            viewer.scene.primitives.add(tileset);
-        } catch(e) { console.warn("OSM buildings:", e); }
-    })();
+            const cLat = Math.min(Math.max(lat, MY.minLat), MY.maxLat);
+            const cLng = Math.min(Math.max(lng, MY.minLng), MY.maxLng);
+            const cAlt = Math.min(alt, MY.maxAlt);
+
+            if (Math.abs(lat - cLat) > 0.01 || Math.abs(lng - cLng) > 0.01 || alt > MY.maxAlt + 5000) {
+                viewer.camera.setView({
+                    destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, cAlt),
+                    orientation: {
+                        heading: viewer.camera.heading,
+                        pitch: viewer.camera.pitch,
+                        roll: viewer.camera.roll
+                    }
+                });
+            }
+        });
+
+        // ── OSM 3D BUILDINGS — styled as warm grey so they don't look white ──
+        (async () => {
+            try {
+                const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
+
+                // Apply a style so buildings render as a consistent warm dark grey
+                // instead of the default texture-less white
+                // Color OSM buildings by their type tag — matches our legend colors
+                tileset.style = new Cesium.Cesium3DTileStyle({
+                    color: {
+                        conditions: [
+                            // Commercial / retail / office
+                            ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop'",
+                                "color('#c8a97a', 0.85)"],
+                            // Residential / apartments / housing
+                            ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace'",
+                                "color('#7a88b8', 0.85)"],
+                            // Industrial / warehouse / factory
+                            ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank'",
+                                "color('#7ab87a', 0.85)"],
+                            // Public / civic / government / hospital / school
+                            ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic'",
+                                "color('#b87a7a', 0.85)"],
+                            // Religious
+                            ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple'",
+                                "color('#b8a07a', 0.85)"],
+                            // Hotel
+                            ["${feature['building']} === 'hotel'",
+                                "color('#6ab8b8', 0.85)"],
+                            // Default — all other buildings
+                            ["true", "color('#9a9aaa', 0.82)"]
+                        ]
+                    }
+                });
+
+                viewer.scene.primitives.add(tileset);
+            } catch(e) { console.warn("OSM buildings:", e); }
+        })();
+
+
+        setupClickToPlace();
+        createPopups();
+    }    
 
     // ── STATE ──
     let chosenLat = null, chosenLng = null, pinEntity = null;
@@ -292,6 +859,7 @@
     }
 
     function clearLast() {
+        if (!viewer) return;
         if (!buildingStack.length) return;
         viewer.entities.remove(buildingStack.pop());
         updateBuildingUI();
@@ -299,6 +867,7 @@
     }
 
     function clearAll() {
+        if (!viewer) return;
         if (!buildingStack.length) return;
         buildingStack.forEach(e => viewer.entities.remove(e));
         buildingStack.length = 0;
@@ -350,64 +919,69 @@
     }
 
     // ── CLICK-TO-PLACE ──
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click) => {
-        const picked = viewer.scene.pick(click.position);
-        if (Cesium.defined(picked) && Cesium.defined(picked.id)) return;
+    function setupClickToPlace() {
+        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
-        const ray  = viewer.camera.getPickRay(click.position);
-        const cart = viewer.scene.globe.pick(ray, viewer.scene);
-        if (!Cesium.defined(cart)) return;
+        handler.setInputAction((click) => {
+            const picked = viewer.scene.pick(click.position);
+            if (Cesium.defined(picked) && Cesium.defined(picked.id)) return;
 
-        const carto = Cesium.Cartographic.fromCartesian(cart);
-        const lat   = Cesium.Math.toDegrees(carto.latitude);
-        const lng   = Cesium.Math.toDegrees(carto.longitude);
+            const ray = viewer.camera.getPickRay(click.position);
+            const cart = viewer.scene.globe.pick(ray, viewer.scene);
+            if (!Cesium.defined(cart)) return;
 
-        if (lat < MY.minLat || lat > MY.maxLat || lng < MY.minLng || lng > MY.maxLng) {
-            status.innerText = "⚠️ Please click within Malaysia's territory.";
-            return;
-        }
+            const carto = Cesium.Cartographic.fromCartesian(cart);
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
 
-        chosenLat = lat; chosenLng = lng;
-        if (pinEntity) viewer.entities.remove(pinEntity);
-
-        pinEntity = viewer.entities.add({
-            name: 'Selected Build Site',
-            position: Cesium.Cartesian3.fromDegrees(lng, lat, 2),
-            description: `<p style="font-family:Inter,sans-serif;font-size:13px;color:#cde;">
-                <b>📍 Build Site Selected</b><br><br>
-                Latitude: ${lat.toFixed(5)}°N<br>
-                Longitude: ${lng.toFixed(5)}°E<br><br>
-                Type a building prompt below and click <b>SIMULATE</b>.
-            </p>`,
-            billboard: {
-                image: makePinCanvas(),
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scale: 1.1
-            },
-            label: {
-                text: '📍 Build Site',
-                font: 'bold 13px Inter, sans-serif',
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                outlineWidth: 3,
-                outlineColor: Cesium.Color.fromCssColorString('#001a33'),
-                fillColor: Cesium.Color.WHITE,
-                pixelOffset: new Cesium.Cartesian2(0, -52),
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY
+            if (lat < MY.minLat || lat > MY.maxLat || lng < MY.minLng || lng > MY.maxLng) {
+                status.innerText = "⚠️ Please click within Malaysia's territory.";
+                return;
             }
-        });
 
-        banner.textContent = `✅ Site locked at ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E — type your prompt & hit SIMULATE`;
-        banner.classList.add('placed');
-        status.innerText = `Step 2: Site selected. Now describe what to build here.`;
+            chosenLat = lat;
+            chosenLng = lng;
 
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+            if (pinEntity) viewer.entities.remove(pinEntity);
+
+            pinEntity = viewer.entities.add({
+                name: 'Selected Build Site',
+                position: Cesium.Cartesian3.fromDegrees(lng, lat, 2),
+                description: `<p style="font-family:Inter,sans-serif;font-size:13px;color:#cde;">
+                    <b>📍 Build Site Selected</b><br><br>
+                    Latitude: ${lat.toFixed(5)}°N<br>
+                    Longitude: ${lng.toFixed(5)}°E
+                </p>`,
+                billboard: {
+                    image: makePinCanvas(),
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    scale: 1.1
+                },
+                label: {
+                    text: '📍 Build Site',
+                    font: 'bold 13px Inter, sans-serif',
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    outlineWidth: 3,
+                    outlineColor: Cesium.Color.fromCssColorString('#001a33'),
+                    fillColor: Cesium.Color.WHITE,
+                    pixelOffset: new Cesium.Cartesian2(0, -52),
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                }
+            });
+
+            banner.textContent = `✅ Site locked at ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
+            banner.classList.add('placed');
+            status.innerText = `Step 2: Site selected.`;
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    }
 
     // ── CITY FLY ──
     function flyToCity(name, lat, lng) {
+        if (!viewer) return;
+
         status.innerText = `Flying to ${name}. Click to pin your build location.`;
         banner.textContent = '📍 Click anywhere on the map to choose a build location';
         banner.classList.remove('placed');
@@ -419,158 +993,437 @@
         });
     }
 
-    // ── AI SIMULATE ──
-    async function sendPrompt() {
-        const input  = document.getElementById('aiInput');
-        const btn    = document.getElementById('btnSend');
-        const prompt = input.value.trim();
-        if (!prompt) { status.innerText = "⚠️ Please type a prompt first."; return; }
+    // // ── AI SIMULATE ──
+    // async function sendPrompt() {
+    //     const input  = document.getElementById('aiInput');
+    //     const btn    = document.getElementById('btnSend');
+    //     const prompt = input.value.trim();
+    //     if (!prompt) { status.innerText = "⚠️ Please type a prompt first."; return; }
 
-        btn.disabled = true; btn.textContent = 'PROCESSING...';
-        status.innerText = "🤖 AI is interpreting your request...";
+    //     btn.disabled = true; btn.textContent = 'PROCESSING...';
+    //     status.innerText = "🤖 AI is interpreting your request...";
+
+    //     try {
+    //         const enriched = (chosenLat !== null)
+    //             ? `${prompt}. Place the building exactly at latitude ${chosenLat.toFixed(5)}, longitude ${chosenLng.toFixed(5)} in Malaysia. Do not change the coordinates.`
+    //             : prompt;
+
+    //         const res = await fetch('/api/map-prompt', {
+    //             method: 'POST',
+    //             headers: { 'Content-Type': 'application/json' },
+    //             body: JSON.stringify({ prompt: enriched })
+    //         });
+    //         const data = await res.json();
+    //         if (data.error) throw new Error(data.error);
+
+    //         // ── NAVIGATION ONLY ──
+    //         if (data.isNavigation === true) {
+    //             const navLat = Math.min(Math.max(data.center[0], MY.minLat), MY.maxLat);
+    //             const navLng = Math.min(Math.max(data.center[1], MY.minLng), MY.maxLng);
+
+    //             // Best-effort place name with 3 fallback layers
+    //             let placeName = data.buildingName
+    //                 || (data.description || '').replace(/^Navigating to\s*/i,'').replace(/\.$/,'').trim()
+    //                 || prompt.replace(/^(go|fly|show|zoom|navigate|take me)\s+(to\s+)?/i,'').trim().toUpperCase()
+    //                 || 'Location';
+
+    //             if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+
+    //             window.navMarker = viewer.entities.add({
+    //                 name: placeName,
+    //                 position: Cesium.Cartesian3.fromDegrees(navLng, navLat, 80),
+    //                 description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
+    //                     <div style="color:#ff6b6b;font-size:15px;font-weight:700;margin-bottom:6px;">📍 ${placeName}</div>
+    //                     Lat: ${navLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${navLng.toFixed(5)}°E<br><br>
+    //                     <i style="color:#aac4e0;">Zoom out to explore the surroundings.</i>
+    //                 </div>`,
+    //                 billboard: {
+    //                     image: makeNavPinCanvas(),
+    //                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+    //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    //                     scale: 1.3
+    //                 },
+    //                 label: {
+    //                     text: placeName,
+    //                     font: 'bold 14px Inter, sans-serif',
+    //                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+    //                     outlineWidth: 4,
+    //                     outlineColor: Cesium.Color.BLACK,
+    //                     fillColor: Cesium.Color.fromCssColorString('#ff6b6b'),
+    //                     pixelOffset: new Cesium.Cartesian2(0, -62),
+    //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    //                     showBackground: true,
+    //                     backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.85),
+    //                     backgroundPadding: new Cesium.Cartesian2(8, 5)
+    //                 }
+    //             });
+
+    //             viewer.camera.flyTo({
+    //                 destination: Cesium.Cartesian3.fromDegrees(navLng, navLat - 0.003, 900),
+    //                 orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 },
+    //                 duration: 2.8
+    //             });
+
+    //             status.innerText = `🧭 ${data.description ?? 'Navigating...'} Zoom out to explore.`;
+    //             input.value = '';
+    //             return;
+    //         }
+
+    //         // ── BUILD MODE ──
+    //         const bLat = (chosenLat !== null) ? chosenLat : data.center[0];
+    //         const bLng = (chosenLng !== null) ? chosenLng : data.center[1];
+    //         const h    = data.building?.height ?? 40;
+    //         const l    = data.building?.length ?? 40;
+    //         const w    = data.building?.width  ?? 40;
+
+    //         // Use color from server (server already sanitised near-white)
+    //         const hexColor     = data.color ?? '#00BFFF';
+    //         const fillColor    = hexToCesiumColor(hexColor, 0.6);
+    //         const outlineColor = hexToCesiumColor(hexColor, 1.0);
+
+    //         const buildingName = data.buildingName ?? prompt;
+
+    //         if (pinEntity) { viewer.entities.remove(pinEntity); pinEntity = null; }
+    //         if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+
+    //         const newBuilding = viewer.entities.add({
+    //             name: buildingName,
+    //             position: Cesium.Cartesian3.fromDegrees(bLng, bLat, h / 2),
+    //             description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
+    //                 <div style="color:${hexColor};font-size:15px;font-weight:700;margin-bottom:8px;">🏗️ ${buildingName}</div>
+    //                 <b>Type:</b> ${(data.buildingType ?? 'building').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}<br><br>
+    //                 <b>Dimensions:</b><br>
+    //                 &nbsp;&nbsp;Length: ${l} m &nbsp;|&nbsp; Width: ${w} m &nbsp;|&nbsp; Height: ${h} m<br><br>
+    //                 <b>Location:</b><br>
+    //                 &nbsp;&nbsp;Lat: ${bLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${bLng.toFixed(5)}°E<br><br>
+    //                 <i style="color:#aac4e0;">${data.description ?? ''}</i>
+    //             </div>`,
+    //             box: {
+    //                 dimensions: new Cesium.Cartesian3(l, w, h),
+    //                 material: fillColor,
+    //                 outline: true,
+    //                 outlineColor: outlineColor,
+    //                 outlineWidth: 2
+    //             },
+    //             label: {
+    //                 text: buildingName,
+    //                 font: 'bold 12px Inter, sans-serif',
+    //                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+    //                 outlineWidth: 3,
+    //                 outlineColor: Cesium.Color.BLACK,
+    //                 fillColor: Cesium.Color.fromCssColorString(hexColor),
+    //                 pixelOffset: new Cesium.Cartesian2(0, -(h * 0.5 + 40)),
+    //                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    //                 showBackground: true,
+    //                 backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.75),
+    //                 backgroundPadding: new Cesium.Cartesian2(6, 4),
+    //                 scaleByDistance: new Cesium.NearFarScalar(200, 1.0, 5000, 0.4)
+    //             }
+    //         });
+
+    //         buildingStack.push(newBuilding);
+    //         updateBuildingUI();
+
+    //         const camAlt = Math.max(h * 7, 250);
+    //         viewer.camera.flyTo({
+    //             destination: Cesium.Cartesian3.fromDegrees(bLng + 0.0015, bLat - 0.002, camAlt),
+    //             orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-28), roll:0 },
+    //             duration: 2.5,
+    //             easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
+    //         });
+
+    //         chosenLat = null; chosenLng = null;
+    //         banner.textContent = '📍 Click anywhere on the map to choose a build location';
+    //         banner.classList.remove('placed');
+    //         input.value = '';
+    //         status.innerText = `✅ ${buildingName} has been placed on the map.`;
+
+    //     } catch(err) {
+    //         status.innerText = "❌ Error: " + err.message;
+    //         console.error(err);
+    //     } finally {
+    //         btn.disabled = false; btn.textContent = 'SIMULATE';
+    //     }
+    // }
+    
+
+    // GENERATE POPUPS
+    
+    function createPopups() {
+        const popup = document.getElementById('map-popup');
+        const popupBadge = document.getElementById('popup-badge');
+        const popupName = document.getElementById('popup-name');
+        const popupBlurb = document.getElementById('popup-blurb');
+
+        if (!popup || !popupBadge || !popupName || !popupBlurb) {
+            console.error('Popup elements are missing in the HTML.');
+            return;
+        }
+
+        const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+        clickHandler.setInputAction(function (click) {
+            const picked = viewer.scene.pick(click.position);
+
+            if (Cesium.defined(picked) && Cesium.defined(picked.id)) {
+                const entity = picked.id;
+                const name = entity.name ?? '';
+                const blurb = entity.blurb ?? entity.description ?? '';
+                const type = entity.entityType ?? 'feature';
+
+                if (!name && !blurb) {
+                    popup.style.display = 'none';
+                    return;
+                }
+
+                popupBadge.textContent = type;
+                popupName.textContent = name;
+                popupBlurb.textContent = blurb;
+
+                const mapFrame = document.querySelector('.map-frame');
+                const rect = mapFrame.getBoundingClientRect();
+                const x = click.position.x;
+                const y = click.position.y;
+
+                const popupWidth = 220;
+                const left = Math.min(x + 10, rect.width - popupWidth - 10);
+
+                popup.style.left = left + 'px';
+                popup.style.top = (y - 110) + 'px';
+                popup.style.display = 'block';
+            } else {
+                popup.style.display = 'none';
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    }
+
+    async function callApi() {
+        const inputText = `
+            [POLYLINE | x1 | Improved Connector | Lebuhraya Persekutuan to Jalan Kerinchi | color:blue, width:thick | 357m trunk_link connector segment targeted for restriping and lane optimization]
+            [POINT | x1 | Diverge Point | Lebuhraya Persekutuan | color:orange, size:large | Diverge node for auxiliary lane extension and channelizer installation]
+            [POLYGON | x1 | Deceleration Zone | Lebuhraya Persekutuan | color:yellow, opacity:0.4 | 300m footprint for auxiliary lane extension and shoulder reallocation]   
+            [POINT | x1 | Merge Point | Jalan Kerinchi | color:green, size:large | Merge node for reconfiguration into a protected add-lane entry]    
+            [LABEL | x1 | Project Title | Federal Highway Kerinchi Segment | color:white | Federal Highway - Kerinchi High-Efficiency Connector Optimization]
+        `
 
         try {
-            const enriched = (chosenLat !== null)
-                ? `${prompt}. Place the building exactly at latitude ${chosenLat.toFixed(5)}, longitude ${chosenLng.toFixed(5)} in Malaysia. Do not change the coordinates.`
-                : prompt;
-
-            const res = await fetch('/api/map-prompt', {
+            const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/buildingAgentHelper', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: enriched })
+                body: JSON.stringify({ text: inputText })
             });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
 
-            // ── NAVIGATION ONLY ──
-            if (data.isNavigation === true) {
-                const navLat = Math.min(Math.max(data.center[0], MY.minLat), MY.maxLat);
-                const navLng = Math.min(Math.max(data.center[1], MY.minLng), MY.maxLng);
+            const data = await response.json();
 
-                // Best-effort place name with 3 fallback layers
-                let placeName = data.buildingName
-                    || (data.description || '').replace(/^Navigating to\s*/i,'').replace(/\.$/,'').trim()
-                    || prompt.replace(/^(go|fly|show|zoom|navigate|take me)\s+(to\s+)?/i,'').trim().toUpperCase()
-                    || 'Location';
+            if (data.status === 'ok') {
+                console.log(data.message)
+                return data.message; // 👈 was missing the return!
+            } else {
+                console.error('API error:', data.message);
+                return null;
+            }
 
-                if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+        } catch (error) {
+            console.error('Error:', error);
+            return null;
+        }
+    }
+    
+    // Assume 'mapData' is the JSON array output from your Python script
+    function renderStreetsToCesium(mapData) {
+        mapData.forEach(asset => {
+            // Only process the polylines (streets and bridges)
+            if (asset.entity_type === 'polyline_existing' || asset.entity_type === 'polyline_new') {
+                
+                // 1. Flatten your coordinates into the format Cesium expects:
+                // [lon1, lat1, height1, lon2, lat2, height2, ...]
+                let degreesArray = [];
+                asset.polyline_positions.forEach(coord => {
+                    degreesArray.push(coord.lng);
+                    degreesArray.push(coord.lat);
+                    degreesArray.push(coord.height);
+                });
 
-                window.navMarker = viewer.entities.add({
-                    name: placeName,
-                    position: Cesium.Cartesian3.fromDegrees(navLng, navLat, 80),
-                    description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
-                        <div style="color:#ff6b6b;font-size:15px;font-weight:700;margin-bottom:6px;">📍 ${placeName}</div>
-                        Lat: ${navLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${navLng.toFixed(5)}°E<br><br>
-                        <i style="color:#aac4e0;">Zoom out to explore the surroundings.</i>
-                    </div>`,
-                    billboard: {
-                        image: makeNavPinCanvas(),
-                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        scale: 1.3
-                    },
-                    label: {
-                        text: placeName,
-                        font: 'bold 14px Inter, sans-serif',
-                        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                        outlineWidth: 4,
-                        outlineColor: Cesium.Color.BLACK,
-                        fillColor: Cesium.Color.fromCssColorString('#ff6b6b'),
-                        pixelOffset: new Cesium.Cartesian2(0, -62),
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        showBackground: true,
-                        backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.85),
-                        backgroundPadding: new Cesium.Cartesian2(8, 5)
+                // 2. Add the Entity to the Viewer
+                viewer.entities.add({
+                    id: asset.id,
+                    name: asset.name,
+                    blurb: asset.blurb,
+                    entityType: asset.entity_type,
+                    description: asset.blurb,
+                    polyline: {
+                        positions: Cesium.Cartesian3.fromDegreesArrayHeights(degreesArray),
+                        material: Cesium.Color.fromCssColorString(asset.style.color).withAlpha(asset.style.opacity),
+                        width: asset.style.width,
+                        clampToGround: asset.entity_type === 'polyline_existing',
                     }
                 });
+            }
+        });
 
-                viewer.camera.flyTo({
-                    destination: Cesium.Cartesian3.fromDegrees(navLng, navLat - 0.003, 900),
-                    orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 },
-                    duration: 2.8
-                });
+        // // Optional: Make the camera zoom to the newly added streets
+        // viewer.zoomTo(viewer.entities);
+    }
 
-                status.innerText = `🧭 ${data.description ?? 'Navigating...'} Zoom out to explore.`;
-                input.value = '';
+    function showLoader() {
+        document.getElementById("mapLoader").style.display = "flex";
+    }
+
+    function hideLoader() {
+        document.getElementById("mapLoader").style.display = "none";
+    }
+
+    function showChatView() {
+        document.body.classList.remove("map-mode");
+        document.body.classList.add("chat-mode");
+
+        document.getElementById("chatView").classList.add("active");
+        document.getElementById("mapView").classList.remove("active");
+    }
+
+    function showMapView() {
+        document.body.classList.remove("chat-mode");
+        document.body.classList.add("map-mode");
+
+        document.getElementById("mapView").classList.add("active");
+        document.getElementById("chatView").classList.remove("active");
+
+        initMapIfNeeded();
+
+        if (viewer && viewer.scene) {
+            viewer.resize();
+        }
+    }
+
+    function formatReply(text) {
+        if (!text) return "";
+
+        const escapeHTML = (str) =>
+            str.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+
+        let formatted = escapeHTML(text);
+
+        // Bold "Challenge X:"
+        formatted = formatted.replace(
+            /(Challenge\s+\d+:.*)/g,
+            '<strong>$1</strong>'
+        );
+
+        // Bold common labels
+        formatted = formatted.replace(/(Macro root cause:)/g, "<strong>$1</strong>");
+        formatted = formatted.replace(/(Primary location:)/g, "<strong>$1</strong>");
+        formatted = formatted.replace(/(Roads:)/g, "<strong>$1</strong>");
+        formatted = formatted.replace(/(Symptom:)/g, "<strong>$1</strong>");
+
+        // Line breaks
+        formatted = formatted.replace(/\n/g, "<br>");
+
+        return formatted;
+    }
+
+    function addChatMessage(role, text) {
+        const chatMessages = document.getElementById("chatMessages");
+
+        const bubble = document.createElement("div");
+        bubble.className = `chat-bubble ${role}`;
+
+        // 👇 CHANGE THIS
+        bubble.innerHTML = formatReply(text);
+
+        chatMessages.appendChild(bubble);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    let currentSessionId = null;
+
+    async function startWorkflow() {
+        try {
+            const response = await fetch("http://127.0.0.1:8000/api/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})
+            });
+
+            const data = await response.json();
+            console.log("START RESPONSE:", data);
+
+            if (!data.ok) {
+                addChatMessage("agent", "Failed to start workflow.");
                 return;
             }
 
-            // ── BUILD MODE ──
-            const bLat = (chosenLat !== null) ? chosenLat : data.center[0];
-            const bLng = (chosenLng !== null) ? chosenLng : data.center[1];
-            const h    = data.building?.height ?? 40;
-            const l    = data.building?.length ?? 40;
-            const w    = data.building?.width  ?? 40;
+            currentSessionId = data.session_id;
+            addChatMessage("agent", data.reply);
 
-            // Use color from server (server already sanitised near-white)
-            const hexColor     = data.color ?? '#00BFFF';
-            const fillColor    = hexToCesiumColor(hexColor, 0.6);
-            const outlineColor = hexToCesiumColor(hexColor, 1.0);
-
-            const buildingName = data.buildingName ?? prompt;
-
-            if (pinEntity) { viewer.entities.remove(pinEntity); pinEntity = null; }
-            if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
-
-            const newBuilding = viewer.entities.add({
-                name: buildingName,
-                position: Cesium.Cartesian3.fromDegrees(bLng, bLat, h / 2),
-                description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
-                    <div style="color:${hexColor};font-size:15px;font-weight:700;margin-bottom:8px;">🏗️ ${buildingName}</div>
-                    <b>Type:</b> ${(data.buildingType ?? 'building').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}<br><br>
-                    <b>Dimensions:</b><br>
-                    &nbsp;&nbsp;Length: ${l} m &nbsp;|&nbsp; Width: ${w} m &nbsp;|&nbsp; Height: ${h} m<br><br>
-                    <b>Location:</b><br>
-                    &nbsp;&nbsp;Lat: ${bLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${bLng.toFixed(5)}°E<br><br>
-                    <i style="color:#aac4e0;">${data.description ?? ''}</i>
-                </div>`,
-                box: {
-                    dimensions: new Cesium.Cartesian3(l, w, h),
-                    material: fillColor,
-                    outline: true,
-                    outlineColor: outlineColor,
-                    outlineWidth: 2
-                },
-                label: {
-                    text: buildingName,
-                    font: 'bold 12px Inter, sans-serif',
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    outlineWidth: 3,
-                    outlineColor: Cesium.Color.BLACK,
-                    fillColor: Cesium.Color.fromCssColorString(hexColor),
-                    pixelOffset: new Cesium.Cartesian2(0, -(h * 0.5 + 40)),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.75),
-                    backgroundPadding: new Cesium.Cartesian2(6, 4),
-                    scaleByDistance: new Cesium.NearFarScalar(200, 1.0, 5000, 0.4)
-                }
-            });
-
-            buildingStack.push(newBuilding);
-            updateBuildingUI();
-
-            const camAlt = Math.max(h * 7, 250);
-            viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(bLng + 0.0015, bLat - 0.002, camAlt),
-                orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-28), roll:0 },
-                duration: 2.5,
-                easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
-            });
-
-            chosenLat = null; chosenLng = null;
-            banner.textContent = '📍 Click anywhere on the map to choose a build location';
-            banner.classList.remove('placed');
-            input.value = '';
-            status.innerText = `✅ ${buildingName} has been placed on the map.`;
-
-        } catch(err) {
-            status.innerText = "❌ Error: " + err.message;
-            console.error(err);
-        } finally {
-            btn.disabled = false; btn.textContent = 'SIMULATE';
+            // First prompt should guide the user to provide location
+            document.getElementById("aiInput").placeholder =
+                "Reply with one or two Malaysian cities or towns...";
+        } catch (err) {
+            addChatMessage("agent", "Error starting workflow: " + err.message);
         }
     }
+
+
+    async function submitPrompt() {
+        const input = document.getElementById("aiInput");
+        const btn = document.getElementById("btnSend");
+        const text = input.value.trim();
+
+        if (!text || !currentSessionId) return;
+
+        addChatMessage("user", text);
+        input.value = "";
+        btn.disabled = true;
+
+        try {
+            const response = await fetch("http://127.0.0.1:8000/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    message: text
+                })
+            });
+
+            const data = await response.json();
+            console.log("CHAT RESPONSE:", data);
+
+            if (!data.ok) {
+                addChatMessage("agent", "Something went wrong.");
+                return;
+            }
+
+            addChatMessage("agent", data.reply);
+
+            if (data.stage === "done" || data.show_map === true) {
+                showMapView();
+
+                if (data.entities) {
+                    renderEntities(data.entities);
+                    createPopups();
+                    renderStreetsToCesium(data.entities);
+
+                    if (data.camera) {
+                        flyToCamera(data.camera);
+                    }
+                }
+            }
+
+        } catch (err) {
+            addChatMessage("agent", "Error: " + err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+        
+    async function main() {
+        showChatView();    
+        await startWorkflow();
+    }
+
+    main();
 </script>
 </body>
 </html>

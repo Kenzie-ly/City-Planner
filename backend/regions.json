@@ -1,0 +1,51 @@
+{
+  "johor": {
+    "center_lat": 1.4927,
+    "center_lon": 103.7414,
+    "dist_m": 90000,
+    "cities": ["Johor Bahru", "Iskandar Puteri", "Pasir Gudang", "Batu Pahat", "Muar", "Kluang", "Segamat"],
+    "graphml": "data/graphs/johor.graphml"
+  },
+  "kedah": {
+    "center_lat": 6.1248,
+    "center_lon": 100.3678,
+    "dist_m": 70000,
+    "cities": ["Alor Setar", "Sungai Petani", "Kulim", "Langkawi", "Jitra", "Pendang"],
+    "graphml": "data/graphs/kedah.graphml"
+  },
+  "kelantan": {
+    "center_lat": 6.1254,
+    "center_lon": 102.2381,
+    "dist_m": 70000,
+    "cities": ["Kota Bharu", "Pasir Mas", "Tanah Merah", "Machang", "Kuala Krai", "Gua Musang"],
+    "graphml": "data/graphs/kelantan.graphml"
+  },
+  "pulau_pinang": {
+    "center_lat": 5.4164,
+    "center_lon": 100.3327,
+    "dist_m": 45000,
+    "cities": ["George Town", "Butterworth", "Bayan Lepas", "Bukit Mertajam", "Nibong Tebal", "Seberang Jaya"],
+    "graphml": "data/graphs/pulau_pinang.graphml"
+  },
+  "selangor": {
+    "center_lat": 3.0738,
+    "center_lon": 101.5183,
+    "dist_m": 80000,
+    "cities": ["Shah Alam", "Klang", "Petaling Jaya", "Subang Jaya", "Kajang", "Puchong", "Selayang", "Ampang Jaya", "Seri Kembangan", "Cyberjaya"],
+    "graphml": "data/graphs/selangor.graphml"
+  },
+  "kuala_lumpur": {
+    "center_lat": 3.1390,
+    "center_lon": 101.6869,
+    "dist_m": 25000,
+    "cities": ["Kuala Lumpur", "Cheras", "Setapak", "Wangsa Maju", "Batu", "Bandar Tun Razak", "Titiwangsa"],
+    "graphml": "data/graphs/kuala_lumpur.graphml"
+  },
+  "putrajaya": {
+    "center_lat": 2.9264,
+    "center_lon": 101.6964,
+    "dist_m": 12000,
+    "cities": ["Putrajaya", "Precinct 1", "Precinct 8", "Presint 9"],
+    "graphml": "data/graphs/putrajaya.graphml"
+  }
+}
