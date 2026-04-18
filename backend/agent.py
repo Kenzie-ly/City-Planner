@@ -81,7 +81,6 @@ find_needs_agent = LlmAgent(
         You will be given a TARGET PLACE by the user (for example: "Kuala Lumpur").
         Your task is to identify the top 3 most critical TRANSPORT-RELATED infrastructure problems in that place using real-world data.
 
-
         ## SCOPE (STRICT)
 
         You must ONLY focus on:
@@ -95,7 +94,6 @@ find_needs_agent = LlmAgent(
         * transport infrastructure needs
 
         Do NOT discuss unrelated infrastructure domains.
-
 
 
         ## TOOL USAGE (MANDATORY)
@@ -238,44 +236,48 @@ find_needs_agent = LlmAgent(
         ROUTING_ALIASES should contain alternate official or common forms.
 
 
-        ## OUTPUT FORMAT (STRICT)
+        ## OUTPUT FORMAT (STRICT — DO NOT DEVIATE)
 
-        <CHALLENGE_1_THEME> 
-        JSON_OUTPUT = {
+        You MUST return exactly ONE JSON object with this top-level structure.
+        Do NOT use ```json fences. Do NOT split into multiple blocks.
+        Do NOT add any text before or after the JSON.
+
+        {
+        "CHALLENGE_1": {
             "CHALLENGE_THEME": "<text>",
             "MACRO_ROOT_CAUSE": "<text>",
-
             "PRIMARY_MICRO": {
             "SYMPTOM": "<text>",
             "TYPE": "<corridor | junction | freight_route | transit_node>",
             "LOCATION_LABEL": "<human-readable>",
-            "ROAD_1": "<if applicable>",
-            "ROAD_2": "<if applicable>",
+            "ROAD_1": "<if applicable, else null>",
+            "ROAD_2": "<if applicable, else null>",
             "ROUTING_LABEL_1": "<OSM-friendly name>",
-            "ROUTING_LABEL_2": "<OSM-friendly name>",
+            "ROUTING_LABEL_2": "<OSM-friendly name, else null>",
             "ROUTING_ALIASES_1": ["<alias1>", "<alias2>"],
             "ROUTING_ALIASES_2": ["<alias1>", "<alias2>"],
-            "PRIMARY_ROUTE": "<if freight>",
-            "SECONDARY_ROUTE": "<if freight>",
-            "STATION_OR_LINE": "<if transit>"
-        },
+            "PRIMARY_ROUTE": "<if freight, else null>",
+            "SECONDARY_ROUTE": "<if freight, else null>",
+            "STATION_OR_LINE": "<if transit, else null>"
+            },
             "SECONDARY_MICRO": {
             "SYMPTOM": "<text>",
             "TYPE": "<corridor | junction | freight_route | transit_node>",
             "LOCATION_LABEL": "<human-readable>",
-            "ROAD_1": "<if applicable>",
-            "ROAD_2": "<if applicable>",
+            "ROAD_1": "<if applicable, else null>",
+            "ROAD_2": "<if applicable, else null>",
             "ROUTING_LABEL_1": "<OSM-friendly name>",
-            "ROUTING_LABEL_2": "<OSM-friendly name>",
+            "ROUTING_LABEL_2": "<OSM-friendly name, else null>",
             "ROUTING_ALIASES_1": ["<alias1>", "<alias2>"],
             "ROUTING_ALIASES_2": ["<alias1>", "<alias2>"],
-            "PRIMARY_ROUTE": "<if freight>",
-            "SECONDARY_ROUTE": "<if freight>",
-            "STATION_OR_LINE": "<if transit>"
+            "PRIMARY_ROUTE": "<if freight, else null>",
+            "SECONDARY_ROUTE": "<if freight, else null>",
+            "STATION_OR_LINE": "<if transit, else null>"
             }
+        },
+        "CHALLENGE_2": { <same structure as CHALLENGE_1> },
+        "CHALLENGE_3": { <same structure as CHALLENGE_1> }
         }
-
-        Repeat for CHALLENGE_2 and CHALLENGE_3.
 
         FINAL_QUESTION: Ask the user to select ONE challenge.
         """,
@@ -371,7 +373,7 @@ planning_agent = LlmAgent(
 )
 
 solution_agent = LlmAgent(
-    name="planning_agent",
+    name="solution_agent",
     model="gemini-3-flash-preview",
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
     instruction = f"""{personas}
@@ -647,52 +649,47 @@ review_agent = LlmAgent(
     instruction=f"""{personas}
         You are a review agent for a multi-step infrastructure planning workflow.
 
-        You will be receiving either challanges selection at run time.
+        You will receive:
+        - STEP NAME
+        - STEP OUTPUT
+        - USER RESPONSE
 
         Your job:
         - Read the current step output carefully.
         - Read the user's latest response carefully.
-        - Decide whether the user's response is sufficiently aligned with, selecting from, or requesting revision to the current step output.
+        - Decide whether the user's response is:
+        1. a valid selection or approval
+        2. too vague / unrelated
+        3. a request to revise the previous step output
 
-        Core behavior:
-        1. Return PASS if the user's response is clearly correlated with the current step output in a way that shows a valid selection.
-        2. Return REVISE if the user's response is unrelated to the current output or is too vague to act on.
-        3. Return REVISE TOTAL if the user's response requests changes, or indicates dissatisfaction.
-        4. If the user input is vague but still clearly refers to a valid item in the current step output, interpret it and resolve it into a specific reference.
-        5. If the user input cannot be confidently mapped to a valid item in the current step output, return REVISE.
-        6. If the user input indicates dissatisfaction, put the dissatisfaction message in the INSTRUCTION.
-        7. Always base your decision on both:
-            - the current step output
-            - the user's latest response
-
-        Important:
-        - If the user writes something like "1", "2", "the second one", or a partial phrase, check whether it clearly maps to an item in the current output.
-        - If it maps clearly, return PASS and translate that vague reference into a specific resolved reference.
-        - The resolved reference must be explicit and detailed enough to store in session state later.
-        - If the user is asking for changes rather than choosing or accepting something, return REVISE.
-        - For steps other than selection-like steps, PASS may simply mean approval.
+        Rules:
+        - Return PASS only if the user response can be confidently mapped to the current output.
+        - Return REVISE if the user response is too vague, invalid, or unrelated.
+        - Return REVISE_TOTAL if the user is asking to regenerate or modify the previous step output itself.
+        - If the user says "1", "2", "the first one", etc., resolve it explicitly.
+        - If the current step is "Find needs", prefer returning JSON_OUTPUT with exactly one selected challenge object.
+        - Do not add any extra commentary outside the required format.
 
         Output format exactly:
 
         VERDICT: PASS
-        REASON: User selected symptom A in challenge 1 clearly.
-        RESOLVED_REFERENCE: CHALLENGE_1_MICRO_SYMPTOM_A
-        OUTPUT: <full selected block text OR JSON OUTPUT (PREFERABLE)>
+        REASON: <brief reason>
+        RESOLVED_REFERENCE: <explicit resolved item>
+        JSON_OUTPUT: <single JSON object if available, especially for Find needs>
 
         OR
 
         VERDICT: REVISE
-        INSTRUCTION: <asks the user to re-reponse correctly>
+        INSTRUCTION: <brief instruction to the user>
         RESOLVED_REFERENCE:
 
         OR
 
         VERDICT: REVISE_TOTAL
-        INSTRUCTION: <specific actionable instruction based on the user's response>
+        INSTRUCTION: <brief instruction for regenerating the previous step>
         RESOLVED_REFERENCE:
     """,
 )
-
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────
 
@@ -1362,7 +1359,7 @@ planning_root = InfrastructurePlannerOrchestrator(
     pipeline=[
         ("Find needs", find_needs_agent,  "top_challenges"),
         ("Plan improvements",   planning_agent,    "improvement_plan"),
-        ("Generate solutions", solution_agent, "plan_solution"),
+        ("Generate solutions", solution_agent, "solution_plan"),
         ("Building simulations", building_agent,   "simulation_result")
         # ("Activity simulation", activity_agent,   "activity_simulation"),
         # ("Analysis",            analysis_agent,   "final_analysis"),
