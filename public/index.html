@@ -32,6 +32,7 @@
         }
 
         .container {
+            flex : 1;
             max-width: 1100px;
             margin: 0 auto;
             display: flex;
@@ -617,120 +618,172 @@
         body.map-mode .input-group {
             display: none !important;
         }
+
+        .no-history {
+            color: gray;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .page {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: black;
+            color: white;
+            padding: 16px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        .box {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 8px 0;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .delete-btn {
+            background: red;
+            color: white;
+            border: none;
+            float: right;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-<div class="container">
-    <header>
-        <h1>MY Geospatial Data Center — Malaysia</h1>
-        <div style="font-size:0.7rem;color:#5a6484;">SYSTEM STATUS: <span style="color:#27ae60;font-weight:bold;">ONLINE</span></div>
-    </header>
+<div class="page">
+    <div class="container">
+        <header>
+            <h1>MY Geospatial Data Center — Malaysia</h1>
+            <div style="font-size:0.7rem;color:#5a6484;">SYSTEM STATUS: <span style="color:#27ae60;font-weight:bold;">ONLINE</span></div>
+        </header>
 
-    <div class="map-frame">
-        <!-- CHAT MODE -->
-        <div id="chatView" class="frame-view active">
-            <div class="chat-header">
-                <div class="chat-title">Infrastructure Planning Agent</div>
-                <div class="chat-subtitle">
-                    Describe the place, issue, or improvement you want to plan.
+        <div class="map-frame">
+            <!-- CHAT MODE -->
+            <div id="chatView" class="frame-view active">
+                <div class="chat-header">
+                    <div class="chat-title">Infrastructure Planning Agent</div>
+                    <div class="chat-subtitle">
+                        Describe the place, issue, or improvement you want to plan.
+                    </div>
                 </div>
+
+                <div id="chatMessages" class="chat-messages"></div>
             </div>
 
-            <div id="chatMessages" class="chat-messages"></div>
+            <div id="mapView" class="frame-view">
+                <div id="map"></div>
+                <div id="mapLoader">
+                    <div class="loader-content">
+                        <div class="spinner"></div>
+                        <p>Loading map data...</p>
+                    </div>
+                </div>
+
+                <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
+
+                <!-- popups card for description-->
+                <div id="map-popup">
+                    <div id="popup-badge"></div>
+                    <div id="popup-name"></div>
+                    <div id="popup-blurb"></div>
+                </div>
+
+                <!-- LEGEND -->
+                <div id="legend">
+                    <b>AI BUILDING TYPES</b>
+                    <div class="leg-grid">
+                        <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
+
+                        <!-- OSM real-world buildings section -->
+                        <div class="leg-divider">REAL-WORLD BUILDINGS</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
+                        <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
+                    </div>
+                </div>
+                <!-- OSM note -->
+                <div id="osmNote">🏙️ Grey buildings = existing real-world structures</div>
+            </div>
         </div>
 
-        <div id="mapView" class="frame-view">
-            <div id="map"></div>
-            <div id="mapLoader">
-                <div class="loader-content">
-                    <div class="spinner"></div>
-                    <p>Loading map data...</p>
-                </div>
-            </div>
-
-            <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
-
-            <!-- popups card for description-->
-            <div id="map-popup">
-                <div id="popup-badge"></div>
-                <div id="popup-name"></div>
-                <div id="popup-blurb"></div>
-            </div>
-
-             <!-- LEGEND -->
-            <div id="legend">
-                <b>AI BUILDING TYPES</b>
-                <div class="leg-grid">
-                    <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
-
-                    <!-- OSM real-world buildings section -->
-                    <div class="leg-divider">REAL-WORLD BUILDINGS</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
-                </div>
-            </div>
-            <!-- OSM note -->
-            <div id="osmNote">🏙️ Grey buildings = existing real-world structures</div>
+        <div class="city-chips">
+            <span class="city-chips-label">Quick Cities:</span>
+            <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
+            <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
+            <button class="chip" onclick="flyToCity('Johor Bahru',1.4927,103.7414)">Johor Bahru</button>
+            <button class="chip" onclick="flyToCity('Penang',5.4141,100.3288)">Penang</button>
+            <button class="chip" onclick="flyToCity('Kota Kinabalu',5.9804,116.0735)">Kota Kinabalu</button>
+            <button class="chip" onclick="flyToCity('Kuching',1.5497,110.3592)">Kuching</button>
+            <button class="chip" onclick="flyToCity('Ipoh',4.5975,101.0901)">Ipoh</button>
+            <button class="chip" onclick="flyToCity('Shah Alam',3.0733,101.5185)">Shah Alam</button>
+            <button class="chip" onclick="flyToCity('Kota Bharu',6.1254,102.2381)">Kota Bharu</button>
+            <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
         </div>
+
+        <!-- <div class="input-group">
+            <input type="text" id="aiInput"
+                placeholder="1️⃣ Click map to place  →  2️⃣ Type your prompt  →  3️⃣ SIMULATE"
+                onkeydown="if(event.key==='Enter') sendPrompt()">
+            <button onclick="sendPrompt()" id="btnSend">SIMULATE</button>
+        </div> -->
+
+        <div class="input-group">
+            <input
+                type="text"
+                id="aiInput"
+                placeholder="Type your message to the agent..."
+                onkeydown="if(event.key==='Enter') submitPrompt()"
+            >
+            <button onclick="submitPrompt()" id="btnSend">SEND</button>
+        </div>
+
+        <div class="clear-row">
+            <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last Building</button>
+            <button class="btn-clear btn-clear-all"  id="btnClearAll"  onclick="clearAll()"  disabled>🗑 Clear All Buildings</button>
+            <span class="buildings-count" id="buildingCount">No buildings placed</span>
+        </div>
+
+        <div id="status">Step 1: Click on the map to choose where to build.</div>
     </div>
 
-    <div class="city-chips">
-        <span class="city-chips-label">Quick Cities:</span>
-        <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
-        <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
-        <button class="chip" onclick="flyToCity('Johor Bahru',1.4927,103.7414)">Johor Bahru</button>
-        <button class="chip" onclick="flyToCity('Penang',5.4141,100.3288)">Penang</button>
-        <button class="chip" onclick="flyToCity('Kota Kinabalu',5.9804,116.0735)">Kota Kinabalu</button>
-        <button class="chip" onclick="flyToCity('Kuching',1.5497,110.3592)">Kuching</button>
-        <button class="chip" onclick="flyToCity('Ipoh',4.5975,101.0901)">Ipoh</button>
-        <button class="chip" onclick="flyToCity('Shah Alam',3.0733,101.5185)">Shah Alam</button>
-        <button class="chip" onclick="flyToCity('Kota Bharu',6.1254,102.2381)">Kota Bharu</button>
-        <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
+    <div class="sidebar" id="sidebar">
+        <h3>History</h3>
+        <div id="historyContainer"></div>
     </div>
-
-    <!-- <div class="input-group">
-        <input type="text" id="aiInput"
-            placeholder="1️⃣ Click map to place  →  2️⃣ Type your prompt  →  3️⃣ SIMULATE"
-            onkeydown="if(event.key==='Enter') sendPrompt()">
-        <button onclick="sendPrompt()" id="btnSend">SIMULATE</button>
-    </div> -->
-
-    <div class="input-group">
-        <input
-            type="text"
-            id="aiInput"
-            placeholder="Type your message to the agent..."
-            onkeydown="if(event.key==='Enter') submitPrompt()"
-        >
-        <button onclick="submitPrompt()" id="btnSend">SEND</button>
-    </div>
-
-    <div class="clear-row">
-        <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last Building</button>
-        <button class="btn-clear btn-clear-all"  id="btnClearAll"  onclick="clearAll()"  disabled>🗑 Clear All Buildings</button>
-        <span class="buildings-count" id="buildingCount">No buildings placed</span>
-    </div>
-
-    <div id="status">Step 1: Click on the map to choose where to build.</div>
 </div>
 
 <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
@@ -1262,7 +1315,7 @@
         });
 
         // // Optional: Make the camera zoom to the newly added streets
-        // viewer.zoomTo(viewer.entities);
+        viewer.zoomTo(viewer.entities);
     }
 
     function showLoader() {
@@ -1417,12 +1470,131 @@
             btn.disabled = false;
         }
     }
-        
-    async function main() {
-        showChatView();    
-        await startWorkflow();
+
+    async function loadHistories() {
+        const res = await fetch("http://127.0.0.1:5000/api/get_history", {credentials: "include"});
+        const data = await res.json();
+
+        console.log("RAW DATA:", data);
+        console.log("IS ARRAY:", Array.isArray(data));
+
+        const container = document.getElementById("historyContainer");
+        container.innerHTML = "";
+
+        if (!Array.isArray(data) || data.length === 0) {
+            container.innerHTML = `
+                <div class="no-history">No history available</div>
+            `;
+            return;
+        }
+
+        data.forEach(data => {
+            const div = document.createElement("div");
+            div.className = "box";
+
+            const header = document.createElement("div");
+            header.className = "box-header";
+
+            const span = document.createElement("span");
+            span.textContent = data.created_at; 
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "delete-btn";
+            deleteBtn.textContent = "X";
+
+            header.appendChild(span);
+            header.appendChild(deleteBtn);
+
+            const small = document.createElement("small");
+            small.textContent = data.last_seen || "";
+
+            div.appendChild(header);
+            div.appendChild(small);
+
+            // Click/select history
+            div.addEventListener("click", async (e) => {
+                if (e.target.classList.contains("delete-btn")) return;
+
+                entities = data.entities
+
+                if (!entities) {
+                    console.error("No data returned");
+                    return;
+                }
+                
+                showMapView();
+
+                renderEntities(entities);
+                createPopups();
+                renderStreetsToCesium(entities);
+
+                await fetch("http://127.0.0.1:5000/api/select_history", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: data.id })
+                });
+
+                loadHistories();
+            });
+
+            // Delete history
+            div.querySelector(".delete-btn").addEventListener("click", async (e) => {
+                e.stopPropagation();
+
+                const res = await fetch("http://127.0.0.1:5000/api/delete_history", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: data.id })
+                });
+
+                const result = await res.json();
+
+                if (res.ok && result.status === "done") {
+                    // success then update UI
+                    div.remove();
+                } else {
+                    console.error("Delete failed:", result.error || "unknown error");
+                }
+            });
+
+            container.appendChild(div);
+        });
     }
 
+    async function addHistory(data) {
+        await fetch("http://127.0.0.1:5000/api/add_history", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({entities: data})
+        });
+
+        loadHistories();
+    }
+        
+    async function main() {
+        // showChatView();
+        // await startWorkflow();
+
+        //manual input
+        showMapView();
+        const data = await callApi();
+        console.log("API RETURN:", data);
+
+        if (!data) {
+            console.error("No data returned");
+            return;
+        }
+
+        renderEntities(data);
+        createPopups();
+        renderStreetsToCesium(data);
+        addHistory(data);
+    }
+
+    document.addEventListener("DOMContentLoaded", loadHistories);
     main();
 </script>
 </body>

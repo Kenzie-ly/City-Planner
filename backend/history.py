@@ -5,12 +5,13 @@ from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 
 cred = credentials.Certificate(
-    "hackathon-2eedf-firebase-adminsdk-fbsvc-4f4a7a70c2.json"
+    "hackathon-2eedf-firebase-adminsdk-fbsvc-41700aa0be.json"
 )
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 def getUserId():
+    return "userTest01"
     if "user_id" not in session:
         session["user_id"] = str(uuid.uuid4())
     return session["user_id"]
@@ -21,16 +22,16 @@ def addHistory(data):
     
     userId = getUserId()
 
-    data = {
+    payload = {
         **data,
         "created_at": firestore.SERVER_TIMESTAMP,
         "last_seen": firestore.SERVER_TIMESTAMP
     }
-
-    db.collection("users") \
+    
+    update_time, doc_ref = db.collection("users") \
         .document(userId) \
         .collection("map_history") \
-        .add(data)
+        .add(payload)
 
 def getHistoryList():
     userId = getUserId()
@@ -77,6 +78,10 @@ def deleteHistory(dataId):
 app = Flask(__name__)
 app.secret_key = "Hackathon"
 CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",  # allow cross-site
+    SESSION_COOKIE_SECURE=False      # True ONLY if HTTPS
+)
 
 @app.get("/api/get_history")
 def sendHistoryList():
