@@ -13,7 +13,9 @@ import re
 from FindRoads import run_city_road_connection_analysis
 from building_agent_helper import process_agent_assets, format_entities
 import json
+from RAG import personas
 
+persona = personas["sustainability"]
 # Load API key from .env file
 load_dotenv()
 
@@ -24,7 +26,7 @@ place_intake_agent = LlmAgent(
     name="place_intake_agent",
     model="gemini-3-flash-preview",
     description="Collects one or two Malaysian cities/towns from the user with a natural feedback loop.",
-    instruction="""
+    instruction=f"""{personas}
 You are the intake agent for an infrastructure planning assistant.
 
 Your job:
@@ -74,7 +76,7 @@ find_needs_agent = LlmAgent(
     name="find_needs_agent",
     model="gemini-3-flash-preview",
     description="Analyzes selected cities/towns and identifies the top infrastructure-related challenges that need government attention.",
-    instruction="""
+    instruction=f"""{personas}
         You are the Lead Transport Systems Analysis Supervisor for Malaysia.
         You will be given a TARGET PLACE by the user (for example: "Kuala Lumpur").
         Your task is to identify the top 3 most critical TRANSPORT-RELATED infrastructure problems in that place using real-world data.
@@ -287,7 +289,7 @@ planning_agent = LlmAgent(
     name="planning_agent",
     model="gemini-3-flash-preview",
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
-    instruction = """
+    instruction = f"""{personas}
         You are a Transport Planning Decision Agent for Malaysia.
         You will receive:
 
@@ -372,7 +374,7 @@ solution_agent = LlmAgent(
     name="planning_agent",
     model="gemini-3-flash-preview",
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
-    instruction = """
+    instruction = f"""{personas}
         You are a Transport Infrastructure Solution Designer.
 
         You will receive:
@@ -487,7 +489,7 @@ building_agent = LlmAgent(
     name="building_agent",
     model="gemini-3-flash-preview",
     description="Converts a selected infrastructure option into structured map scene data for CesiumJS.",
-    instruction="""
+    instruction=   f"""{personas}
         You are a Transport Infrastructure Map Building Agent.
 
         You will receive:
@@ -599,7 +601,7 @@ activity_agent = LlmAgent(
     name="activity_agent",
     model="gemini-3-flash-preview",
     description="Simulates how public activity changes after the infrastructure improvements.",
-    instruction="""
+    instruction=f"""{personas}
 Simulate human activity based on session.state["simulation_result"].
 
 If session.state["feedback"] exists, revise accordingly.
@@ -618,7 +620,7 @@ analysis_agent = LlmAgent(
     name="analysis_agent",
     model="gemini-3-flash-preview",
     description="Analyzes the final impact of the infrastructure proposal.",
-    instruction="""
+    instruction=f"""{personas}
 Analyze session.state["activity_simulation"].
 
 If session.state["feedback"] exists, deepen the analysis accordingly.
@@ -642,7 +644,7 @@ review_agent = LlmAgent(
     name="review_agent",
     model="gemini-3-flash-preview",
     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
-    instruction="""
+    instruction=f"""{personas}
         You are a review agent for a multi-step infrastructure planning workflow.
 
         You will be receiving either challanges selection at run time.
@@ -698,7 +700,7 @@ place_intake_agent = LlmAgent(
     name="place_intake_agent",
     model="gemini-3-flash-preview",
     description="Collects one or two Malaysian cities/towns from the user.",
-    instruction="""
+    instruction=f"""{personas}
         You are the intake agent for an infrastructure planning assistant.
 
         Your job:
