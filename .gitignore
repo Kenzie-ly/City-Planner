@@ -1,1 +1,7 @@
 .\hackathon
+package*.py          # Ignore ALL Python files
+*.json        # Ignore ALL JSON files (careful — excludes package.json too)
+regions.json  # Ignore only this specific file
+
+.\data
+.\cache

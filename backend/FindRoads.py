@@ -252,27 +252,25 @@ def edge_label(row):
     ref = row.get("ref")
     highway = row.get("highway")
 
-    # Convert NaN to None
-    if pd.isna(name):
-        name = None
-    if pd.isna(ref):
-        ref = None
-    if pd.isna(highway):
-        highway = None
-
-    # Handle list-like values
+    # Handle list-like values FIRST
     if isinstance(name, list):
         name = " / ".join(str(x) for x in name if pd.notna(x))
+    elif pd.isna(name):
+        name = None
     elif name is not None:
         name = str(name)
 
     if isinstance(ref, list):
         ref = " / ".join(str(x) for x in ref if pd.notna(x))
+    elif pd.isna(ref):
+        ref = None
     elif ref is not None:
         ref = str(ref)
 
     if isinstance(highway, list):
         highway = " / ".join(str(x) for x in highway if pd.notna(x))
+    elif pd.isna(highway):
+        highway = None
     elif highway is not None:
         highway = str(highway)
 
@@ -280,7 +278,7 @@ def edge_label(row):
     if name and ref:
         if ref.lower() in name.lower() or name.lower() in ref.lower():
             return name
-        return f"{name} / {ref}"
+        return f"{name} (Route {ref})"
     elif name:
         return name
     elif ref:
@@ -343,10 +341,12 @@ def make_grouped_road_sequence(route_edges, min_length_for_unnamed=80):
     for _, row in route_edges.iterrows():
         label = edge_label(row)
         length = row["length"] if "length" in row and pd.notna(row["length"]) else 0.0
-        highway = row["highway"] if "highway" in row and pd.notna(row["highway"]) else None
-
+        
+        highway = row["highway"] if "highway" in row else None
         if isinstance(highway, list):
             highway = " / ".join(str(x) for x in highway if pd.notna(x))
+        elif pd.isna(highway):
+            highway = None
         elif highway is not None:
             highway = str(highway)
 
@@ -387,11 +387,28 @@ def generate_k_alternative_paths(G, source, target, k=3, weight="length"):
         return list(ox.routing.k_shortest_paths(G, source, target, k=k, weight=weight))
     except Exception:
         return []
+    
+def get_highest_class(highways):
+    priority = {
+        "motorway": 5,
+        "trunk": 4,
+        "primary": 3,
+        "secondary": 2,
+        "tertiary": 1
+    }
 
-from collections import Counter
+    best = None
+    best_score = -1
 
-from collections import Counter
-import numpy as np
+    for hw in highways:
+        parts = str(hw).split(" / ")
+        for p in parts:
+            p = p.lower()
+            if p in priority and priority[p] > best_score:
+                best = p
+                best_score = priority[p]
+
+    return best if best else "unknown"
 
 def build_candidate_from_grouped_sequence(
     grouped_sequence,
@@ -414,9 +431,9 @@ def build_candidate_from_grouped_sequence(
         if hw is None:
             road_classes.append("unknown")
         else:
-            road_classes.append(str(hw))
+            road_classes.extend(str(hw).split(" / "))
 
-    dominant_class = Counter(road_classes).most_common(1)[0][0] if road_classes else "unknown"
+    dominant_class = get_highest_class(road_classes)
 
     candidate = {
         "candidate_id": candidate_id,
@@ -454,24 +471,55 @@ import pandas as pd
 
 def build_candidate_evidence(route_edges: pd.DataFrame) -> dict:
     def parse_lanes(val):
-        if val is None or pd.isna(val):
+        if val is None:
             return None
+
+        # 🔥 Handle list FIRST
+        if isinstance(val, list):
+            nums = []
+            for v in val:
+                if pd.notna(v) and str(v).isdigit():
+                    nums.append(int(v))
+            return max(nums) if nums else None
+
+        # Now safe to use pd.isna
+        if pd.isna(val):
+            return None
+
         if isinstance(val, (int, float)):
             return int(val)
+
         if isinstance(val, str):
             parts = [p.strip() for p in val.split(";")]
             nums = [int(p) for p in parts if p.isdigit()]
             return max(nums) if nums else None
+
         return None
 
     def parse_maxspeed(val):
-        if val is None or pd.isna(val):
+        if val is None:
             return None
+
+        # Handle list FIRST
+        if isinstance(val, list):
+            nums = []
+            for v in val:
+                if pd.notna(v):
+                    m = re.search(r"\d+", str(v))
+                    if m:
+                        nums.append(float(m.group()))
+            return max(nums) if nums else None
+
+        if pd.isna(val):
+            return None
+
         if isinstance(val, (int, float)):
             return float(val)
+
         if isinstance(val, str):
             m = re.search(r"\d+", val)
             return float(m.group()) if m else None
+
         return None
 
     highway_sequence = []
@@ -525,7 +573,10 @@ def build_candidate_evidence(route_edges: pd.DataFrame) -> dict:
 
         # unnamed
         name = row.get("name")
-        if pd.isna(name):
+        if isinstance(name, list):
+            if all(pd.isna(x) or str(x).strip() == "" for x in name):
+                contains_unnamed_segments = True
+        elif pd.isna(name) or str(name).strip() == "":
             contains_unnamed_segments = True
 
     unique_highways = list(dict.fromkeys(highway_sequence))
@@ -563,7 +614,7 @@ def build_candidate_objects_from_routes(route_candidates, road_a_name, road_b_na
         )
 
         candidate["path_nodes"] = item["path"]
-        # candidate["evidence"] = build_candidate_evidence(item["route_edges"])
+        candidate["evidence"] = build_candidate_evidence(item["route_edges"])
 
         candidates.append(candidate)
 
@@ -597,8 +648,8 @@ def run_city_road_connection_analysis(
     city_polygon_buffered = buffer_wgs84_geometry_in_meters(city_polygon, city_buffer_m)
 
     G_city, nodes_city, edges_city = clip_graph_to_polygon(G_region, city_polygon_buffered)
-    print("City graph nodes:", len(G_city.nodes))
-    print("City graph edges:", len(G_city.edges))
+    # print("City graph nodes:", len(G_city.nodes))
+    # print("City graph edges:", len(G_city.edges))
 
     # 3. Prepare and match roads
     edges_city = prepare_edge_text_columns(edges_city)
@@ -606,23 +657,12 @@ def run_city_road_connection_analysis(
     road_a_edges = match_road_edges(edges_city, road_a_queries)
     road_b_edges = match_road_edges(edges_city, road_b_queries)
 
-    print(f"Matched road A edges: {len(road_a_edges)}")
-    print(f"Matched road B edges: {len(road_b_edges)}")
+    # print(f"Matched road A edges: {len(road_a_edges)}")
+    # print(f"Matched road B edges: {len(road_b_edges)}")
 
     # 4. Merge road geometries (useful for optional corridor visualization)
     road_a_geom = unary_union(list(road_a_edges.geometry))
     road_b_geom = unary_union(list(road_b_edges.geometry))
-
-    # 5. Build optional corridor polygon
-    config = CorridorConfig()
-    corridor, anchor_a, anchor_b = build_corridor_polygon_from_two_roads(
-        road_a_geom=road_a_geom,
-        road_b_geom=road_b_geom,
-        config=config
-    )
-
-    print("Anchor A:", anchor_a)
-    print("Anchor B:", anchor_b)
 
     # 6. Graph-based road-to-road path search
     road_a_nodes = get_road_node_ids(road_a_edges)
@@ -648,29 +688,15 @@ def run_city_road_connection_analysis(
     else:
         mode = "corridor"
 
-    print("Mode:", mode)
-    print("Best pair:", best_pair)
-    print("Best cost:", best_cost)
-    print("Best path:", best_path)
+    # print("Mode:", mode)
+    # print("Best pair:", best_pair)
+    # print("Best cost:", best_cost)
+    # print("Best path:", best_path)
 
     # 8. Extract route edges from the graph-based path
     route_edges = safe_route_to_gdf(G_city, best_path, weight="length")
-    print_route_summary(route_edges)
 
-    #sequence
-    grouped_sequence = make_grouped_road_sequence(route_edges)
-    total_length = route_edges["length"].sum()
-
-    candidate = build_candidate_from_grouped_sequence(
-        grouped_sequence,
-        total_length,
-        road_a_queries[0],
-        road_b_queries[0]
-    )       
-
-    print(candidate)
-
-    #alternative paths
+    # #alternative paths
     source_node, target_node = best_pair
 
     alternative_paths = generate_k_alternative_paths(
@@ -692,24 +718,21 @@ def run_city_road_connection_analysis(
         road_b_name=road_b_queries[0]
     )
 
-    for c in candidates:
-        print("\n====================")
-        print("Candidate ID:", c["candidate_id"])
-        print("From:", c["from_road"])
-        print("To:", c["to_road"])
-        print("Via roads:", c["via_roads"])
-        print("Total length:", c["total_length_m"])
-        print("Segment count:", c["segment_count"])
-        print("Connector count:", c["connector_count"])
-        print("Road classes:", c["road_classes"])
-        print("Dominant class:", c["dominant_class"])
-        # print("Evidence:", c["evidence"])
-
-    # for i, seg in enumerate(grouped_sequence, start=1):
-    #     print(f"{i}. {seg['road']} ({seg['length_m']} m)")
+    # Debug print for old return variables
+    # print("Region:", region)
+    # print("City query:", city_query)
+    # print("Mode:", mode)
+    # print("Best pair:", best_pair)
+    # print("Best cost:", best_cost)
+    # print("Best path:", best_path)
+    # print("City graph nodes:", len(G_city.nodes))
+    # print("City graph edges:", len(G_city.edges))
+    # print("Road A edges:", len(road_a_edges))
+    # print("Road B edges:", len(road_b_edges))
 
     return {
-        "region": region,
+        "candidates": candidates,
+        "": region,
         "city_query": city_query,
         "city_polygon": city_polygon,
         "city_polygon_buffered": city_polygon_buffered,
@@ -720,13 +743,7 @@ def run_city_road_connection_analysis(
         "road_b_edges": road_b_edges,
         "road_a_geom": road_a_geom,
         "road_b_geom": road_b_geom,
-        "corridor": corridor,
-        "anchor_a": anchor_a,
-        "anchor_b": anchor_b,
         "mode": mode,
-        "best_pair": best_pair,
-        "best_path": best_path,
-        "best_cost": best_cost,
         "route_edges": route_edges,
     }
 
@@ -740,10 +757,22 @@ def run_city_road_connection_analysis(
 if __name__ == "__main__":
     result = run_city_road_connection_analysis(
         user_city="Kuala Lumpur",
-        road_a_queries=["jalan ampang"],
-        road_b_queries=["jalan ampang"],
+        road_a_queries=["jalan syed putra"],
+        road_b_queries=["Jalan Klang Lama"],
         regions_path="regions.json",
         city_buffer_m=500,
     )
 
-    
+    for c in result["candidates"]:
+        print("\n====================")
+        print("Candidate ID:", c["candidate_id"])
+        print("From:", c["from_road"])
+        print("To:", c["to_road"])
+        print("Via roads:", c["via_roads"])
+        print("Total length:", c["total_length_m"])
+        print("Segment count:", c["segment_count"])
+        print("Connector count:", c["connector_count"])
+        print("Road classes:", c["road_classes"])
+        print("Dominant class:", c["dominant_class"])
+        print("Evidence:", c["evidence"])
+
