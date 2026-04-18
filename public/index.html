@@ -1472,8 +1472,14 @@
     }
 
     async function loadHistories() {
-        const res = await fetch("http://127.0.0.1:5000/api/get_history", {credentials: "include"});
-        const data = await res.json();
+        const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/get_history', {credentials: 'include'})
+
+        if (!response.ok) {
+            console.error("HTTP Error");
+            return;
+        }
+
+        const data = await response.json();
 
         console.log("RAW DATA:", data);
         console.log("IS ARRAY:", Array.isArray(data));
@@ -1528,11 +1534,11 @@
                 createPopups();
                 renderStreetsToCesium(entities);
 
-                await fetch("http://127.0.0.1:5000/api/select_history", {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: data.id })
+                const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/select_history', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({id:data.id})
                 });
 
                 loadHistories();
@@ -1542,16 +1548,16 @@
             div.querySelector(".delete-btn").addEventListener("click", async (e) => {
                 e.stopPropagation();
 
-                const res = await fetch("http://127.0.0.1:5000/api/delete_history", {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: data.id })
+                const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/delete_history', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({id:data.id})
                 });
 
-                const result = await res.json();
+                const result = await response.json();
 
-                if (res.ok && result.status === "done") {
+                if (response.ok && result.status === "ok") {
                     // success then update UI
                     div.remove();
                 } else {
@@ -1564,11 +1570,11 @@
     }
 
     async function addHistory(data) {
-        await fetch("http://127.0.0.1:5000/api/add_history", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({entities: data})
+        const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/add_history', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         });
 
         loadHistories();
