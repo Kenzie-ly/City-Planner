@@ -12,7 +12,16 @@ firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 app = Flask(__name__)
-CORS(app)
+CORS(
+    app,
+    resources={r"/*": {
+        "origins": [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000"
+        ]
+    }},
+    supports_credentials=False
+)
 """
 app.secret_key = "Hackathon"
 CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
@@ -91,8 +100,10 @@ def sendHistoryList():
     histories = getHistoryList()
     return jsonify(histories)
 
-@app.route("/add_history", methods=["POST"])
+@app.route("/add_history", methods=["POST", "OPTIONS"])
 def addNewHistory():
+    if request.method == "OPTIONS":
+        return "", 204
     try:
         data = request.get_json()
         
@@ -112,8 +123,10 @@ def addNewHistory():
             "message": str(e) 
         }), 500
     
-@app.route("/delete_history", methods=["POST"])
+@app.route("/delete_history", methods=["POST", "OPTIONS"])
 def deleteSelectedHistory():
+    if request.method == "OPTIONS":
+        return "", 204
     try:
         data = request.get_json()
 
@@ -132,8 +145,10 @@ def deleteSelectedHistory():
             "message": str(e) 
         }), 500
     
-@app.route("/select_history", methods=["POST"])
+@app.route("/select_history", methods=["POST", "OPTIONS"])
 def selectHistory():
+    if request.method == "OPTIONS":
+        return "", 204
     try:
         data = request.get_json()
 

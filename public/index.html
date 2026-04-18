@@ -1487,14 +1487,14 @@
         const container = document.getElementById("historyContainer");
         container.innerHTML = "";
 
-        if (!Array.isArray(data.entities) || data.entities.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
             container.innerHTML = `
                 <div class="no-history">No history available</div>
             `;
             return;
         }
 
-        data.forEach(data => {
+        data.forEach(item => {
             const div = document.createElement("div");
             div.className = "box";
 
@@ -1502,7 +1502,7 @@
             header.className = "box-header";
 
             const span = document.createElement("span");
-            span.textContent = data.created_at; 
+            span.textContent = item.created_at; 
 
             const deleteBtn = document.createElement("button");
             deleteBtn.className = "delete-btn";
@@ -1512,7 +1512,7 @@
             header.appendChild(deleteBtn);
 
             const small = document.createElement("small");
-            small.textContent = data.last_seen || "";
+            small.textContent = item.last_seen || "";
 
             div.appendChild(header);
             div.appendChild(small);
@@ -1521,16 +1521,16 @@
             div.addEventListener("click", async (e) => {
                 if (e.target.classList.contains("delete-btn")) return;
 
-                entities = data.entities
+                entities = item.entities
 
                 if (!entities) {
                     console.error("No data returned");
                     return;
                 }
                 
-                showMapView();
+                //showMapView();
 
-                renderEntities(entities);
+                //renderEntities(entities);
                 createPopups();
                 renderStreetsToCesium(entities);
 
@@ -1538,7 +1538,7 @@
                     method: 'POST',
                     //credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({id:data.id})
+                    body: JSON.stringify({id:item.id})
                 });
 
                 loadHistories();
@@ -1552,7 +1552,7 @@
                     method: 'POST',
                     //credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({id:data.id})
+                    body: JSON.stringify({id:item.id})
                 });
 
                 const result = await response.json();
