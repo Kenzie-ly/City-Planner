@@ -107,9 +107,27 @@ def clip_graph_to_polygon(G_region, polygon: BaseGeometry):
 def normalize_text(value) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
+
     text = str(value).lower()
+
+    # 🔥 remove road prefixes (CRITICAL)
+    replacements = [
+        "jalan", "jln", "lebuhraya",
+        "jalan raya", "persiaran"
+    ]
+
+    for r in replacements:
+        text = text.replace(r, "")
+
+    # normalize symbols
     text = text.replace("–", "-").replace("—", "-")
-    text = re.sub(r"\s+", " ", text).strip()
+
+    # remove non-alphanumeric
+    text = re.sub(r'[^a-z0-9 ]', ' ', text)
+
+    # collapse spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+
     return text
 
 
@@ -129,13 +147,27 @@ def prepare_edge_text_columns(edges: pd.DataFrame) -> pd.DataFrame:
     return edges
 
 
+def token_match(q: str, name: str) -> bool:
+    q_tokens = set(q.split())
+    name_tokens = set(name.split())
+    return len(q_tokens & name_tokens) >= 2  # threshold
+
+
 def match_road_edges(edges: pd.DataFrame, queries: list[str]) -> pd.DataFrame:
     mask = pd.Series(False, index=edges.index)
 
-    for q in queries:
-        qn = normalize_text(q)
+    queries_norm = [normalize_text(q) for q in queries]
+
+    for qn in queries_norm:
+        if not qn:
+            continue
+
+        # direct match
         mask = mask | edges["name_norm"].str.contains(re.escape(qn), na=False)
         mask = mask | edges["ref_norm"].str.contains(re.escape(qn), na=False)
+
+        # 🔥 fuzzy token match
+        mask = mask | edges["name_norm"].apply(lambda x: token_match(qn, x))
 
     matched = edges[mask].copy()
 
@@ -647,9 +679,34 @@ def run_city_road_connection_analysis(
     city_polygon = city_gdf.iloc[0].geometry
     city_polygon_buffered = buffer_wgs84_geometry_in_meters(city_polygon, city_buffer_m)
 
+
+    #test
+    edges_region = prepare_edge_text_columns(
+        ox.graph_to_gdfs(G_region)[1]
+    )
+
+    debug = edges_region[
+        edges_region["name_norm"].str.contains("ring|lingkar", na=False) |
+        edges_region["ref_norm"].str.contains("28|ft28", na=False)
+    ]
+
+    print("FOUND IN REGION GRAPH:", len(debug))
+    debug_view = debug[["name", "ref"]].copy()
+    debug_view["name"] = debug_view["name"].apply(lambda x: " | ".join(map(str, x)) if isinstance(x, list) else x)
+    debug_view["ref"] = debug_view["ref"].apply(lambda x: " | ".join(map(str, x)) if isinstance(x, list) else x)
+
+    print(debug_view.drop_duplicates().head(20).to_string())
+    #test
+
     G_city, nodes_city, edges_city = clip_graph_to_polygon(G_region, city_polygon_buffered)
     # print("City graph nodes:", len(G_city.nodes))
     # print("City graph edges:", len(G_city.edges))
+
+    # print("FOUND IN CITY GRAPH:", len(
+    #     edges_city[
+    #         edges_city["name_norm"].str.contains("ring|lingkar", na=False)
+    #     ]
+    # ))
 
     # 3. Prepare and match roads
     edges_city = prepare_edge_text_columns(edges_city)
@@ -732,7 +789,7 @@ def run_city_road_connection_analysis(
 
     return {
         "candidates": candidates,
-        "": region,
+        "region": region,
         "city_query": city_query,
         "city_polygon": city_polygon,
         "city_polygon_buffered": city_polygon_buffered,
@@ -757,8 +814,8 @@ def run_city_road_connection_analysis(
 if __name__ == "__main__":
     result = run_city_road_connection_analysis(
         user_city="Kuala Lumpur",
-        road_a_queries=["jalan syed putra"],
-        road_b_queries=["Jalan Klang Lama"],
+        road_a_queries=["Middle Ring Road 2"],
+        road_b_queries=["duke"],
         regions_path="regions.json",
         city_buffer_m=500,
     )
