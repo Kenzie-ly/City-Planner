@@ -1,10 +1,11 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 import uuid
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, request, jsonify, session
+from flask_cors import CORS
 
 cred = credentials.Certificate(
-    "hackathon2026-9c7b8-firebase-adminsdk-fbsvc-f9cd5a6012.json"
+    "hackathon-2eedf-firebase-adminsdk-fbsvc-4f4a7a70c2.json"
 )
 firebase_admin.initialize_app(cred)
 db = firestore.client()
@@ -75,19 +76,19 @@ def deleteHistory(dataId):
 
 app = Flask(__name__)
 app.secret_key = "Hackathon"
+CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
 
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-@app.route("/get_history", methods=["GET"])
+@app.get("/api/get_history")
 def sendHistoryList():
     histories = getHistoryList()
     return jsonify(histories)
 
-@app.route("/add_history", methods=["POST"])
+@app.post("/api/add_history")
 def addNewHistory():
     data = request.get_json()
+    
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON"}), 400
 
     addHistory(data)
 
@@ -95,9 +96,13 @@ def addNewHistory():
         "status": "done"
     })
     
-@app.route("/delete_history", methods=["POST"])
+@app.post("/api/delete_history")
 def deleteSelectedHistory():
     data = request.get_json()
+    
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON"}), 400
+
     dataId = data.get("id")
 
     if not dataId:
@@ -109,9 +114,13 @@ def deleteSelectedHistory():
         "status": "done"
     })
     
-@app.route("/select_history", methods=["POST"])
+@app.post("/api/select_history")
 def selectHistory():
     data = request.get_json()
+    
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON"}), 400
+
     dataId = data.get("id")
 
     if not dataId:
@@ -124,4 +133,4 @@ def selectHistory():
     })
     
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(port = 5000)
