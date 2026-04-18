@@ -1487,7 +1487,7 @@
         const container = document.getElementById("historyContainer");
         container.innerHTML = "";
 
-        if (!Array.isArray(data) || data.length === 0) {
+        if (!Array.isArray(data.entities) || data.entities.length === 0) {
             container.innerHTML = `
                 <div class="no-history">No history available</div>
             `;
