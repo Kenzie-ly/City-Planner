@@ -12,12 +12,14 @@ firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 app = Flask(__name__)
+CORS(app)
+"""
 app.secret_key = "Hackathon"
 CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
 app.config.update(
     SESSION_COOKIE_SAMESITE="None",  # allow cross-site
     SESSION_COOKIE_SECURE=True      # True ONLY if HTTPS
-)
+)"""
 
 def getUserId():
     return "userTest01"
