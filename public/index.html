@@ -7,69 +7,150 @@
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
         :root {
-            --primary: #003366;
-            --bg: #f4f7f9;
-            --border: #ccd6dd;
-            --text: #1c2e42;
-            --muted: #5a6484;
-            --panel: rgba(0, 20, 50, 0.90);
-            --panel-soft: rgba(0, 20, 50, 0.75);
-            --accent: #7ec8f7;
+            --bg: #07111f;
+            --bg-soft: #0c1830;
+            --panel: rgba(13, 24, 44, 0.88);
+            --panel-strong: rgba(10, 18, 34, 0.96);
+            --panel-border: rgba(125, 163, 255, 0.18);
+            --text: #e8eefc;
+            --muted: #8ea3c7;
+            --primary: #4f7cff;
+            --primary-strong: #3a67eb;
+            --accent: #7fe7ff;
+            --success: #35d07f;
+            --danger: #ff6b6b;
+            --warning: #ffb454;
+            --shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+            --radius-xl: 24px;
+            --radius-lg: 18px;
+            --radius-md: 14px;
         }
 
         * {
             box-sizing: border-box;
         }
 
+        html, body {
+            height: 100%;
+        }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg);
             margin: 0;
-            padding: 16px 20px;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(79, 124, 255, 0.18), transparent 26%),
+                radial-gradient(circle at top right, rgba(127, 231, 255, 0.12), transparent 22%),
+                linear-gradient(180deg, #08111f 0%, #091425 42%, #050c18 100%);
             overflow: hidden;
-            height: 100vh;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 36px 36px;
+            mask-image: linear-gradient(180deg, rgba(255,255,255,0.45), transparent 80%);
+            pointer-events: none;
         }
 
         .container {
-            max-width: 1100px;
-            margin: 0 auto;
+            width: min(1440px, calc(100vw - 32px));
+            height: calc(100vh - 32px);
+            margin: 16px auto;
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 32px);
-            gap: 10px;
+            gap: 14px;
         }
 
         header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid var(--primary);
-            padding-bottom: 8px;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 0 6px;
             flex-shrink: 0;
         }
 
-        h1 {
-            font-size: 1.2rem;
-            color: var(--primary);
-            font-weight: 800;
-            text-transform: uppercase;
-            margin: 0;
+        .brand-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        /* ===== FRAME ===== */
+        h1 {
+            margin: 0;
+            font-size: clamp(1.3rem, 1vw + 1rem, 2rem);
+            font-weight: 900;
+            letter-spacing: 0.02em;
+            color: #f4f7ff;
+        }
+
+        .header-subtitle {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .status-pill, .step-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            backdrop-filter: blur(12px);
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 12px rgba(53, 208, 127, 0.7);
+        }
+
         .map-frame {
+            position: relative;
             flex: 1;
             min-height: 0;
-            border-radius: 8px;
-            border: 2px solid var(--border);
             overflow: hidden;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            position: relative;
-            background: #eef3f8;
+            border-radius: 30px;
+            border: 1px solid var(--panel-border);
+            background:
+                linear-gradient(180deg, rgba(14, 25, 48, 0.94) 0%, rgba(8, 16, 31, 0.95) 100%);
+            box-shadow: var(--shadow);
         }
 
-        /* Both views live inside the same frame */
+        .map-frame::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(127,231,255,0.28), rgba(79,124,255,0.12), rgba(255,255,255,0.04));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
         .frame-view {
             position: absolute;
             inset: 0;
@@ -80,39 +161,73 @@
             display: block;
         }
 
-        /* ===== CHAT VIEW ===== */
         #chatView {
             display: none;
             flex-direction: column;
+            padding: 18px;
             background:
-                radial-gradient(circle at top right, rgba(126,200,247,0.18), transparent 28%),
-                linear-gradient(180deg, #f8fbff 0%, #eef4fa 100%);
-            padding: 14px;
+                radial-gradient(circle at top right, rgba(79,124,255,0.14), transparent 24%),
+                radial-gradient(circle at top left, rgba(127,231,255,0.08), transparent 24%),
+                linear-gradient(180deg, rgba(14,25,48,0.92) 0%, rgba(8,16,31,0.96) 100%);
         }
 
         #chatView.active {
             display: flex;
         }
 
+        .chat-shell {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            gap: 14px;
+        }
+
         .chat-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 4px 6px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
             flex-shrink: 0;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #d7e1ea;
-            margin-bottom: 12px;
+        }
+
+        .chat-header-left {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+
+        .agent-badge {
+            width: 48px;
+            height: 48px;
+            border-radius: 16px;
+            display: grid;
+            place-items: center;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, rgba(79,124,255,0.26), rgba(127,231,255,0.18));
+            border: 1px solid rgba(127,231,255,0.2);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
         }
 
         .chat-title {
-            font-size: 1rem;
+            font-size: 1.35rem;
             font-weight: 800;
-            color: var(--primary);
-            letter-spacing: 0.02em;
+            letter-spacing: 0.01em;
+            color: #f4f7ff;
         }
 
         .chat-subtitle {
-            font-size: 0.78rem;
+            margin-top: 5px;
             color: var(--muted);
-            margin-top: 4px;
-            line-height: 1.45;
+            line-height: 1.55;
+            font-size: 0.92rem;
+            max-width: 720px;
+        }
+
+        .chat-stage {
+            flex-shrink: 0;
         }
 
         .chat-messages {
@@ -121,209 +236,347 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            padding-right: 4px;
+            gap: 14px;
+            padding: 4px 6px 132px 2px;
             scroll-behavior: smooth;
+            scroll-padding-bottom: 132px;
         }
 
         .chat-messages::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .chat-messages::-webkit-scrollbar-track {
-            background: transparent;
+            width: 10px;
         }
 
         .chat-messages::-webkit-scrollbar-thumb {
-            background: rgba(0, 51, 102, 0.18);
+            background: rgba(138, 164, 211, 0.2);
             border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
         }
 
         .chat-bubble {
-            padding: 10px;
-            margin: 8px;
-            border-radius: 10px;
-            max-width: 80%;
-        }
-
-        .chat-bubble.assistant {
-            background: #f5f5f5;
-        }
-
-        .json-block {
-            background: #1e1e1e;
-            color: #00ffcc;
-            padding: 10px;
-            border-radius: 8px;
-            overflow-x: auto;
-            font-size: 12px;
-        }
-
-        .final-question {
-            margin-top: 12px;
-            padding: 10px;
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
+            max-width: min(78%, 860px);
+            padding: 18px 18px;
+            border-radius: 22px;
+            line-height: 1.62;
+            font-size: 1.02rem;
+            position: relative;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.16);
+            white-space: normal;
+            word-break: break-word;
         }
 
         .chat-bubble.user {
             align-self: flex-end;
-            background: var(--primary);
-            color: #fff;
-            border-bottom-right-radius: 4px;
+            background: linear-gradient(135deg, #3657d6 0%, #4a75ff 100%);
+            color: #f7faff;
+            border-bottom-right-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
-        .chat-bubble.agent {
+        .chat-bubble.agent,
+        .chat-bubble.assistant {
             align-self: flex-start;
-            background: #ffffff;
+            background: linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.045) 100%);
             color: var(--text);
-            border: 1px solid #d6e0ea;
-            border-bottom-left-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-bottom-left-radius: 8px;
+            backdrop-filter: blur(10px);
         }
 
         .chat-bubble.system {
             align-self: center;
-            background: rgba(0, 51, 102, 0.08);
-            color: var(--primary);
-            border: 1px solid rgba(0, 51, 102, 0.12);
-            font-size: 0.76rem;
-            font-weight: 600;
-            text-align: center;
-            max-width: 90%;
-        }
-
-        .chat-input-row {
-            flex-shrink: 0;
-            display: flex;
-            gap: 10px;
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #d7e1ea;
-        }
-
-        .chat-input-row input,
-        #aiInput {
-            flex: 1;
-            padding: 12px 14px;
-            border-radius: 8px;
-            border: 2px solid var(--border);
-            font-size: 0.9rem;
-            outline: none;
-            font-family: inherit;
-            background: #fff;
-        }
-
-        .chat-input-row input:focus,
-        #aiInput:focus {
-            border-color: var(--primary);
-        }
-
-        .chat-input-row button,
-        button#btnSend {
-            padding: 0 22px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
+            max-width: 92%;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: rgba(127, 231, 255, 0.08);
+            border: 1px solid rgba(127, 231, 255, 0.16);
+            color: #b4ebff;
+            font-size: 0.78rem;
             font-weight: 700;
-            font-size: 0.9rem;
-            transition: 0.2s;
+            text-align: center;
+            letter-spacing: 0.02em;
+            box-shadow: none;
+        }
+
+        .chat-bubble.loading {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.05);
+            color: var(--muted);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-bottom-left-radius: 8px;
+            font-style: italic;
+        }
+
+        .json-block {
+            margin-top: 10px;
+            background: rgba(3, 7, 18, 0.95);
+            color: #86ffe8;
+            padding: 12px 14px;
+            border-radius: 14px;
+            overflow-x: auto;
+            font-size: 12px;
+            border: 1px solid rgba(127,231,255,0.14);
+        }
+
+        .final-question {
+            margin-top: 14px;
+            padding: 14px 16px;
+            background: rgba(255, 180, 84, 0.12);
+            border-left: 4px solid var(--warning);
+            border-radius: 14px;
+            color: #ffe5b8;
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            gap: 5px;
+            align-items: center;
+            margin-left: 8px;
+        }
+
+        .typing-dots span {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.5;
+            display: inline-block;
+            animation: blinkDots 1.4s infinite ease-in-out both;
+        }
+
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes blinkDots {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+
+        .city-chips {
+            position: absolute;
+            left: 18px;
+            right: 18px;
+            bottom: 92px;
+            z-index: 8;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(7, 13, 26, 0.72);
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(12px);
+        }
+
+        .city-chips-label {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--muted);
+            margin-right: 4px;
             white-space: nowrap;
         }
 
-        .chat-input-row button:hover,
-        button#btnSend:hover {
-            background: #0056b3;
+        .chip {
+            padding: 9px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(102, 137, 228, 0.38);
+            background: rgba(79,124,255,0.08);
+            color: #cfe0ff;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.18s ease;
+            white-space: nowrap;
         }
 
+        .chip:hover {
+            background: rgba(79,124,255,0.18);
+            border-color: rgba(127,231,255,0.38);
+            transform: translateY(-1px);
+            color: #fff;
+        }
+
+        .input-group {
+            position: absolute;
+            left: 18px;
+            right: 18px;
+            bottom: 18px;
+            z-index: 9;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 10px;
+            border-radius: 22px;
+            background: rgba(7, 13, 26, 0.88);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 16px 34px rgba(0,0,0,0.22);
+            backdrop-filter: blur(12px);
+        }
+
+        .input-group input,
+        .chat-input-row input,
+        #aiInput {
+            flex: 1;
+            min-width: 0;
+            padding: 17px 18px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: 0.98rem;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .input-group input::placeholder,
+        #aiInput::placeholder {
+            color: #7084a9;
+        }
+
+        .input-group input:focus,
+        #aiInput:focus {
+            border-color: rgba(127,231,255,0.4);
+            background: rgba(255,255,255,0.07);
+            box-shadow: 0 0 0 4px rgba(79,124,255,0.14);
+        }
+
+        .input-group button,
+        .chat-input-row button,
+        button#btnSend {
+            min-width: 124px;
+            padding: 16px 20px;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            font-weight: 800;
+            font-size: 0.92rem;
+            letter-spacing: 0.03em;
+            color: #f7fbff;
+            background: linear-gradient(135deg, #406cf5 0%, #5a88ff 100%);
+            box-shadow: 0 10px 24px rgba(58, 103, 235, 0.35);
+            transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
+        }
+
+        .input-group button:hover,
+        .chat-input-row button:hover,
+        button#btnSend:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.05);
+        }
+
+        .input-group button:disabled,
         .chat-input-row button:disabled,
         button#btnSend:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+            transform: none;
         }
 
-        .chat-top-actions {
+        .clear-row {
+            position: absolute;
+            top: 18px;
+            left: 18px;
+            right: 18px;
+            z-index: 11;
             display: flex;
-            gap: 8px;
-            margin-top: 10px;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
-        .chat-mini-btn {
-            padding: 6px 12px;
-            border-radius: 999px;
-            border: 1px solid var(--primary);
-            background: transparent;
-            color: var(--primary);
-            font-size: 0.72rem;
+        .btn-clear {
+            padding: 10px 15px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(7, 13, 26, 0.78);
+            color: #dbe6ff;
+            font-size: 0.82rem;
             font-weight: 700;
             cursor: pointer;
-            transition: 0.2s;
+            backdrop-filter: blur(10px);
+            transition: 0.18s ease;
         }
 
-        .chat-mini-btn:hover {
-            background: var(--primary);
-            color: #fff;
+        .btn-clear:hover {
+            transform: translateY(-1px);
         }
 
-        /* ===== MAP VIEW ===== */
-        #mapView {
-            display: none;
+        .btn-clear-last { border-color: rgba(255,180,84,0.22); }
+        .btn-clear-all { border-color: rgba(255,107,107,0.22); }
+        .btn-clear:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+        .buildings-count {
+            margin-left: auto;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: rgba(7, 13, 26, 0.78);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+            backdrop-filter: blur(10px);
         }
 
-        #mapView.active {
-            display: block;
+        #status {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            z-index: 11;
+            max-width: min(420px, calc(100% - 36px));
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: rgba(7, 13, 26, 0.8);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: 20px;
+            backdrop-filter: blur(10px);
         }
 
-        #map {
-            height: 100%;
-            width: 100%;
-        }
+        #mapView { display: none; }
+        #mapView.active { display: block; }
+        #map { height: 100%; width: 100%; }
 
-        /* Optional back-to-chat button */
         #backToChatBtn {
             position: absolute;
-            top: 12px;
-            right: 12px;
+            top: 18px;
+            right: 18px;
             z-index: 25;
-            padding: 7px 14px;
+            padding: 10px 15px;
             border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.15);
-            background: rgba(0, 20, 50, 0.88);
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(7, 13, 26, 0.82);
             color: #fff;
-            font-size: 0.74rem;
-            font-weight: 700;
+            font-size: 0.78rem;
+            font-weight: 800;
             cursor: pointer;
-            backdrop-filter: blur(6px);
-            transition: 0.2s;
+            backdrop-filter: blur(10px);
         }
 
-        #backToChatBtn:hover {
-            background: rgba(0, 51, 102, 0.96);
-        }
-
-        /* Banner */
         #placeBanner {
             position: absolute;
-            top: 12px;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,51,102,0.88);
-            color: #fff;
-            padding: 7px 20px;
-            border-radius: 50px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            pointer-events: none;
             z-index: 10;
-            letter-spacing: 0.04em;
-            backdrop-filter: blur(4px);
-            transition: background 0.3s;
+            padding: 12px 18px;
+            border-radius: 999px;
+            background: rgba(7, 13, 26, 0.82);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #eef5ff;
+            font-size: 0.82rem;
+            font-weight: 700;
+            backdrop-filter: blur(10px);
             white-space: nowrap;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
         }
 
         #placeBanner.placed {
-            background: rgba(39,174,96,0.92);
+            background: rgba(26, 86, 54, 0.94);
+            border-color: rgba(53,208,127,0.22);
         }
 
         /* Legend */
@@ -345,10 +598,10 @@
 
         #legend b {
             display: block;
-            font-size: 0.7rem;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             color: var(--accent);
-            letter-spacing: 0.07em;
+            font-size: 0.76rem;
+            letter-spacing: 0.08em;
         }
 
         .leg-grid {
@@ -383,30 +636,25 @@
             padding-top: 4px;
         }
 
-        /* OSM note */
         #osmNote {
             position: absolute;
-            bottom: 12px;
-            right: 12px;
-            background: rgba(0,20,50,0.75);
-            color: #aac4e0;
-            border-radius: 8px;
-            padding: 6px 12px;
-            font-size: 0.65rem;
+            right: 18px;
+            bottom: 18px;
             z-index: 10;
-            backdrop-filter: blur(4px);
+            padding: 10px 13px;
+            border-radius: 14px;
+            background: rgba(7, 13, 26, 0.78);
             border: 1px solid rgba(255,255,255,0.08);
+            color: #b6c9e9;
+            font-size: 0.72rem;
+            backdrop-filter: blur(10px);
         }
 
-        /* Loader inside frame */
         #mapLoader {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 20, 50, 0.75);
-            backdrop-filter: blur(4px);
+            inset: 0;
+            background: rgba(4, 10, 19, 0.76);
+            backdrop-filter: blur(5px);
             display: none;
             align-items: center;
             justify-content: center;
@@ -416,18 +664,18 @@
         .loader-content {
             text-align: center;
             color: white;
-            font-size: 0.9rem;
-            font-weight: 600;
+            font-size: 0.92rem;
+            font-weight: 700;
         }
 
         .spinner {
-            border: 5px solid rgba(255,255,255,0.2);
-            border-top: 5px solid #00ccff;
+            border: 5px solid rgba(255,255,255,0.16);
+            border-top: 5px solid var(--accent);
             border-radius: 50%;
-            width: 42px;
-            height: 42px;
+            width: 48px;
+            height: 48px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
+            margin: 0 auto 14px;
         }
 
         @keyframes spin {
@@ -435,159 +683,41 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Popup */
         #map-popup {
             position: absolute;
             display: none;
-            width: 220px;
-            background: rgba(0, 20, 50, 0.95);
+            width: 240px;
+            background: rgba(7, 13, 26, 0.95);
             color: white;
-            border-radius: 10px;
-            padding: 12px;
+            border-radius: 18px;
+            padding: 14px;
             z-index: 30;
-            border: 1px solid rgba(255,255,255,0.12);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 18px 36px rgba(0,0,0,0.35);
             pointer-events: none;
+            backdrop-filter: blur(12px);
         }
 
         #popup-badge {
             display: inline-block;
+            margin-bottom: 6px;
             font-size: 0.65rem;
-            font-weight: 700;
+            font-weight: 800;
             text-transform: uppercase;
             color: var(--accent);
-            margin-bottom: 6px;
+            letter-spacing: 0.08em;
         }
 
         #popup-name {
-            font-size: 0.9rem;
-            font-weight: 700;
+            font-size: 0.96rem;
+            font-weight: 800;
             margin-bottom: 6px;
         }
 
         #popup-blurb {
-            font-size: 0.78rem;
-            line-height: 1.4;
-            color: #d5e3f0;
-        }
-
-        /* City chips */
-        .city-chips {
-            flex-shrink: 0;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .city-chips-label {
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: var(--primary);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-right: 4px;
-            white-space: nowrap;
-        }
-
-        .chip {
-            padding: 5px 12px;
-            border-radius: 50px;
-            border: 1px solid var(--primary);
-            background: transparent;
-            color: var(--primary);
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.15s, color 0.15s;
-            white-space: nowrap;
-        }
-
-        .chip:hover {
-            background: var(--primary);
-            color: #fff;
-        }
-
-        /* External input row below frame, if you still keep it */
-        .input-group {
-            flex-shrink: 0;
-            display: flex;
-            gap: 10px;
-        }
-
-        .input-group input {
-            flex: 1;
-            padding: 12px 16px;
-            border-radius: 6px;
-            border: 2px solid var(--border);
-            font-size: 0.9rem;
-            outline: none;
-            font-family: inherit;
-        }
-
-        .input-group input:focus {
-            border-color: var(--primary);
-        }
-
-        /* Clear row */
-        .clear-row {
-            flex-shrink: 0;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .btn-clear {
-            padding: 6px 16px;
-            border-radius: 6px;
-            font-size: 0.78rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.2s;
-            border: 2px solid;
-            font-family: inherit;
-        }
-
-        .btn-clear-last {
-            background: transparent;
-            border-color: #e67e22;
-            color: #e67e22;
-        }
-
-        .btn-clear-last:hover {
-            background: #e67e22;
-            color: #fff;
-        }
-
-        .btn-clear-all {
-            background: transparent;
-            border-color: #c0392b;
-            color: #c0392b;
-        }
-
-        .btn-clear-all:hover {
-            background: #c0392b;
-            color: #fff;
-        }
-
-        .btn-clear:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-        }
-
-        .buildings-count {
-            margin-left: auto;
-            font-size: 0.75rem;
-            color: var(--muted);
-            font-weight: 600;
-        }
-
-        #status {
-            flex-shrink: 0;
             font-size: 0.8rem;
-            color: var(--muted);
-            font-weight: 500;
-            min-height: 18px;
+            line-height: 1.5;
+            color: #d4e2f8;
         }
 
         .cesium-viewer-animationContainer,
@@ -617,26 +747,113 @@
         body.map-mode .input-group {
             display: none !important;
         }
+
+        @media (max-width: 980px) {
+            .container {
+                width: calc(100vw - 18px);
+                height: calc(100vh - 18px);
+                margin: 9px auto;
+            }
+
+            .map-frame {
+                border-radius: 22px;
+            }
+
+            .chat-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .chat-bubble {
+                max-width: 92%;
+            }
+
+            .city-chips {
+                bottom: 86px;
+                max-height: 100px;
+                overflow-y: auto;
+            }
+
+            #legend, #osmNote {
+                display: none;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body {
+                overflow: auto;
+            }
+
+            .container {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                gap: 10px;
+                padding: 10px;
+            }
+
+            header {
+                padding: 0 2px;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .map-frame {
+                border-radius: 18px;
+            }
+
+            .city-chips,
+            .input-group {
+                left: 10px;
+                right: 10px;
+            }
+
+            .input-group button,
+            button#btnSend {
+                min-width: 98px;
+            }
+
+            #placeBanner {
+                max-width: calc(100% - 20px);
+                text-align: center;
+                white-space: normal;
+            }
+        }
     </style>
 </head>
-<body>
+<body class="chat-mode">
 <div class="container">
     <header>
-        <h1>MY Geospatial Data Center — Malaysia</h1>
-        <div style="font-size:0.7rem;color:#5a6484;">SYSTEM STATUS: <span style="color:#27ae60;font-weight:bold;">ONLINE</span></div>
+        <div class="brand-block">
+            <h1>Infrastructure Planning Agent — Malaysia</h1>
+            <div class="header-subtitle">Geospatial planning workspace for analyzing cities, mobility, and infrastructure improvements.</div>
+        </div>
+        <div class="header-right">
+            <div class="status-pill"><span class="status-dot"></span> System online</div>
+            <div class="step-pill">Interactive workflow</div>
+        </div>
     </header>
 
     <div class="map-frame">
-        <!-- CHAT MODE -->
         <div id="chatView" class="frame-view active">
-            <div class="chat-header">
-                <div class="chat-title">Infrastructure Planning Agent</div>
-                <div class="chat-subtitle">
-                    Describe the place, issue, or improvement you want to plan.
+            <div class="chat-shell">
+                <div class="chat-header">
+                    <div class="chat-header-left">
+                        <div class="agent-badge">🛰️</div>
+                        <div>
+                            <div class="chat-title">Infrastructure Planning Agent</div>
+                            <div class="chat-subtitle">
+                                Describe the location, issue, or improvement you want to analyze. Start with one or two Malaysian cities or towns, and the agent will guide the rest of the workflow.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-stage">
+                        <div class="step-pill">Step-based planning</div>
+                    </div>
                 </div>
-            </div>
 
-            <div id="chatMessages" class="chat-messages"></div>
+                <div id="chatMessages" class="chat-messages"></div>
+            </div>
         </div>
 
         <div id="mapView" class="frame-view">
@@ -650,7 +867,6 @@
 
             <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
 
-            <!-- popups card for description-->
             <div id="map-popup">
                 <div id="popup-badge"></div>
                 <div id="popup-name"></div>
@@ -693,46 +909,39 @@
         </div>
     </div>
 
-    <div class="city-chips">
-        <span class="city-chips-label">Quick Cities:</span>
-        <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
-        <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
-        <button class="chip" onclick="flyToCity('Johor Bahru',1.4927,103.7414)">Johor Bahru</button>
-        <button class="chip" onclick="flyToCity('Penang',5.4141,100.3288)">Penang</button>
-        <button class="chip" onclick="flyToCity('Kota Kinabalu',5.9804,116.0735)">Kota Kinabalu</button>
-        <button class="chip" onclick="flyToCity('Kuching',1.5497,110.3592)">Kuching</button>
-        <button class="chip" onclick="flyToCity('Ipoh',4.5975,101.0901)">Ipoh</button>
-        <button class="chip" onclick="flyToCity('Shah Alam',3.0733,101.5185)">Shah Alam</button>
-        <button class="chip" onclick="flyToCity('Kota Bharu',6.1254,102.2381)">Kota Bharu</button>
-        <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
+        <!-- <div class="city-chips">
+            <span class="city-chips-label">Quick select:</span>
+            <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
+            <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
+            <button class="chip" onclick="flyToCity('Johor Bahru',1.4927,103.7414)">Johor Bahru</button>
+            <button class="chip" onclick="flyToCity('Penang',5.4141,100.3288)">Penang</button>
+            <button class="chip" onclick="flyToCity('Kota Kinabalu',5.9804,116.0735)">Kota Kinabalu</button>
+            <button class="chip" onclick="flyToCity('Kuching',1.5497,110.3592)">Kuching</button>
+            <button class="chip" onclick="flyToCity('Ipoh',4.5975,101.0901)">Ipoh</button>
+            <button class="chip" onclick="flyToCity('Shah Alam',3.0733,101.5185)">Shah Alam</button>
+            <button class="chip" onclick="flyToCity('Kota Bharu',6.1254,102.2381)">Kota Bharu</button>
+            <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
+        </div> -->
+
+        <div class="input-group">
+            <input
+                type="text"
+                id="aiInput"
+                placeholder="Enter a Malaysian city, town, or planning request..."
+                onkeydown="if(event.key==='Enter') submitPrompt()"
+            >
+            <button onclick="submitPrompt()" id="btnSend">Send</button>
+        </div>
+
+        <div class="clear-row">
+            <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last Building</button>
+            <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All Buildings</button>
+            <span class="buildings-count" id="buildingCount">No buildings placed</span>
+        </div>
+
+        <div id="status">Step 1: Click on the map to choose where to build.</div>
     </div>
-
-    <!-- <div class="input-group">
-        <input type="text" id="aiInput"
-            placeholder="1️⃣ Click map to place  →  2️⃣ Type your prompt  →  3️⃣ SIMULATE"
-            onkeydown="if(event.key==='Enter') sendPrompt()">
-        <button onclick="sendPrompt()" id="btnSend">SIMULATE</button>
-    </div> -->
-
-    <div class="input-group">
-        <input
-            type="text"
-            id="aiInput"
-            placeholder="Type your message to the agent..."
-            onkeydown="if(event.key==='Enter') submitPrompt()"
-        >
-        <button onclick="submitPrompt()" id="btnSend">SEND</button>
-    </div>
-
-    <div class="clear-row">
-        <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last Building</button>
-        <button class="btn-clear btn-clear-all"  id="btnClearAll"  onclick="clearAll()"  disabled>🗑 Clear All Buildings</button>
-        <span class="buildings-count" id="buildingCount">No buildings placed</span>
-    </div>
-
-    <div id="status">Step 1: Click on the map to choose where to build.</div>
 </div>
-
 <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
 <script src="cesiumRenderer.js"></script>
 <script>
@@ -1216,7 +1425,6 @@
             const data = await response.json();
 
             if (data.status === 'ok') {
-                console.log(data.message)
                 return data.message; // 👈 was missing the return!
             } else {
                 console.error('API error:', data.message);
@@ -1262,7 +1470,7 @@
         });
 
         // // Optional: Make the camera zoom to the newly added streets
-        // viewer.zoomTo(viewer.entities);
+        viewer.zoomTo(viewer.entities);
     }
 
     function showLoader() {
@@ -1340,7 +1548,7 @@
 
     async function startWorkflow() {
         try {
-            const response = await fetch("http://127.0.0.1:8000/api/start", {
+            const response = await fetch("http://localhost:8000/api/start", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({})
@@ -1365,6 +1573,27 @@
         }
     }
 
+    function addLoadingMessage(text = "Thinking") {
+        const chatMessages = document.getElementById("chatMessages");
+
+        const bubble = document.createElement("div");
+        bubble.className = "chat-bubble loading";
+        bubble.id = "loadingBubble";
+        bubble.innerHTML = `
+            <span>${text}</span>
+            <span class="typing-dots">
+                <span></span><span></span><span></span>
+            </span>
+        `;
+
+        chatMessages.appendChild(bubble);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function removeLoadingMessage() {
+        const bubble = document.getElementById("loadingBubble");
+        if (bubble) bubble.remove();
+    }
 
     async function submitPrompt() {
         const input = document.getElementById("aiInput");
@@ -1375,10 +1604,16 @@
 
         addChatMessage("user", text);
         input.value = "";
+
         btn.disabled = true;
+        input.disabled = true;
+        btn.textContent = "WAIT...";
+        input.placeholder = "The agent is thinking...";
+
+        addLoadingMessage("Thinking");
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/api/chat", {
+            const response = await fetch("http://localhost:8000/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1389,6 +1624,8 @@
 
             const data = await response.json();
             console.log("CHAT RESPONSE:", data);
+
+            removeLoadingMessage();
 
             if (!data.ok) {
                 addChatMessage("agent", "Something went wrong.");
@@ -1401,9 +1638,9 @@
                 showMapView();
 
                 if (data.entities) {
-                    renderEntities(data.entities);
+                    renderEntities(data);
                     createPopups();
-                    renderStreetsToCesium(data.entities);
+                    renderStreetsToCesium(data);
 
                     if (data.camera) {
                         flyToCamera(data.camera);
@@ -1412,15 +1649,34 @@
             }
 
         } catch (err) {
+            removeLoadingMessage();
             addChatMessage("agent", "Error: " + err.message);
         } finally {
             btn.disabled = false;
+            input.disabled = false;
+            btn.textContent = "SEND";
+            input.placeholder = "Type your message to the agent...";
+            input.focus();
         }
     }
         
     async function main() {
-        showChatView();    
+        showChatView();
         await startWorkflow();
+
+        //manual input
+        // showMapView();
+        // const data = await callApi();  
+        // console.log("API RETURN:", data);
+
+        // if (!data) {
+        //     console.error("No data returned");
+        //     return;
+        // }
+
+        // renderEntities(data);
+        // createPopups();
+        // renderStreetsToCesium(data);
     }
 
     main();
