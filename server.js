@@ -21,19 +21,27 @@ app.post('/api/map-prompt', async (req, res) => {
             2. If user wants to BUILD or SIMULATE → "isNavigation": false, fill all fields
             3. Coordinates must be within Malaysia: lat 0.8 to 7.4, lng 99.5 to 119.5
             4. Extract building name from prompt. If none given, create a realistic Malaysian name.
-            5. Classify the building into ONE of these 6 categories and use the exact color:
-
-            COMMERCIAL (malls, retail stores, office towers, office areas, hotels, resorts, airports, restaurants, cafes, food courts, logistics hubs, warehouses, theme parks, mixed-use developments) → color "#E53935"
-            RESIDENTIAL (houses, apartments, condominiums, housing estates, kampung, residential areas) → color "#FF8C00"
-            INDUSTRIAL (factories, refineries, manufacturing plants, storage tanks, industrial parks) → color "#FFD700"
-            PUBLIC (hospitals, clinics, government buildings, LRT stations, MRT stations, KTM stations, bus terminals, schools, universities, civic centres, community halls) → color "#43A047"
-            RELIGIOUS (mosques, churches, temples, surau, shrine) → color "#00BCD4"
-            OTHER (anything that does not fit above) → color "#9575CD"
-
-            Return the category name as buildingType (e.g. "commercial", "residential", "industrial", "public", "religious", "other").
+            5. Building type and color mapping (these are hologram display colors, make them vivid and visible):
+            mall → "#00BFFF"
+            retail_store → "#FF4444"
+            government_building → "#FF8C00"
+            office_tower → "#FFD700"
+            office_area → "#90EE90"
+            hotel → "#00FFFF"
+            hospital → "#4169E1"
+            lrt_station → "#9B59B6"
+            bus_terminal → "#FF69B4"
+            airport → "#F0A500"
+            warehouse → "#708090"
+            logistics_hub → "#CD853F"
+            restaurant → "#FF7F50"
+            theme_park → "#32CD32"
+            mixed_use → "#FF00FF"
+            residential → "#98FB98"
+            other → "#00FFFF"
 
             JSON format (return exactly this structure):
-            {"isNavigation":false,"center":[latitude,longitude],"buildingName":"Name","buildingType":"commercial|residential|industrial|public|religious|other","color":"#hex","description":"One sentence.","building":{"length":number,"width":number,"height":number}}
+            {"isNavigation":false,"center":[latitude,longitude],"buildingName":"Name","buildingType":"type","color":"#hex","description":"One sentence.","building":{"length":number,"width":number,"height":number}}
 
             For navigation only:
             {"isNavigation":true,"center":[latitude,longitude],"buildingName":"Place Name","description":"Navigating to Place Name."}`;
@@ -88,21 +96,10 @@ app.post('/api/map-prompt', async (req, res) => {
         parsed.center[0] = Math.min(Math.max(parsed.center[0], 0.8), 7.4);
         parsed.center[1] = Math.min(Math.max(parsed.center[1], 99.5), 119.5);
 
-        // Enforce correct color per category (in case AI goes rogue)
-        const categoryColors = {
-            commercial:  '#E53935',
-            residential: '#FF8C00',
-            industrial:  '#FFD700',
-            public:      '#43A047',
-            religious:   '#00BCD4',
-            other:       '#9575CD'
-        };
-        if (parsed.buildingType && categoryColors[parsed.buildingType]) {
-            parsed.color = categoryColors[parsed.buildingType];
-        }
-        // Safety fallback for unknown/missing type
-        if (!parsed.color || parsed.color.toUpperCase() === '#FFFFFF' || parsed.color.toUpperCase() === '#F5F5F5') {
-            parsed.color = '#9575CD';
+        // Safety: never allow white/near-white colors for buildings (they vanish against OSM buildings)
+        const nearWhiteColors = ['#F5F5F5','#FFFFFF','#FFF','#FFFAFA','#FEFEFE','#F0F0F0'];
+        if (parsed.color && nearWhiteColors.includes(parsed.color.toUpperCase())) {
+            parsed.color = '#00BFFF'; // fallback to deep sky blue
         }
 
         console.log(`✓ [${parsed.isNavigation ? 'NAV' : 'BUILD'}] ${parsed.buildingName ?? parsed.description}`);

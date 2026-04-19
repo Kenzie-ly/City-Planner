@@ -326,21 +326,21 @@
             background: rgba(39,174,96,0.92);
         }
 
-        /* ── CHANGE 1: Legend — 6 merged categories, single column with subtitles ── */
+        /* Legend */
         #legend {
             position: absolute;
             bottom: 12px;
             left: 12px;
-            background: rgba(0,20,50,0.92);
+            background: rgba(0,20,50,0.90);
             color: #fff;
             border-radius: 10px;
             padding: 10px 14px;
-            font-size: 0.68rem;
+            font-size: 0.67rem;
             z-index: 10;
             backdrop-filter: blur(6px);
             border: 1px solid rgba(255,255,255,0.1);
-            max-width: 210px;
-            line-height: 1.85;
+            max-width: 320px;
+            line-height: 1.7;
         }
 
         #legend b {
@@ -351,28 +351,36 @@
             letter-spacing: 0.07em;
         }
 
+        .leg-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px 14px;
+        }
+
         .leg-item {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             white-space: nowrap;
         }
 
         .leg-dot {
-            width: 11px;
-            height: 11px;
+            width: 10px;
+            height: 10px;
             border-radius: 2px;
             flex-shrink: 0;
-            border: 1px solid rgba(255,255,255,0.25);
+            border: 1px solid rgba(255,255,255,0.3);
         }
 
-        .leg-sub {
-            font-size: 0.6rem;
-            color: rgba(255,255,255,0.45);
-            margin-left: 19px;
-            margin-top: -2px;
-            margin-bottom: 2px;
-            line-height: 1.3;
+        .leg-divider {
+            grid-column: 1 / -1;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            margin: 4px 0 2px;
+            font-size: 0.67rem;
+            color: var(--accent);
+            letter-spacing: 0.07em;
+            font-weight: 700;
+            padding-top: 4px;
         }
 
         /* OSM note */
@@ -649,31 +657,39 @@
                 <div id="popup-blurb"></div>
             </div>
 
-            <!-- ── CHANGE 1: Legend — 6 merged categories ── -->
+             <!-- LEGEND -->
             <div id="legend">
-                <b>BUILDING CATEGORIES</b>
+                <b>AI BUILDING TYPES</b>
+                <div class="leg-grid">
+                    <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
 
-                <div class="leg-item"><div class="leg-dot" style="background:#E53935"></div><strong>Commercial</strong></div>
-                <div class="leg-sub">Mall · Retail · Office · Hotel · Airport<br>Restaurant · Logistics · Theme Park</div>
-
-                <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div><strong>Residential</strong></div>
-                <div class="leg-sub">Houses · Apartments · Housing Estate</div>
-
-                <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div><strong>Industrial</strong></div>
-                <div class="leg-sub">Factory · Refinery · Warehouse · Plant</div>
-
-                <div class="leg-item"><div class="leg-dot" style="background:#43A047"></div><strong>Public</strong></div>
-                <div class="leg-sub">Hospital · Gov't · LRT/MRT/KTM<br>Bus Terminal · School · Civic</div>
-
-                <div class="leg-item"><div class="leg-dot" style="background:#00BCD4"></div><strong>Religious</strong></div>
-                <div class="leg-sub">Mosque · Church · Temple · Surau</div>
-
-                <div class="leg-item"><div class="leg-dot" style="background:#9575CD"></div><strong>Other</strong></div>
-                <div class="leg-sub">Mixed-use · Unclassified</div>
+                    <!-- OSM real-world buildings section -->
+                    <div class="leg-divider">REAL-WORLD BUILDINGS</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
+                    <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
+                </div>
             </div>
-
             <!-- OSM note -->
-            <div id="osmNote">🏙️ Coloured buildings = real-world (OSM data)</div>
+            <div id="osmNote">🏙️ Grey buildings = existing real-world structures</div>
         </div>
     </div>
 
@@ -730,25 +746,17 @@
     function initMapIfNeeded() {
         if (viewer) return;
 
-        // ── CHANGE 2: Only keep 3 Bing Maps options in the base layer picker ──
-        const allViewModels = Cesium.createDefaultImageryProviderViewModels();
-        const bingViewModels = allViewModels.filter(vm =>
-            vm.name === 'Bing Maps Aerial' ||
-            vm.name === 'Bing Maps Aerial with Labels' ||
-            vm.name === 'Bing Maps Roads'
-        );
-
         viewer = new Cesium.Viewer('map', {
-            imageryProviderViewModels: bingViewModels,
-            selectedImageryProviderViewModel: bingViewModels[0],
-            terrainProviderViewModels: [],
             terrain: Cesium.Terrain.fromWorldTerrain(),
-            baseLayerPicker: true,
+            baseLayer: Cesium.ImageryLayer.fromWorldImagery({
+                style: Cesium.IonWorldImageryStyle.SENTINEL2
+            }),
             animation: false,
             timeline: false,
             geocoder: false,
             homeButton: false,
             sceneModePicker: false,
+            baseLayerPicker: false,
             navigationHelpButton: false,
             fullscreenButton: false,
             infoBox: true,
@@ -790,31 +798,37 @@
             }
         });
 
-        // ── CHANGE 3: OSM 3D buildings — 6 merged category colors ──
+        // ── OSM 3D BUILDINGS — styled as warm grey so they don't look white ──
         (async () => {
             try {
                 const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
 
+                // Apply a style so buildings render as a consistent warm dark grey
+                // instead of the default texture-less white
+                // Color OSM buildings by their type tag — matches our legend colors
                 tileset.style = new Cesium.Cesium3DTileStyle({
                     color: {
                         conditions: [
-                            // COMMERCIAL — red
-                            ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop' || ${feature['building']} === 'office' || ${feature['building']} === 'hotel' || ${feature['building']} === 'mall'",
-                                "color('#E53935', 0.82)"],
-                            // RESIDENTIAL — orange
-                            ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace' || ${feature['building']} === 'dormitory' || ${feature['building']} === 'bungalow'",
-                                "color('#FF8C00', 0.82)"],
-                            // INDUSTRIAL — yellow
-                            ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank' || ${feature['building']} === 'manufacture'",
-                                "color('#FFD700', 0.82)"],
-                            // PUBLIC — green
-                            ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic' || ${feature['building']} === 'train_station' || ${feature['building']} === 'transportation'",
-                                "color('#43A047', 0.82)"],
-                            // RELIGIOUS — cyan
-                            ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple' || ${feature['building']} === 'cathedral' || ${feature['building']} === 'shrine'",
-                                "color('#00BCD4', 0.82)"],
-                            // OTHER — light purple
-                            ["true", "color('#9575CD', 0.75)"]
+                            // Commercial / retail / office
+                            ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop'",
+                                "color('#c8a97a', 0.85)"],
+                            // Residential / apartments / housing
+                            ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace'",
+                                "color('#7a88b8', 0.85)"],
+                            // Industrial / warehouse / factory
+                            ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank'",
+                                "color('#7ab87a', 0.85)"],
+                            // Public / civic / government / hospital / school
+                            ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic'",
+                                "color('#b87a7a', 0.85)"],
+                            // Religious
+                            ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple'",
+                                "color('#b8a07a', 0.85)"],
+                            // Hotel
+                            ["${feature['building']} === 'hotel'",
+                                "color('#6ab8b8', 0.85)"],
+                            // Default — all other buildings
+                            ["true", "color('#9a9aaa', 0.82)"]
                         ]
                     }
                 });
