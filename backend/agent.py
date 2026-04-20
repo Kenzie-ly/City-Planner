@@ -102,6 +102,9 @@ find_needs_agent = LlmAgent(
         - You MUST use the Google Search tool before answering.
         - Prefer official transport authorities, government reports, credible transport news, and transport studies from the last 5 years.
 
+        FEEDBACK LOOP:
+        - If you are provided with feedback or a rejection reason from a previous attempt, you MUST address that feedback explicitly by generating DIFFERENT challenges or focusing on the requested aspects.
+
         OUTPUT FORMAT (STRICT JSON ONLY):
         Return exactly one JSON object and nothing else.
 
@@ -110,19 +113,19 @@ find_needs_agent = LlmAgent(
             "CHALLENGE_THEME": "<broad challenge>",
             "MACRO_ROOT_CAUSE": "<root cause>",
             "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<1-2 sentence evidence-grounded summary>"
+            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points (e.g., hours lost, RM cost, vehicle counts) and explicit citations from credible sources (e.g., TomTom, World Bank, transport authorities)>"
           },
           "CHALLENGE_2": {
             "CHALLENGE_THEME": "<broad challenge>",
             "MACRO_ROOT_CAUSE": "<root cause>",
             "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<1-2 sentence evidence-grounded summary>"
+            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points and explicit citations>"
           },
           "CHALLENGE_3": {
             "CHALLENGE_THEME": "<broad challenge>",
             "MACRO_ROOT_CAUSE": "<root cause>",
             "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<1-2 sentence evidence-grounded summary>"
+            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points and explicit citations>"
           }
         }
     """,
@@ -141,6 +144,9 @@ find_hotspot_agent = LlmAgent(
         - a city
         - one selected transport challenge
         - optional failure feedback from previous attempts
+
+        FEEDBACK LOOP:
+        - If the user or the review system provides feedback (e.g., "too generic", "wrong road", "focus on X"), you MUST adjust your hypothesis to address it.
 
         Your task:
         - produce exactly ONE graph-routable hotspot hypothesis
@@ -178,6 +184,10 @@ planning_agent = LlmAgent(
 
         A structured transport problem
         A list of candidate routes generated from a graph-based road analysis system
+        
+        FEEDBACK LOOP:
+        - If the previous plan was rejected, follow the user's instructions to select a different candidate or intervention type.
+        
         Your task is to:
 
         Compare all candidates carefully
@@ -264,7 +274,10 @@ solution_agent = LlmAgent(
         A selected transport problem
         The chosen candidate route
         The intervention type from a planning decision
-
+        
+        FEEDBACK LOOP:
+        - If the previous solution was rejected, incorporate the user's feedback into the new design.
+        
         Your task is to:
         Translate the selected candidate into a REALISTIC and ACTIONABLE intervention
         Describe exactly WHAT should be changed, WHERE, and HOW
@@ -352,9 +365,8 @@ solution_agent = LlmAgent(
         ],
 
         "implementation_complexity": "<low | medium | high>",
-
-        "confidence": "<low | medium | high>"
-
+        "confidence": "<low | medium | high>",
+        "societal_impact": "<A natural, 1-2 sentence paragraph explaining the positive impact on daily commuters, local residents, and the general public (e.g., focus on reliability, time savings, or safety).>"
         }
 
         FINAL CHECK (MANDATORY)
@@ -379,7 +391,10 @@ building_agent = LlmAgent(
         1. a selected transport problem
         2. a chosen candidate path
         3. a solution design describing the recommended intervention
-
+        
+        FEEDBACK LOOP:
+        - If the previous map scene was rejected, adjust the visualization as requested.
+        
         Your task is to convert that solution into map-build instructions for a 3D city map.
 
         You must output ONLY map instructions, not reasoning.
@@ -427,11 +442,11 @@ building_agent = LlmAgent(
         * COUNT means how many similar objects of this type are needed
 
         STYLE_HINT examples:
-
-        * color:red, width:thick
-        * color:orange, size:large
-        * color:blue, opacity:0.4
-        * color:yellow, width:medium, dashed:true
+        * color:red, width:thick (Used for conflict points or bottlenecks)
+        * color:blue, width:medium (Used for transit/bus priority elements)
+        * color:green, size:large (Used for safety improvements or pedestrian zones)
+        * color:orange, opacity:0.4 (Used for general infrastructure zones)
+        * color:yellow, width:medium, dashed:true (Used for temporary or secondary lanes)
 
 
         ## MAPPING GUIDELINES
@@ -541,6 +556,9 @@ review_agent = LlmAgent(
         - detect when the user wants the previous step regenerated or revised
         - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
 
+        NATURAL COMMUNICATION:
+        - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
+
         RULES:
         - Return PASS only if the user response can be confidently mapped to the current output.
         - Return REVISE if the response is too vague, invalid, or unrelated.
@@ -561,7 +579,7 @@ review_agent = LlmAgent(
         OR
 
         VERDICT: REVISE
-        INSTRUCTION: <brief instruction to the user>
+        INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
         RESOLVED_REFERENCE:
 
         OR

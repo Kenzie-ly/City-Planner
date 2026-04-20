@@ -282,9 +282,22 @@ def build_corridor_polygon_from_two_roads(
 # =========================================================
 
 def safe_route_to_gdf(G, path: list[int], weight: str = "length"):
-    if path is None or len(path) < 2:
-        # Return an empty GDF with expected columns to avoid downstream crashes
+    if path is None or len(path) == 0:
         return pd.DataFrame(columns=["name", "ref", "length", "highway", "geometry"])
+
+    if len(path) == 1:
+        node = path[0]
+        try:
+            # For a single node, return all incident edges so we have something to show/analyze
+            # We filter the edges GDF for this node as either source or target
+            _, edges_gdf = ox.graph_to_gdfs(G, nodes=True, edges=True)
+            mask = (edges_gdf.index.get_level_values(0) == node) | (edges_gdf.index.get_level_values(1) == node)
+            matched_edges = edges_gdf[mask]
+            if matched_edges.empty:
+                return pd.DataFrame(columns=["name", "ref", "length", "highway", "geometry"])
+            return matched_edges
+        except Exception:
+            return pd.DataFrame(columns=["name", "ref", "length", "highway", "geometry"])
 
     try:
         return ox.routing.route_to_gdf(G, path, weight=weight)
@@ -310,8 +323,15 @@ def edge_label(row):
     name = row.get("name")
     ref = row.get("ref")
     highway = row.get("highway")
+    
+    # Check for transit specific markers
+    is_bus = False
+    if any(tag in row for tag in ["bus", "psv", "busway", "lanes:bus"]):
+        val = row.get("bus") or row.get("psv") or row.get("busway") or row.get("lanes:bus")
+        if pd.notna(val) and val != "no":
+            is_bus = True
 
-    # Handle list-like values FIRST
+    # Handle list-like values
     if isinstance(name, list):
         name = " / ".join(str(x) for x in name if pd.notna(x))
     elif pd.isna(name):
@@ -334,21 +354,26 @@ def edge_label(row):
         highway = str(highway)
 
     # Build label
+    label = "Unnamed road"
     if name and ref:
         if ref.lower() in name.lower() or name.lower() in ref.lower():
-            return name
-        return f"{name} (Route {ref})"
+            label = name
+        else:
+            label = f"{name} (Route {ref})"
     elif name:
-        return name
+        label = name
     elif ref:
-        return ref
-    else:
-        if highway:
-            if "link" in highway.lower():
-                return f"Connector ({highway})"
-            else:
-                return f"Unnamed road ({highway})"
-        return "Unnamed road"
+        label = ref
+    elif highway:
+        if "link" in highway.lower():
+            label = f"Connector ({highway})"
+        else:
+            label = f"Unnamed road ({highway})"
+    
+    if is_bus:
+        label = f"{label} [Transit/Bus Lane]"
+        
+    return label
 
 def route_edges_to_raw_sequence(route_edges):
     sequence = []
@@ -512,10 +537,13 @@ def build_route_edges_list(G, paths, weight="length"):
     route_edges_list = []
 
     for i, path in enumerate(paths, start=1):
-        if path is None or len(path) < 2:
+        if path is None or len(path) < 1:
             continue
 
-        route_edges = ox.routing.route_to_gdf(G, path, weight=weight)
+        route_edges = safe_route_to_gdf(G, path, weight=weight)
+        if route_edges.empty:
+            continue
+            
         route_edges_list.append({
             "candidate_id": f"candidate_{i}",
             "path": path,
@@ -588,6 +616,7 @@ def build_candidate_evidence(route_edges: pd.DataFrame) -> dict:
     contains_bridge = False
     contains_unnamed_segments = False
     contains_link = False
+    has_transit_priority = False
 
     for _, row in route_edges.iterrows():
         # highway
@@ -603,6 +632,13 @@ def build_candidate_evidence(route_edges: pd.DataFrame) -> dict:
 
         if any("link" in h.lower() for h in hw_values):
             contains_link = True
+
+        # transit check
+        for tag in ["bus", "psv", "busway", "lanes:bus"]:
+            val = row.get(tag)
+            if pd.notna(val) and val != "no":
+                has_transit_priority = True
+                break
 
         # lanes
         lanes = parse_lanes(row.get("lanes"))
@@ -653,6 +689,7 @@ def build_candidate_evidence(route_edges: pd.DataFrame) -> dict:
         "contains_bridge": contains_bridge,
         "contains_unnamed_segments": contains_unnamed_segments,
         "contains_link": contains_link,
+        "has_transit_priority": has_transit_priority,
     }
 
     return evidence

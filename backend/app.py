@@ -159,12 +159,15 @@ def format_challenges(challenges: list[dict[str, Any]]) -> str:
 
     blocks: list[str] = []
     for idx, challenge in enumerate(challenges, start=1):
-        blocks.append(
-            f"{idx}. {challenge.get('CHALLENGE_THEME', 'Untitled challenge')}\n"
-            f"MACRO_ROOT_CAUSE: {challenge.get('MACRO_ROOT_CAUSE', 'N/A')}\n"
-            f"WHY_IT_MATTERS: {challenge.get('WHY_IT_MATTERS', 'N/A')}\n"
-            f"EVIDENCE_SUMMARY: {challenge.get('EVIDENCE_SUMMARY', 'N/A')}"
-        )
+        theme = challenge.get('CHALLENGE_THEME', 'Untitled challenge')
+        cause = challenge.get('MACRO_ROOT_CAUSE', 'N/A')
+        impact = challenge.get('WHY_IT_MATTERS', 'N/A')
+        evidence = challenge.get('EVIDENCE_SUMMARY', 'N/A')
+        
+        # Concatenate into one natural-sounding paragraph
+        paragraph = f"{idx}. **{theme}**: {cause} {impact} {evidence}"
+        blocks.append(paragraph)
+        
     return "\n\n".join(blocks) + "\n\nWhich challenge would you like to explore further?"
 
 
@@ -340,9 +343,8 @@ def score_hypothesis_alignment(hypothesis: dict[str, Any], evidence: dict[str, A
     return {"alignment_score": round(alignment_score, 3), "pass": alignment_score >= 0.55}
 
 
-async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_challenge: dict[str, Any]) -> dict[str, Any]:
+async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_challenge: dict[str, Any], feedback: str = "") -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
-    feedback = ""
 
     for i in range(3):
         prompt = build_hotspot_hypothesis_prompt(city, selected_challenge, feedback)
@@ -468,6 +470,11 @@ def format_step_reply(step_name: str, raw_output: str) -> str:
             blocks.append("**Expected Effects:**")
             for effect in effects:
                 blocks.append(f"* {effect}")
+            blocks.append("")
+
+        impact = data.get("societal_impact")
+        if impact:
+            blocks.append(f"**🌍 Societal Impact:**\n{impact}")
                 
         # Optional: Add a small transition message for the user
         blocks.append("\n*This is a summary of what we're gonna build!!")
@@ -695,7 +702,7 @@ Remember:
         review_text = await run_agent_once(review_agent, session_id, review_prompt)
         review_result = parse_review(review_text)
 
-        if review_result["verdict"] != "PASS":
+        if review_result["verdict"] == "REVISE":
             return {
                 "ok": True,
                 "session_id": session_id,
@@ -704,7 +711,40 @@ Remember:
                 "needs_input": True,
             }
 
-        selected_challenge = safe_json_loads(review_result["final_output"] or raw_step_output)
+        if review_result["verdict"] == "REVISE_TOTAL":
+            # User wants to regenerate challenges
+            feedback = review_result["detail"] or "Regenerate challenges"
+            target_places = state.get("target_places", [])
+            rerun_prompt = f"The user rejected the previous challenges and gave this feedback: {feedback}. Please generate 3 new transport challenges for {target_places}."
+            new_challenges_raw = await run_agent_once(find_needs_agent, session_id, rerun_prompt)
+            state["last_step_output"] = new_challenges_raw
+            state["last_display_reply"] = format_find_needs_reply(new_challenges_raw)
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Find needs",
+                "reply": state["last_display_reply"],
+                "needs_input": True,
+            }
+
+        # Ensure we have a single object
+        selected_output = review_result["final_output"]
+        if not selected_output:
+            # If the agent didn't extract it but passed, we might be in trouble
+            # Try to see if raw_step_output is already a single challenge (unlikely)
+            selected_challenge = safe_json_loads(raw_step_output)
+            if "CHALLENGE_1" in selected_challenge:
+                # Still the multi-choice one, the review agent failed to extract
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Find needs",
+                    "reply": "I couldn't quite catch which one you picked. Could you please specify by number or name?",
+                    "needs_input": True,
+                }
+        else:
+            selected_challenge = safe_json_loads(selected_output)
+
         state["selected_challenge"] = selected_challenge
         selected_city = (state.get("target_places") or [])[0]
         hotspot_result = await run_hotspot_hypothesis_loop(session_id, selected_city, selected_challenge)
@@ -750,12 +790,43 @@ Remember:
         review_text = await run_agent_once(review_agent, session_id, review_prompt)
         review_result = parse_review(review_text)
 
-        if review_result["verdict"] != "PASS":
+        if review_result["verdict"] == "REVISE":
             return {
                 "ok": True,
                 "session_id": session_id,
                 "stage": "Micro hotspot selection",
                 "reply": review_result["detail"] or "Please choose one micro-symptom from the list.",
+                "needs_input": True,
+            }
+
+        if review_result["verdict"] == "REVISE_TOTAL":
+            feedback = review_result["detail"] or "Regenerate hotspots"
+            selected_challenge = state.get("selected_challenge", {})
+            selected_city = (state.get("target_places") or [])[0]
+            # Rerun the hypothesis loop with feedback
+            hotspot_result = await run_hotspot_hypothesis_loop(session_id, selected_city, selected_challenge, feedback=feedback)
+            
+            strict_json = {
+                "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+                "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
+                "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
+                "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
+                "PRIMARY_MICRO": hotspot_result["PRIMARY_MICRO"],
+                "SECONDARY_MICRO": hotspot_result["SECONDARY_MICRO"],
+                "ROUTING_LABELS": {
+                    "PRIMARY_MICRO": extract_routing_labels_from_micro(hotspot_result["PRIMARY_MICRO"]),
+                    "SECONDARY_MICRO": extract_routing_labels_from_micro(hotspot_result["SECONDARY_MICRO"]),
+                },
+            }
+            new_raw_output = json.dumps(strict_json)
+            state["last_step_output"] = new_raw_output
+            state["last_display_reply"] = format_micro_options(strict_json)
+            
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Micro hotspot selection",
+                "reply": state["last_display_reply"],
                 "needs_input": True,
             }
 
@@ -845,7 +916,7 @@ Remember:
         display_reply = format_step_reply(step_name, new_raw_step_output)
 
         state["last_step_output"] = new_raw_step_output
-        state["last_display_reply"] = new_raw_step_output
+        state["last_display_reply"] = display_reply
         return {
             "ok": True,
             "session_id": session_id,

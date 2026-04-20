@@ -1,9 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>National Geospatial Intelligence System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700;800&display=swap"
+        rel="stylesheet">
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
         :root {
@@ -30,13 +36,14 @@
             box-sizing: border-box;
         }
 
-        html, body {
+        html,
+        body {
             height: 100%;
         }
 
         body {
             margin: 0;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             color: var(--text);
             background:
                 radial-gradient(circle at top left, rgba(79, 124, 255, 0.18), transparent 26%),
@@ -50,20 +57,20 @@
             position: fixed;
             inset: 0;
             background-image:
-                linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+                linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
             background-size: 36px 36px;
-            mask-image: linear-gradient(180deg, rgba(255,255,255,0.45), transparent 80%);
+            mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 80%);
             pointer-events: none;
         }
 
         .container {
-            width: min(1440px, calc(100vw - 32px));
-            height: calc(100vh - 32px);
-            margin: 16px auto;
+            width: min(1360px, calc(100vw - clamp(16px, 3vw, 44px)));
+            height: calc(100vh - clamp(16px, 3vw, 44px));
+            margin: clamp(8px, 1.5vw, 22px) auto;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: clamp(10px, 1.3vw, 16px);
         }
 
         header {
@@ -71,8 +78,28 @@
             align-items: center;
             justify-content: space-between;
             gap: 16px;
-            padding: 0 6px;
+            padding: clamp(12px, 1.2vw, 16px) clamp(14px, 1.6vw, 22px);
+            border-radius: clamp(16px, 1.5vw, 22px);
+            background:
+                linear-gradient(90deg, rgba(14, 28, 56, 0.86), rgba(9, 19, 37, 0.64));
+            border: 1px solid rgba(125, 163, 255, 0.16);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.06),
+                0 10px 26px rgba(0, 0, 0, 0.22);
             flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::after {
+            content: "";
+            position: absolute;
+            left: 16px;
+            right: 16px;
+            bottom: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(127, 231, 255, 0.28), transparent);
+            pointer-events: none;
         }
 
         .brand-block {
@@ -83,7 +110,8 @@
 
         h1 {
             margin: 0;
-            font-size: clamp(1.3rem, 1vw + 1rem, 2rem);
+            font-family: "Sora", "Manrope", sans-serif;
+            font-size: clamp(1.2rem, 1.1vw + 0.9rem, 1.92rem);
             font-weight: 900;
             letter-spacing: 0.02em;
             color: #f4f7ff;
@@ -91,7 +119,9 @@
 
         .header-subtitle {
             color: var(--muted);
-            font-size: 0.9rem;
+            font-size: clamp(0.84rem, 0.35vw + 0.72rem, 0.98rem);
+            line-height: 1.42;
+            max-width: 72ch;
         }
 
         .header-right {
@@ -102,16 +132,17 @@
             justify-content: flex-end;
         }
 
-        .status-pill, .step-pill {
+        .status-pill,
+        .step-pill {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 14px;
+            padding: clamp(8px, 0.5vw + 5px, 10px) clamp(12px, 1.4vw, 16px);
             border-radius: 999px;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: var(--muted);
-            font-size: 0.78rem;
+            font-size: clamp(0.74rem, 0.2vw + 0.68rem, 0.82rem);
             font-weight: 700;
             letter-spacing: 0.04em;
             text-transform: uppercase;
@@ -131,7 +162,7 @@
             flex: 1;
             min-height: 0;
             overflow: hidden;
-            border-radius: 30px;
+            border-radius: clamp(20px, 2.2vw, 30px);
             border: 1px solid var(--panel-border);
             background:
                 linear-gradient(180deg, rgba(14, 25, 48, 0.94) 0%, rgba(8, 16, 31, 0.95) 100%);
@@ -144,7 +175,7 @@
             inset: 0;
             border-radius: inherit;
             padding: 1px;
-            background: linear-gradient(135deg, rgba(127,231,255,0.28), rgba(79,124,255,0.12), rgba(255,255,255,0.04));
+            background: linear-gradient(135deg, rgba(127, 231, 255, 0.28), rgba(79, 124, 255, 0.12), rgba(255, 255, 255, 0.04));
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
             mask-composite: exclude;
@@ -164,11 +195,11 @@
         #chatView {
             display: none;
             flex-direction: column;
-            padding: 18px;
+            padding: clamp(14px, 2vw, 20px);
             background:
-                radial-gradient(circle at top right, rgba(79,124,255,0.14), transparent 24%),
-                radial-gradient(circle at top left, rgba(127,231,255,0.08), transparent 24%),
-                linear-gradient(180deg, rgba(14,25,48,0.92) 0%, rgba(8,16,31,0.96) 100%);
+                radial-gradient(circle at top right, rgba(79, 124, 255, 0.14), transparent 24%),
+                radial-gradient(circle at top left, rgba(127, 231, 255, 0.08), transparent 24%),
+                linear-gradient(180deg, rgba(14, 25, 48, 0.92) 0%, rgba(8, 16, 31, 0.96) 100%);
         }
 
         #chatView.active {
@@ -186,44 +217,49 @@
         .chat-header {
             display: flex;
             justify-content: space-between;
-            gap: 16px;
+            gap: clamp(10px, 1.6vw, 16px);
             align-items: flex-start;
-            padding: 4px 6px 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: clamp(10px, 1.2vw, 14px) clamp(12px, 1.4vw, 16px);
+            border: 1px solid rgba(125, 163, 255, 0.15);
+            border-radius: 16px;
+            background:
+                linear-gradient(105deg, rgba(255, 255, 255, 0.03), rgba(79, 124, 255, 0.08));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
             flex-shrink: 0;
         }
 
         .chat-header-left {
             display: flex;
-            gap: 14px;
+            gap: 10px;
             align-items: flex-start;
         }
 
         .agent-badge {
-            width: 48px;
-            height: 48px;
-            border-radius: 16px;
+            width: 40px;
+            height: 40px;
+            border-radius: 13px;
             display: grid;
             place-items: center;
-            font-size: 1.2rem;
-            background: linear-gradient(135deg, rgba(79,124,255,0.26), rgba(127,231,255,0.18));
-            border: 1px solid rgba(127,231,255,0.2);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+            font-size: 1rem;
+            background: linear-gradient(135deg, rgba(79, 124, 255, 0.26), rgba(127, 231, 255, 0.18));
+            border: 1px solid rgba(127, 231, 255, 0.2);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
 
         .chat-title {
-            font-size: 1.35rem;
+            font-family: "Sora", "Manrope", sans-serif;
+            font-size: clamp(1.02rem, 0.64vw + 0.82rem, 1.28rem);
             font-weight: 800;
             letter-spacing: 0.01em;
             color: #f4f7ff;
         }
 
         .chat-subtitle {
-            margin-top: 5px;
+            margin-top: 2px;
             color: var(--muted);
-            line-height: 1.55;
-            font-size: 0.92rem;
-            max-width: 720px;
+            line-height: 1.42;
+            font-size: clamp(0.8rem, 0.22vw + 0.72rem, 0.9rem);
+            max-width: 70ch;
         }
 
         .chat-stage {
@@ -236,10 +272,86 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 14px;
-            padding: 4px 6px 132px 2px;
+            gap: clamp(10px, 1.2vw, 14px);
+            padding: 6px clamp(10px, 1vw, 14px) 122px 6px;
             scroll-behavior: smooth;
-            scroll-padding-bottom: 132px;
+            scroll-padding-bottom: 122px;
+            align-items: stretch;
+        }
+
+        .chat-empty-state {
+            margin: auto;
+            width: min(760px, 94%);
+            padding: clamp(16px, 2vw, 24px);
+            border-radius: 18px;
+            border: 1px solid rgba(127, 231, 255, 0.18);
+            background:
+                linear-gradient(140deg, rgba(255, 255, 255, 0.04), rgba(79, 124, 255, 0.09));
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 18px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-empty-state[hidden] {
+            display: none !important;
+        }
+
+        .empty-title {
+            margin: 0;
+            font-family: "Sora", "Manrope", sans-serif;
+            font-size: clamp(1rem, 0.65vw + 0.82rem, 1.28rem);
+            color: #eff4ff;
+        }
+
+        .empty-subtitle {
+            margin: 8px 0 0;
+            font-size: clamp(0.84rem, 0.24vw + 0.76rem, 0.92rem);
+            color: #a8bcdf;
+            line-height: 1.5;
+        }
+
+        .quick-prompt-grid {
+            margin-top: 14px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .quick-prompt {
+            text-align: left;
+            padding: 11px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(125, 163, 255, 0.2);
+            background: rgba(255, 255, 255, 0.03);
+            color: #dce8ff;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .quick-prompt:hover {
+            transform: translateY(-1px);
+            background: rgba(79, 124, 255, 0.14);
+            border-color: rgba(127, 231, 255, 0.34);
+        }
+
+        .empty-actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-ghost {
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.04);
+            color: #c7d8f7;
+            font-size: 0.78rem;
+            font-weight: 700;
+            cursor: pointer;
         }
 
         .chat-messages::-webkit-scrollbar {
@@ -254,31 +366,38 @@
         }
 
         .chat-bubble {
-            max-width: min(78%, 860px);
-            padding: 18px 18px;
-            border-radius: 22px;
+            max-width: min(84%, 76ch);
+            padding: clamp(12px, 1.15vw, 18px) clamp(13px, 1.2vw, 18px);
+            border-radius: 20px;
             line-height: 1.62;
-            font-size: 1.02rem;
+            font-size: clamp(0.91rem, 0.24vw + 0.84rem, 1rem);
             position: relative;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.16);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
             white-space: normal;
             word-break: break-word;
         }
 
         .chat-bubble.user {
             align-self: flex-end;
+            display: inline-block;
+            inline-size: max-content;
+            max-inline-size: min(66%, 48ch);
+            min-inline-size: 0;
+            margin-right: 2px;
             background: linear-gradient(135deg, #3657d6 0%, #4a75ff 100%);
             color: #f7faff;
             border-bottom-right-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow-wrap: anywhere;
+            word-break: normal;
         }
 
         .chat-bubble.agent,
         .chat-bubble.assistant {
             align-self: flex-start;
-            background: linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.045) 100%);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.045) 100%);
             color: var(--text);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-bottom-left-radius: 8px;
             backdrop-filter: blur(10px);
         }
@@ -300,11 +419,17 @@
 
         .chat-bubble.loading {
             align-self: flex-start;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             color: var(--muted);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-bottom-left-radius: 8px;
             font-style: italic;
+        }
+
+        .chat-bubble.error {
+            border: 1px solid rgba(255, 124, 124, 0.35);
+            background: linear-gradient(180deg, rgba(255, 107, 107, 0.13), rgba(255, 107, 107, 0.06));
+            color: #ffd8d8;
         }
 
         .json-block {
@@ -315,7 +440,7 @@
             border-radius: 14px;
             overflow-x: auto;
             font-size: 12px;
-            border: 1px solid rgba(127,231,255,0.14);
+            border: 1px solid rgba(127, 231, 255, 0.14);
         }
 
         .final-question {
@@ -344,12 +469,27 @@
             animation: blinkDots 1.4s infinite ease-in-out both;
         }
 
-        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+        .typing-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
 
         @keyframes blinkDots {
-            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-            40% { opacity: 1; transform: scale(1); }
+
+            0%,
+            80%,
+            100% {
+                opacity: 0.2;
+                transform: scale(0.8);
+            }
+
+            40% {
+                opacity: 1;
+                transform: scale(1);
+            }
         }
 
         .city-chips {
@@ -365,7 +505,7 @@
             padding: 12px 14px;
             border-radius: 18px;
             background: rgba(7, 13, 26, 0.72);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             backdrop-filter: blur(12px);
         }
 
@@ -381,7 +521,7 @@
             padding: 9px 14px;
             border-radius: 999px;
             border: 1px solid rgba(102, 137, 228, 0.38);
-            background: rgba(79,124,255,0.08);
+            background: rgba(79, 124, 255, 0.08);
             color: #cfe0ff;
             font-size: 0.85rem;
             font-weight: 700;
@@ -391,8 +531,8 @@
         }
 
         .chip:hover {
-            background: rgba(79,124,255,0.18);
-            border-color: rgba(127,231,255,0.38);
+            background: rgba(79, 124, 255, 0.18);
+            border-color: rgba(127, 231, 255, 0.38);
             transform: translateY(-1px);
             color: #fff;
         }
@@ -404,13 +544,13 @@
             bottom: 18px;
             z-index: 9;
             display: flex;
-            gap: 12px;
+            gap: 10px;
             align-items: center;
-            padding: 10px;
+            padding: 8px;
             border-radius: 22px;
             background: rgba(7, 13, 26, 0.88);
-            border: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 16px 34px rgba(0,0,0,0.22);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
             backdrop-filter: blur(12px);
         }
 
@@ -419,12 +559,12 @@
         #aiInput {
             flex: 1;
             min-width: 0;
-            padding: 17px 18px;
+            padding: clamp(12px, 0.95vw, 15px) clamp(14px, 1.2vw, 18px);
             border-radius: 16px;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
             color: var(--text);
-            font-size: 0.98rem;
+            font-size: clamp(0.9rem, 0.2vw + 0.84rem, 0.98rem);
             outline: none;
             font-family: inherit;
             transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
@@ -437,25 +577,25 @@
 
         .input-group input:focus,
         #aiInput:focus {
-            border-color: rgba(127,231,255,0.4);
-            background: rgba(255,255,255,0.07);
-            box-shadow: 0 0 0 4px rgba(79,124,255,0.14);
+            border-color: rgba(127, 231, 255, 0.4);
+            background: rgba(255, 255, 255, 0.07);
+            box-shadow: 0 0 0 4px rgba(79, 124, 255, 0.14);
         }
 
         .input-group button,
         .chat-input-row button,
         button#btnSend {
-            min-width: 124px;
-            padding: 16px 20px;
+            min-width: clamp(102px, 8.5vw, 124px);
+            padding: clamp(12px, 0.95vw, 15px) clamp(16px, 1.1vw, 20px);
             border: none;
             border-radius: 16px;
             cursor: pointer;
             font-weight: 800;
-            font-size: 0.92rem;
+            font-size: clamp(0.82rem, 0.15vw + 0.78rem, 0.92rem);
             letter-spacing: 0.03em;
             color: #f7fbff;
-            background: linear-gradient(135deg, #406cf5 0%, #5a88ff 100%);
-            box-shadow: 0 10px 24px rgba(58, 103, 235, 0.35);
+            background: linear-gradient(135deg, #4b75ff 0%, #6a95ff 100%);
+            box-shadow: 0 10px 24px rgba(58, 103, 235, 0.45);
             transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
         }
 
@@ -489,7 +629,7 @@
         .btn-clear {
             padding: 10px 15px;
             border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             background: rgba(7, 13, 26, 0.78);
             color: #dbe6ff;
             font-size: 0.82rem;
@@ -503,16 +643,26 @@
             transform: translateY(-1px);
         }
 
-        .btn-clear-last { border-color: rgba(255,180,84,0.22); }
-        .btn-clear-all { border-color: rgba(255,107,107,0.22); }
-        .btn-clear:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+        .btn-clear-last {
+            border-color: rgba(255, 180, 84, 0.22);
+        }
+
+        .btn-clear-all {
+            border-color: rgba(255, 107, 107, 0.22);
+        }
+
+        .btn-clear:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none;
+        }
 
         .buildings-count {
             margin-left: auto;
             padding: 10px 14px;
             border-radius: 12px;
             background: rgba(7, 13, 26, 0.78);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: var(--muted);
             font-size: 0.8rem;
             font-weight: 700;
@@ -528,7 +678,7 @@
             padding: 10px 14px;
             border-radius: 12px;
             background: rgba(7, 13, 26, 0.8);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: var(--muted);
             font-size: 0.8rem;
             font-weight: 600;
@@ -536,9 +686,18 @@
             backdrop-filter: blur(10px);
         }
 
-        #mapView { display: none; }
-        #mapView.active { display: block; }
-        #map { height: 100%; width: 100%; }
+        #mapView {
+            display: none;
+        }
+
+        #mapView.active {
+            display: block;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
 
         #backToChatBtn {
             position: absolute;
@@ -547,7 +706,7 @@
             z-index: 25;
             padding: 10px 15px;
             border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             background: rgba(7, 13, 26, 0.82);
             color: #fff;
             font-size: 0.78rem;
@@ -565,69 +724,135 @@
             padding: 12px 18px;
             border-radius: 999px;
             background: rgba(7, 13, 26, 0.82);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: #eef5ff;
             font-size: 0.82rem;
             font-weight: 700;
             backdrop-filter: blur(10px);
             white-space: nowrap;
-            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
         }
 
         #placeBanner.placed {
             background: rgba(26, 86, 54, 0.94);
-            border-color: rgba(53,208,127,0.22);
+            border-color: rgba(53, 208, 127, 0.22);
         }
 
         #legend {
             position: absolute;
             left: 18px;
-            bottom: 18px;
+            bottom: 56px;
             z-index: 10;
-            max-width: 360px;
-            padding: 14px 16px;
-            border-radius: 18px;
+            max-width: 292px;
+            padding: 9px 10px;
+            border-radius: 14px;
             background: rgba(7, 13, 26, 0.8);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: #dde8fb;
-            font-size: 0.72rem;
-            line-height: 1.6;
+            font-size: 0.64rem;
+            line-height: 1.3;
             backdrop-filter: blur(12px);
+            transform-origin: left bottom;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        #legend.is-collapsed {
+            opacity: 0;
+            transform: translateY(8px) scale(0.98);
+            pointer-events: none;
+        }
+
+        #legendToggleBtn {
+            position: absolute;
+            left: 18px;
+            bottom: 18px;
+            z-index: 11;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 11px;
+            border-radius: 999px;
+            border: 1px solid rgba(125, 163, 255, 0.22);
+            background: rgba(7, 13, 26, 0.84);
+            color: #d8e7ff;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+            transition: filter 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+        }
+
+        #legendToggleBtn:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.06);
+            border-color: rgba(127, 231, 255, 0.38);
+        }
+
+        .legend-toggle-chevron {
+            display: inline-block;
+            font-size: 0.76rem;
+            transition: transform 0.2s ease;
+            transform: rotate(0deg);
+        }
+
+        #legendToggleBtn.is-collapsed .legend-toggle-chevron {
+            transform: rotate(-90deg);
         }
 
         #legend b {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             color: var(--accent);
-            font-size: 0.76rem;
+            font-size: 0.66rem;
             letter-spacing: 0.08em;
         }
 
         .leg-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 4px 12px;
+            grid-template-columns: 1fr;
+            gap: 6px;
         }
 
         .leg-item {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 8px;
         }
 
         .leg-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 3px;
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
             flex-shrink: 0;
-            border: 1px solid rgba(255,255,255,0.24);
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            margin-top: 3px;
+        }
+
+        .leg-content {
+            min-width: 0;
+        }
+
+        .leg-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: #f0f6ff;
+            line-height: 1.2;
+        }
+
+        .leg-sub {
+            margin-top: 1px;
+            color: #a7badc;
+            font-size: 0.62rem;
+            line-height: 1.28;
         }
 
         .leg-divider {
-            grid-column: 1 / -1;
-            margin: 8px 0 4px;
-            padding-top: 7px;
-            border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 0;
+            padding-top: 0;
+            display: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
             color: #9ed8ff;
             font-size: 0.7rem;
             font-weight: 800;
@@ -642,7 +867,7 @@
             padding: 10px 13px;
             border-radius: 14px;
             background: rgba(7, 13, 26, 0.78);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: #b6c9e9;
             font-size: 0.72rem;
             backdrop-filter: blur(10px);
@@ -667,7 +892,7 @@
         }
 
         .spinner {
-            border: 5px solid rgba(255,255,255,0.16);
+            border: 5px solid rgba(255, 255, 255, 0.16);
             border-top: 5px solid var(--accent);
             border-radius: 50%;
             width: 48px;
@@ -677,8 +902,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         #map-popup {
@@ -690,8 +920,8 @@
             border-radius: 18px;
             padding: 14px;
             z-index: 30;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 18px 36px rgba(0,0,0,0.35);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
             pointer-events: none;
             backdrop-filter: blur(12px);
         }
@@ -766,13 +996,20 @@
                 max-width: 92%;
             }
 
+            .chat-bubble.user {
+                max-width: 74%;
+                min-width: 0;
+            }
+
             .city-chips {
                 bottom: 86px;
                 max-height: 100px;
                 overflow-y: auto;
             }
 
-            #legend, #osmNote {
+            #legend,
+            #legendToggleBtn,
+            #osmNote {
                 display: none;
             }
         }
@@ -794,6 +1031,13 @@
                 padding: 0 2px;
                 flex-direction: column;
                 align-items: flex-start;
+                border-radius: 14px;
+                padding: 10px 12px;
+            }
+
+            .header-right {
+                width: 100%;
+                justify-content: flex-start;
             }
 
             .map-frame {
@@ -804,6 +1048,18 @@
             .input-group {
                 left: 10px;
                 right: 10px;
+            }
+
+            .chat-bubble {
+                max-width: 96%;
+            }
+
+            .chat-bubble.user {
+                max-width: 84%;
+            }
+
+            .quick-prompt-grid {
+                grid-template-columns: 1fr;
             }
 
             .input-group button,
@@ -819,90 +1075,142 @@
         }
     </style>
 </head>
-<body class="chat-mode">
-<div class="container">
-    <header>
-        <div class="brand-block">
-            <h1>Infrastructure Planning Agent — Malaysia</h1>
-            <div class="header-subtitle">Geospatial planning workspace for analyzing cities, mobility, and infrastructure improvements.</div>
-        </div>
-        <div class="header-right">
-            <div class="status-pill"><span class="status-dot"></span> System online</div>
-            <div class="step-pill">Interactive workflow</div>
-        </div>
-    </header>
 
-    <div class="map-frame">
-        <div id="chatView" class="frame-view active">
-            <div class="chat-shell">
-                <div class="chat-header">
-                    <div class="chat-header-left">
-                        <div class="agent-badge">🛰️</div>
-                        <div>
-                            <div class="chat-title">Infrastructure Planning Agent</div>
-                            <div class="chat-subtitle">
-                                Describe the location, issue, or improvement you want to analyze. Start with one or two Malaysian cities or towns, and the agent will guide the rest of the workflow.
+<body class="chat-mode">
+    <div class="container">
+        <header>
+            <div class="brand-block">
+                <h1>Infrastructure Planning Agent — Malaysia</h1>
+                <div class="header-subtitle">Geospatial planning workspace for analyzing cities, mobility, and
+                    infrastructure improvements.</div>
+            </div>
+            <div class="header-right">
+                <div class="status-pill"><span class="status-dot"></span> System online</div>
+            </div>
+        </header>
+
+        <div class="map-frame">
+            <div id="chatView" class="frame-view active">
+                <div class="chat-shell">
+                    <div class="chat-header">
+                        <div class="chat-header-left">
+                            <div class="agent-badge">🛰️</div>
+                            <div>
+                                <div class="chat-title">Infrastructure Planning Agent</div>
+                                <div class="chat-subtitle">
+                                    Describe the location, issue, or improvement you want to analyze. Start with one or
+                                    two Malaysian cities or towns, and the agent will guide the rest of the workflow.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-stage">
+                            <div class="step-pill">Step-based planning</div>
+                        </div>
+                    </div>
+
+                    <div id="chatMessages" class="chat-messages">
+                        <div id="chatEmptyState" class="chat-empty-state">
+                            <h3 class="empty-title">Start with a city and challenge</h3>
+                            <p class="empty-subtitle">Use one of these starter prompts to quickly generate diagnostics
+                                and infrastructure interventions.</p>
+                            <div class="quick-prompt-grid">
+                                <button class="quick-prompt"
+                                    data-prompt="Analyze traffic congestion and bus reliability issues in Kuala Lumpur.">Kuala
+                                    Lumpur: congestion + bus reliability</button>
+                                <button class="quick-prompt"
+                                    data-prompt="Identify flood mitigation and drainage upgrades for Johor Bahru city center.">Johor
+                                    Bahru: flood & drainage upgrades</button>
+                                <button class="quick-prompt"
+                                    data-prompt="Suggest first-last mile mobility improvements around Penang transit nodes.">Penang:
+                                    first/last-mile mobility</button>
+                                <button class="quick-prompt"
+                                    data-prompt="Evaluate logistics bottlenecks and road safety interventions in Kota Kinabalu.">Kota
+                                    Kinabalu: logistics & road safety</button>
+                            </div>
+                            <div class="empty-actions">
+                                <button id="retryWorkflowBtn" class="btn-ghost" type="button">Retry workflow
+                                    connection</button>
                             </div>
                         </div>
                     </div>
-                    <div class="chat-stage">
-                        <div class="step-pill">Step-based planning</div>
+                </div>
+            </div>
+
+            <div id="mapView" class="frame-view">
+                <div id="map"></div>
+                <div id="mapLoader">
+                    <div class="loader-content">
+                        <div class="spinner"></div>
+                        <p>Loading map data...</p>
                     </div>
                 </div>
 
-                <div id="chatMessages" class="chat-messages"></div>
-            </div>
-        </div>
+                <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
 
-        <div id="mapView" class="frame-view">
-            <div id="map"></div>
-            <div id="mapLoader">
-                <div class="loader-content">
-                    <div class="spinner"></div>
-                    <p>Loading map data...</p>
+                <div id="map-popup">
+                    <div id="popup-badge"></div>
+                    <div id="popup-name"></div>
+                    <div id="popup-blurb"></div>
                 </div>
-            </div>
 
-            <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
+                <button id="legendToggleBtn" type="button" aria-controls="legend" aria-expanded="true">
+                    <span class="legend-toggle-chevron">▾</span>
+                    <span id="legendToggleLabel">Hide Categories</span>
+                </button>
 
-            <div id="map-popup">
-                <div id="popup-badge"></div>
-                <div id="popup-name"></div>
-                <div id="popup-blurb"></div>
-            </div>
-
-            <div id="legend">
-                <b>AI BUILDING TYPES</b>
-                <div class="leg-grid">
-                    <div class="leg-item"><div class="leg-dot" style="background:#00BFFF"></div>Mall</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF4444"></div>Retail Store</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF8C00"></div>Government</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FFD700"></div>Office Tower</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#90EE90"></div>Office Area</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#00FFFF"></div>Hotel / Resort</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#4169E1"></div>Hospital</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#9B59B6"></div>LRT / MRT / KTM</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF69B4"></div>Bus Terminal</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#F0A500"></div>Airport</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#708090"></div>Warehouse</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#CD853F"></div>Logistics Hub</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF7F50"></div>Restaurant / Café</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#32CD32"></div>Theme Park</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#FF00FF"></div>Mixed Use</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#98FB98"></div>Residential</div>
-                    <div class="leg-divider">REAL-WORLD BUILDINGS</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#c8a97a"></div>Commercial</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#7a88b8"></div>Residential</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#7ab87a"></div>Industrial</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#b87a7a"></div>Public / Civic</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#b8a07a"></div>Religious</div>
-                    <div class="leg-item"><div class="leg-dot" style="background:#9a9aaa"></div>Other / Unknown</div>
+                <div id="legend">
+                    <b>LAND-USE CATEGORIES</b>
+                    <div class="leg-grid">
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#d96f63"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Commercial</div>
+                                <div class="leg-sub">Mall, Retail, Office, Hotel, Airport, Restaurant, Logistics, Theme
+                                    Park</div>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#e8ba69"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Residential</div>
+                                <div class="leg-sub">Houses, Apartments, Housing Estate, Residential zones</div>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#e7dd72"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Industrial</div>
+                                <div class="leg-sub">Factory, Refinery, Warehouse, Plant, Industrial facilities</div>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#8dc06f"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Public</div>
+                                <div class="leg-sub">Hospital, Government, LRT/MRT/KTM, Bus Terminal, School, Civic
+                                </div>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#a6d6ee"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Religious</div>
+                                <div class="leg-sub">Mosque, Church, Temple, Surau, Places of worship</div>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <div class="leg-dot" style="background:#b8a2e8"></div>
+                            <div class="leg-content">
+                                <div class="leg-label">Other</div>
+                                <div class="leg-sub">Mixed-use, Unclassified, Unknown or miscellaneous assets</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                <div id="osmNote">Building colors follow land-use categories from OSM tiles.</div>
             </div>
-            <div id="osmNote">Grey buildings represent real-world structures from OSM tiles.</div>
-        </div>
 
-        <!-- <div class="city-chips">
+            <!-- <div class="city-chips">
             <span class="city-chips-label">Quick select:</span>
             <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
             <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
@@ -916,491 +1224,484 @@
             <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
         </div> -->
 
-        <div class="input-group">
-            <input
-                type="text"
-                id="aiInput"
-                placeholder="Enter a Malaysian city, town, or planning request..."
-                onkeydown="if(event.key==='Enter') submitPrompt()"
-            >
-            <button onclick="submitPrompt()" id="btnSend">Send</button>
-        </div>
+            <div class="input-group">
+                <input type="text" id="aiInput" placeholder="Enter a Malaysian city, town, or planning request..."
+                    onkeydown="if(event.key==='Enter') submitPrompt()">
+                <button onclick="submitPrompt()" id="btnSend">Send</button>
+            </div>
 
-        <div class="clear-row">
-            <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last Building</button>
-            <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All Buildings</button>
-            <span class="buildings-count" id="buildingCount">No buildings placed</span>
-        </div>
+            <div class="clear-row">
+                <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last
+                    Building</button>
+                <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All
+                    Buildings</button>
+                <span class="buildings-count" id="buildingCount">No buildings placed</span>
+            </div>
 
-        <div id="status">Step 1: Click on the map to choose where to build.</div>
+            <div id="status">Step 1: Click on the map to choose where to build.</div>
+        </div>
     </div>
-</div>
-<script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
-<script src="cesiumRenderer.js"></script>
-<script>
-    let appMode = "chat";
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
+    <script src="cesiumRenderer.js"></script>
+    <script>
+        let appMode = "chat";
 
-    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1NjZiYjBjZS00NjhjLTQxZGYtODY1Yi02MTAwNGViZTdmZDIiLCJpZCI6NDE0NjE5LCJpYXQiOjE3NzU1MTkzMzF9.Mu7xvGow42DA5PYXwVL_eh-ubt7dpbMnKvNyMOowF-A";
+        Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1NjZiYjBjZS00NjhjLTQxZGYtODY1Yi02MTAwNGViZTdmZDIiLCJpZCI6NDE0NjE5LCJpYXQiOjE3NzU1MTkzMzF9.Mu7xvGow42DA5PYXwVL_eh-ubt7dpbMnKvNyMOowF-A";
 
-    const MY = { minLat:0.8, maxLat:7.4, minLng:99.5, maxLng:119.5, maxAlt:820000 };
-    let viewer = null;
+        const MY = { minLat: 0.8, maxLat: 7.4, minLng: 99.5, maxLng: 119.5, maxAlt: 820000 };
+        let viewer = null;
 
-    function initMapIfNeeded() {
-        if (viewer) return;
+        function initMapIfNeeded() {
+            if (viewer) return;
 
-        viewer = new Cesium.Viewer('map', {
-            terrain: Cesium.Terrain.fromWorldTerrain(),
-            baseLayer: Cesium.ImageryLayer.fromWorldImagery({
-                style: Cesium.IonWorldImageryStyle.SENTINEL2
-            }),
-            animation: false,
-            timeline: false,
-            geocoder: false,
-            homeButton: false,
-            sceneModePicker: false,
-            baseLayerPicker: false,
-            navigationHelpButton: false,
-            fullscreenButton: false,
-            infoBox: true,
-            selectionIndicator: true
-        });
+            viewer = new Cesium.Viewer('map', {
+                terrain: Cesium.Terrain.fromWorldTerrain(),
+                baseLayer: Cesium.ImageryLayer.fromWorldImagery({
+                    style: Cesium.IonWorldImageryStyle.SENTINEL2
+                }),
+                animation: false,
+                timeline: false,
+                geocoder: false,
+                homeButton: false,
+                sceneModePicker: false,
+                baseLayerPicker: false,
+                navigationHelpButton: false,
+                fullscreenButton: false,
+                infoBox: true,
+                selectionIndicator: true
+            });
 
-        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80;
-        viewer.scene.screenSpaceCameraController.maximumZoomDistance = MY.maxAlt;
+            viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80;
+            viewer.scene.screenSpaceCameraController.maximumZoomDistance = MY.maxAlt;
 
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(109.5, 4.0, MY.maxAlt - 30000),
-            orientation: {
-                heading: 0,
-                pitch: Cesium.Math.toRadians(-90),
-                roll: 0
-            }
-        });
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(109.5, 4.0, MY.maxAlt - 30000),
+                orientation: {
+                    heading: 0,
+                    pitch: Cesium.Math.toRadians(-90),
+                    roll: 0
+                }
+            });
 
-        // Bounds clamp
-        viewer.camera.changed.addEventListener(() => {
-            const c = Cesium.Cartographic.fromCartesian(viewer.camera.position);
-            const lat = Cesium.Math.toDegrees(c.latitude);
-            const lng = Cesium.Math.toDegrees(c.longitude);
-            const alt = c.height;
+            // Bounds clamp
+            viewer.camera.changed.addEventListener(() => {
+                const c = Cesium.Cartographic.fromCartesian(viewer.camera.position);
+                const lat = Cesium.Math.toDegrees(c.latitude);
+                const lng = Cesium.Math.toDegrees(c.longitude);
+                const alt = c.height;
 
-            const cLat = Math.min(Math.max(lat, MY.minLat), MY.maxLat);
-            const cLng = Math.min(Math.max(lng, MY.minLng), MY.maxLng);
-            const cAlt = Math.min(alt, MY.maxAlt);
+                const cLat = Math.min(Math.max(lat, MY.minLat), MY.maxLat);
+                const cLng = Math.min(Math.max(lng, MY.minLng), MY.maxLng);
+                const cAlt = Math.min(alt, MY.maxAlt);
 
-            if (Math.abs(lat - cLat) > 0.01 || Math.abs(lng - cLng) > 0.01 || alt > MY.maxAlt + 5000) {
-                viewer.camera.setView({
-                    destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, cAlt),
-                    orientation: {
-                        heading: viewer.camera.heading,
-                        pitch: viewer.camera.pitch,
-                        roll: viewer.camera.roll
-                    }
-                });
-            }
-        });
+                if (Math.abs(lat - cLat) > 0.01 || Math.abs(lng - cLng) > 0.01 || alt > MY.maxAlt + 5000) {
+                    viewer.camera.setView({
+                        destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, cAlt),
+                        orientation: {
+                            heading: viewer.camera.heading,
+                            pitch: viewer.camera.pitch,
+                            roll: viewer.camera.roll
+                        }
+                    });
+                }
+            });
 
-        // ── OSM 3D BUILDINGS — styled as warm grey so they don't look white ──
-        (async () => {
-            try {
-                const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
+            // ── OSM 3D BUILDINGS — styled as warm grey so they don't look white ──
+            (async () => {
+                try {
+                    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
 
-                // Apply a style so buildings render as a consistent warm dark grey
-                // instead of the default texture-less white
-                // Color OSM buildings by their type tag — matches our legend colors
-                tileset.style = new Cesium.Cesium3DTileStyle({
-                    color: {
-                        conditions: [
-                            // Commercial / retail / office
-                            ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop'",
-                                "color('#c8a97a', 0.85)"],
-                            // Residential / apartments / housing
-                            ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace'",
-                                "color('#7a88b8', 0.85)"],
-                            // Industrial / warehouse / factory
-                            ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank'",
-                                "color('#7ab87a', 0.85)"],
-                            // Public / civic / government / hospital / school
-                            ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic'",
-                                "color('#b87a7a', 0.85)"],
-                            // Religious
-                            ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple'",
-                                "color('#b8a07a', 0.85)"],
-                            // Hotel
-                            ["${feature['building']} === 'hotel'",
-                                "color('#6ab8b8', 0.85)"],
-                            // Default — all other buildings
-                            ["true", "color('#9a9aaa', 0.82)"]
-                        ]
-                    }
-                });
+                    // Color OSM buildings by type to match the legend categories
+                    tileset.style = new Cesium.Cesium3DTileStyle({
+                        color: {
+                            conditions: [
+                                // Commercial
+                                ["${feature['building']} === 'commercial' || ${feature['building']} === 'retail' || ${feature['building']} === 'supermarket' || ${feature['building']} === 'shop' || ${feature['building']} === 'office' || ${feature['building']} === 'hotel' || ${feature['building']} === 'restaurant' || ${feature['building']} === 'mall'",
+                                    "color('#d96f63', 0.85)"],
+                                // Residential
+                                ["${feature['building']} === 'residential' || ${feature['building']} === 'apartments' || ${feature['building']} === 'house' || ${feature['building']} === 'detached' || ${feature['building']} === 'terrace' || ${feature['building']} === 'semidetached_house' || ${feature['building']} === 'bungalow' || ${feature['building']} === 'dormitory'",
+                                    "color('#e8ba69', 0.85)"],
+                                // Industrial
+                                ["${feature['building']} === 'industrial' || ${feature['building']} === 'warehouse' || ${feature['building']} === 'factory' || ${feature['building']} === 'storage_tank' || ${feature['building']} === 'plant'",
+                                    "color('#e7dd72', 0.85)"],
+                                // Public
+                                ["${feature['building']} === 'public' || ${feature['building']} === 'government' || ${feature['building']} === 'hospital' || ${feature['building']} === 'school' || ${feature['building']} === 'university' || ${feature['building']} === 'civic' || ${feature['building']} === 'train_station' || ${feature['building']} === 'transportation'",
+                                    "color('#8dc06f', 0.85)"],
+                                // Religious
+                                ["${feature['building']} === 'religious' || ${feature['building']} === 'church' || ${feature['building']} === 'mosque' || ${feature['building']} === 'temple' || ${feature['building']} === 'synagogue' || ${feature['building']} === 'chapel' || ${feature['building']} === 'cathedral' || ${feature['building']} === 'shrine'",
+                                    "color('#a6d6ee', 0.85)"],
+                                // Other / unknown
+                                ["true", "color('#b8a2e8', 0.82)"]
+                            ]
+                        }
+                    });
 
-                viewer.scene.primitives.add(tileset);
-            } catch(e) { console.warn("OSM buildings:", e); }
-        })();
+                    viewer.scene.primitives.add(tileset);
+                } catch (e) { console.warn("OSM buildings:", e); }
+            })();
 
 
-        setupClickToPlace();
-        createPopups();
-    }    
+            setupClickToPlace();
+            createPopups();
+        }
 
-    // ── STATE ──
-    let chosenLat = null, chosenLng = null, pinEntity = null;
-    const banner = document.getElementById('placeBanner');
-    const status = document.getElementById('status');
+        // ── STATE ──
+        let chosenLat = null, chosenLng = null, pinEntity = null;
+        const banner = document.getElementById('placeBanner');
+        const status = document.getElementById('status');
 
-    // ── BUILDING STACK ──
-    const buildingStack = [];
+        // ── BUILDING STACK ──
+        const buildingStack = [];
 
-    function updateBuildingUI() {
-        const n = buildingStack.length;
-        document.getElementById('buildingCount').textContent =
-            n === 0 ? 'No buildings placed' : `${n} building${n > 1 ? 's' : ''} on map`;
-        document.getElementById('btnClearLast').disabled = n === 0;
-        document.getElementById('btnClearAll').disabled  = n === 0;
-    }
+        function updateBuildingUI() {
+            const n = buildingStack.length;
+            document.getElementById('buildingCount').textContent =
+                n === 0 ? 'No buildings placed' : `${n} building${n > 1 ? 's' : ''} on map`;
+            document.getElementById('btnClearLast').disabled = n === 0;
+            document.getElementById('btnClearAll').disabled = n === 0;
+        }
 
-    function clearLast() {
-        if (!viewer) return;
-        if (!buildingStack.length) return;
-        viewer.entities.remove(buildingStack.pop());
-        updateBuildingUI();
-        status.innerText = `↩ Last building removed. ${buildingStack.length} remaining.`;
-    }
+        function clearLast() {
+            if (!viewer) return;
+            if (!buildingStack.length) return;
+            viewer.entities.remove(buildingStack.pop());
+            updateBuildingUI();
+            status.innerText = `↩ Last building removed. ${buildingStack.length} remaining.`;
+        }
 
-    function clearAll() {
-        if (!viewer) return;
-        if (!buildingStack.length) return;
-        buildingStack.forEach(e => viewer.entities.remove(e));
-        buildingStack.length = 0;
-        updateBuildingUI();
-        status.innerText = '🗑 All buildings cleared.';
-    }
+        function clearAll() {
+            if (!viewer) return;
+            if (!buildingStack.length) return;
+            buildingStack.forEach(e => viewer.entities.remove(e));
+            buildingStack.length = 0;
+            updateBuildingUI();
+            status.innerText = '🗑 All buildings cleared.';
+        }
 
-    // ── COLOR HELPERS ──
-    function hexToCesiumColor(hex, alpha) {
-        // Safety: reject near-white, replace with deep sky blue
-        const nearWhite = ['#F5F5F5','#FFFFFF','#FFF','#F0F0F0','#FEFEFE','#FFFAFA'];
-        if (nearWhite.includes(hex.toUpperCase())) hex = '#00BFFF';
-        const r = parseInt(hex.slice(1,3),16)/255;
-        const g = parseInt(hex.slice(3,5),16)/255;
-        const b = parseInt(hex.slice(5,7),16)/255;
-        return new Cesium.Color(r, g, b, alpha);
-    }
+        // ── COLOR HELPERS ──
+        function hexToCesiumColor(hex, alpha) {
+            // Safety: reject near-white, replace with deep sky blue
+            const nearWhite = ['#F5F5F5', '#FFFFFF', '#FFF', '#F0F0F0', '#FEFEFE', '#FFFAFA'];
+            if (nearWhite.includes(hex.toUpperCase())) hex = '#00BFFF';
+            const r = parseInt(hex.slice(1, 3), 16) / 255;
+            const g = parseInt(hex.slice(3, 5), 16) / 255;
+            const b = parseInt(hex.slice(5, 7), 16) / 255;
+            return new Cesium.Color(r, g, b, alpha);
+        }
 
-    // ── BLUE BUILD-SITE PIN ──
-    function makePinCanvas() {
-        const c = document.createElement('canvas');
-        c.width = 28; c.height = 44;
-        const ctx = c.getContext('2d');
-        ctx.beginPath(); ctx.arc(14,14,12,0,Math.PI*2);
-        ctx.fillStyle='#003366'; ctx.fill();
-        ctx.strokeStyle='#00ccff'; ctx.lineWidth=2.5; ctx.stroke();
-        ctx.beginPath(); ctx.arc(14,14,5,0,Math.PI*2);
-        ctx.fillStyle='#00ccff'; ctx.fill();
-        ctx.beginPath(); ctx.moveTo(14,26); ctx.lineTo(14,42);
-        ctx.strokeStyle='#003366'; ctx.lineWidth=4; ctx.stroke();
-        return c.toDataURL();
-    }
+        // ── BLUE BUILD-SITE PIN ──
+        function makePinCanvas() {
+            const c = document.createElement('canvas');
+            c.width = 28; c.height = 44;
+            const ctx = c.getContext('2d');
+            ctx.beginPath(); ctx.arc(14, 14, 12, 0, Math.PI * 2);
+            ctx.fillStyle = '#003366'; ctx.fill();
+            ctx.strokeStyle = '#00ccff'; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.beginPath(); ctx.arc(14, 14, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ccff'; ctx.fill();
+            ctx.beginPath(); ctx.moveTo(14, 26); ctx.lineTo(14, 42);
+            ctx.strokeStyle = '#003366'; ctx.lineWidth = 4; ctx.stroke();
+            return c.toDataURL();
+        }
 
-    // ── RED NAV PIN ──
-    function makeNavPinCanvas() {
-        const c = document.createElement('canvas');
-        c.width = 32; c.height = 48;
-        const ctx = c.getContext('2d');
-        ctx.beginPath(); ctx.arc(16,16,15,0,Math.PI*2);
-        ctx.fillStyle='rgba(255,107,107,0.25)'; ctx.fill();
-        ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2);
-        ctx.fillStyle='#cc2200'; ctx.fill();
-        ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2.5; ctx.stroke();
-        ctx.beginPath(); ctx.arc(16,16,5,0,Math.PI*2);
-        ctx.fillStyle='#ffffff'; ctx.fill();
-        ctx.beginPath(); ctx.moveTo(16,28); ctx.lineTo(16,46);
-        ctx.strokeStyle='#cc2200'; ctx.lineWidth=4; ctx.stroke();
-        return c.toDataURL();
-    }
+        // ── RED NAV PIN ──
+        function makeNavPinCanvas() {
+            const c = document.createElement('canvas');
+            c.width = 32; c.height = 48;
+            const ctx = c.getContext('2d');
+            ctx.beginPath(); ctx.arc(16, 16, 15, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,107,107,0.25)'; ctx.fill();
+            ctx.beginPath(); ctx.arc(16, 16, 12, 0, Math.PI * 2);
+            ctx.fillStyle = '#cc2200'; ctx.fill();
+            ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.beginPath(); ctx.arc(16, 16, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff'; ctx.fill();
+            ctx.beginPath(); ctx.moveTo(16, 28); ctx.lineTo(16, 46);
+            ctx.strokeStyle = '#cc2200'; ctx.lineWidth = 4; ctx.stroke();
+            return c.toDataURL();
+        }
 
-    // ── CLICK-TO-PLACE ──
-    function setupClickToPlace() {
-        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        // ── CLICK-TO-PLACE ──
+        function setupClickToPlace() {
+            const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
-        handler.setInputAction((click) => {
-            const picked = viewer.scene.pick(click.position);
-            if (Cesium.defined(picked) && Cesium.defined(picked.id)) return;
+            handler.setInputAction((click) => {
+                const picked = viewer.scene.pick(click.position);
+                if (Cesium.defined(picked) && Cesium.defined(picked.id)) return;
 
-            const ray = viewer.camera.getPickRay(click.position);
-            const cart = viewer.scene.globe.pick(ray, viewer.scene);
-            if (!Cesium.defined(cart)) return;
+                const ray = viewer.camera.getPickRay(click.position);
+                const cart = viewer.scene.globe.pick(ray, viewer.scene);
+                if (!Cesium.defined(cart)) return;
 
-            const carto = Cesium.Cartographic.fromCartesian(cart);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            const lng = Cesium.Math.toDegrees(carto.longitude);
+                const carto = Cesium.Cartographic.fromCartesian(cart);
+                const lat = Cesium.Math.toDegrees(carto.latitude);
+                const lng = Cesium.Math.toDegrees(carto.longitude);
 
-            if (lat < MY.minLat || lat > MY.maxLat || lng < MY.minLng || lng > MY.maxLng) {
-                status.innerText = "⚠️ Please click within Malaysia's territory.";
-                return;
-            }
+                if (lat < MY.minLat || lat > MY.maxLat || lng < MY.minLng || lng > MY.maxLng) {
+                    status.innerText = "⚠️ Please click within Malaysia's territory.";
+                    return;
+                }
 
-            chosenLat = lat;
-            chosenLng = lng;
+                chosenLat = lat;
+                chosenLng = lng;
 
-            if (pinEntity) viewer.entities.remove(pinEntity);
+                if (pinEntity) viewer.entities.remove(pinEntity);
 
-            pinEntity = viewer.entities.add({
-                name: 'Selected Build Site',
-                position: Cesium.Cartesian3.fromDegrees(lng, lat, 2),
-                description: `<p style="font-family:Inter,sans-serif;font-size:13px;color:#cde;">
+                pinEntity = viewer.entities.add({
+                    name: 'Selected Build Site',
+                    position: Cesium.Cartesian3.fromDegrees(lng, lat, 2),
+                    description: `<p style="font-family:Inter,sans-serif;font-size:13px;color:#cde;">
                     <b>📍 Build Site Selected</b><br><br>
                     Latitude: ${lat.toFixed(5)}°N<br>
                     Longitude: ${lng.toFixed(5)}°E
                 </p>`,
-                billboard: {
-                    image: makePinCanvas(),
-                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                    scale: 1.1
-                },
-                label: {
-                    text: '📍 Build Site',
-                    font: 'bold 13px Inter, sans-serif',
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    outlineWidth: 3,
-                    outlineColor: Cesium.Color.fromCssColorString('#001a33'),
-                    fillColor: Cesium.Color.WHITE,
-                    pixelOffset: new Cesium.Cartesian2(0, -52),
-                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
-                }
-            });
+                    billboard: {
+                        image: makePinCanvas(),
+                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                        scale: 1.1
+                    },
+                    label: {
+                        text: '📍 Build Site',
+                        font: 'bold 13px Inter, sans-serif',
+                        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                        outlineWidth: 3,
+                        outlineColor: Cesium.Color.fromCssColorString('#001a33'),
+                        fillColor: Cesium.Color.WHITE,
+                        pixelOffset: new Cesium.Cartesian2(0, -52),
+                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    }
+                });
 
-            banner.textContent = `✅ Site locked at ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
-            banner.classList.add('placed');
-            status.innerText = `Step 2: Site selected.`;
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-    }
-
-    // ── CITY FLY ──
-    function flyToCity(name, lat, lng) {
-        if (!viewer) return;
-
-        status.innerText = `Flying to ${name}. Click to pin your build location.`;
-        banner.textContent = '📍 Click anywhere on the map to choose a build location';
-        banner.classList.remove('placed');
-        if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
-        viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(lng, lat, 900),
-            orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 },
-            duration: 2.2
-        });
-    }
-
-    // // ── AI SIMULATE ──
-    // async function sendPrompt() {
-    //     const input  = document.getElementById('aiInput');
-    //     const btn    = document.getElementById('btnSend');
-    //     const prompt = input.value.trim();
-    //     if (!prompt) { status.innerText = "⚠️ Please type a prompt first."; return; }
-
-    //     btn.disabled = true; btn.textContent = 'PROCESSING...';
-    //     status.innerText = "🤖 AI is interpreting your request...";
-
-    //     try {
-    //         const enriched = (chosenLat !== null)
-    //             ? `${prompt}. Place the building exactly at latitude ${chosenLat.toFixed(5)}, longitude ${chosenLng.toFixed(5)} in Malaysia. Do not change the coordinates.`
-    //             : prompt;
-
-    //         const res = await fetch('/api/map-prompt', {
-    //             method: 'POST',
-    //             headers: { 'Content-Type': 'application/json' },
-    //             body: JSON.stringify({ prompt: enriched })
-    //         });
-    //         const data = await res.json();
-    //         if (data.error) throw new Error(data.error);
-
-    //         // ── NAVIGATION ONLY ──
-    //         if (data.isNavigation === true) {
-    //             const navLat = Math.min(Math.max(data.center[0], MY.minLat), MY.maxLat);
-    //             const navLng = Math.min(Math.max(data.center[1], MY.minLng), MY.maxLng);
-
-    //             // Best-effort place name with 3 fallback layers
-    //             let placeName = data.buildingName
-    //                 || (data.description || '').replace(/^Navigating to\s*/i,'').replace(/\.$/,'').trim()
-    //                 || prompt.replace(/^(go|fly|show|zoom|navigate|take me)\s+(to\s+)?/i,'').trim().toUpperCase()
-    //                 || 'Location';
-
-    //             if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
-
-    //             window.navMarker = viewer.entities.add({
-    //                 name: placeName,
-    //                 position: Cesium.Cartesian3.fromDegrees(navLng, navLat, 80),
-    //                 description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
-    //                     <div style="color:#ff6b6b;font-size:15px;font-weight:700;margin-bottom:6px;">📍 ${placeName}</div>
-    //                     Lat: ${navLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${navLng.toFixed(5)}°E<br><br>
-    //                     <i style="color:#aac4e0;">Zoom out to explore the surroundings.</i>
-    //                 </div>`,
-    //                 billboard: {
-    //                     image: makeNavPinCanvas(),
-    //                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-    //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    //                     scale: 1.3
-    //                 },
-    //                 label: {
-    //                     text: placeName,
-    //                     font: 'bold 14px Inter, sans-serif',
-    //                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-    //                     outlineWidth: 4,
-    //                     outlineColor: Cesium.Color.BLACK,
-    //                     fillColor: Cesium.Color.fromCssColorString('#ff6b6b'),
-    //                     pixelOffset: new Cesium.Cartesian2(0, -62),
-    //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    //                     showBackground: true,
-    //                     backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.85),
-    //                     backgroundPadding: new Cesium.Cartesian2(8, 5)
-    //                 }
-    //             });
-
-    //             viewer.camera.flyTo({
-    //                 destination: Cesium.Cartesian3.fromDegrees(navLng, navLat - 0.003, 900),
-    //                 orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 },
-    //                 duration: 2.8
-    //             });
-
-    //             status.innerText = `🧭 ${data.description ?? 'Navigating...'} Zoom out to explore.`;
-    //             input.value = '';
-    //             return;
-    //         }
-
-    //         // ── BUILD MODE ──
-    //         const bLat = (chosenLat !== null) ? chosenLat : data.center[0];
-    //         const bLng = (chosenLng !== null) ? chosenLng : data.center[1];
-    //         const h    = data.building?.height ?? 40;
-    //         const l    = data.building?.length ?? 40;
-    //         const w    = data.building?.width  ?? 40;
-
-    //         // Use color from server (server already sanitised near-white)
-    //         const hexColor     = data.color ?? '#00BFFF';
-    //         const fillColor    = hexToCesiumColor(hexColor, 0.6);
-    //         const outlineColor = hexToCesiumColor(hexColor, 1.0);
-
-    //         const buildingName = data.buildingName ?? prompt;
-
-    //         if (pinEntity) { viewer.entities.remove(pinEntity); pinEntity = null; }
-    //         if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
-
-    //         const newBuilding = viewer.entities.add({
-    //             name: buildingName,
-    //             position: Cesium.Cartesian3.fromDegrees(bLng, bLat, h / 2),
-    //             description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
-    //                 <div style="color:${hexColor};font-size:15px;font-weight:700;margin-bottom:8px;">🏗️ ${buildingName}</div>
-    //                 <b>Type:</b> ${(data.buildingType ?? 'building').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}<br><br>
-    //                 <b>Dimensions:</b><br>
-    //                 &nbsp;&nbsp;Length: ${l} m &nbsp;|&nbsp; Width: ${w} m &nbsp;|&nbsp; Height: ${h} m<br><br>
-    //                 <b>Location:</b><br>
-    //                 &nbsp;&nbsp;Lat: ${bLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${bLng.toFixed(5)}°E<br><br>
-    //                 <i style="color:#aac4e0;">${data.description ?? ''}</i>
-    //             </div>`,
-    //             box: {
-    //                 dimensions: new Cesium.Cartesian3(l, w, h),
-    //                 material: fillColor,
-    //                 outline: true,
-    //                 outlineColor: outlineColor,
-    //                 outlineWidth: 2
-    //             },
-    //             label: {
-    //                 text: buildingName,
-    //                 font: 'bold 12px Inter, sans-serif',
-    //                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-    //                 outlineWidth: 3,
-    //                 outlineColor: Cesium.Color.BLACK,
-    //                 fillColor: Cesium.Color.fromCssColorString(hexColor),
-    //                 pixelOffset: new Cesium.Cartesian2(0, -(h * 0.5 + 40)),
-    //                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    //                 showBackground: true,
-    //                 backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.75),
-    //                 backgroundPadding: new Cesium.Cartesian2(6, 4),
-    //                 scaleByDistance: new Cesium.NearFarScalar(200, 1.0, 5000, 0.4)
-    //             }
-    //         });
-
-    //         buildingStack.push(newBuilding);
-    //         updateBuildingUI();
-
-    //         const camAlt = Math.max(h * 7, 250);
-    //         viewer.camera.flyTo({
-    //             destination: Cesium.Cartesian3.fromDegrees(bLng + 0.0015, bLat - 0.002, camAlt),
-    //             orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-28), roll:0 },
-    //             duration: 2.5,
-    //             easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
-    //         });
-
-    //         chosenLat = null; chosenLng = null;
-    //         banner.textContent = '📍 Click anywhere on the map to choose a build location';
-    //         banner.classList.remove('placed');
-    //         input.value = '';
-    //         status.innerText = `✅ ${buildingName} has been placed on the map.`;
-
-    //     } catch(err) {
-    //         status.innerText = "❌ Error: " + err.message;
-    //         console.error(err);
-    //     } finally {
-    //         btn.disabled = false; btn.textContent = 'SIMULATE';
-    //     }
-    // }
-    
-
-    // GENERATE POPUPS
-    
-    function createPopups() {
-        const popup = document.getElementById('map-popup');
-        const popupBadge = document.getElementById('popup-badge');
-        const popupName = document.getElementById('popup-name');
-        const popupBlurb = document.getElementById('popup-blurb');
-
-        if (!popup || !popupBadge || !popupName || !popupBlurb) {
-            console.error('Popup elements are missing in the HTML.');
-            return;
+                banner.textContent = `✅ Site locked at ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
+                banner.classList.add('placed');
+                status.innerText = `Step 2: Site selected.`;
+            }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
         }
 
-        const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        // ── CITY FLY ──
+        function flyToCity(name, lat, lng) {
+            if (!viewer) return;
 
-        clickHandler.setInputAction(function (click) {
-            const picked = viewer.scene.pick(click.position);
+            status.innerText = `Flying to ${name}. Click to pin your build location.`;
+            banner.textContent = '📍 Click anywhere on the map to choose a build location';
+            banner.classList.remove('placed');
+            if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+            viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(lng, lat, 900),
+                orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+                duration: 2.2
+            });
+        }
 
-            if (Cesium.defined(picked) && Cesium.defined(picked.id)) {
-                const entity = picked.id;
-                const name = entity.name ?? '';
-                const blurb = entity.blurb ?? entity.description ?? '';
-                const type = entity.entityType ?? 'feature';
+        // // ── AI SIMULATE ──
+        // async function sendPrompt() {
+        //     const input  = document.getElementById('aiInput');
+        //     const btn    = document.getElementById('btnSend');
+        //     const prompt = input.value.trim();
+        //     if (!prompt) { status.innerText = "⚠️ Please type a prompt first."; return; }
 
-                if (!name && !blurb) {
-                    popup.style.display = 'none';
-                    return;
-                }
+        //     btn.disabled = true; btn.textContent = 'PROCESSING...';
+        //     status.innerText = "🤖 AI is interpreting your request...";
 
-                popupBadge.textContent = type;
-                popupName.textContent = name;
-                popupBlurb.textContent = blurb;
+        //     try {
+        //         const enriched = (chosenLat !== null)
+        //             ? `${prompt}. Place the building exactly at latitude ${chosenLat.toFixed(5)}, longitude ${chosenLng.toFixed(5)} in Malaysia. Do not change the coordinates.`
+        //             : prompt;
 
-                const mapFrame = document.querySelector('.map-frame');
-                const rect = mapFrame.getBoundingClientRect();
-                const x = click.position.x;
-                const y = click.position.y;
+        //         const res = await fetch('/api/map-prompt', {
+        //             method: 'POST',
+        //             headers: { 'Content-Type': 'application/json' },
+        //             body: JSON.stringify({ prompt: enriched })
+        //         });
+        //         const data = await res.json();
+        //         if (data.error) throw new Error(data.error);
 
-                const popupWidth = 220;
-                const left = Math.min(x + 10, rect.width - popupWidth - 10);
+        //         // ── NAVIGATION ONLY ──
+        //         if (data.isNavigation === true) {
+        //             const navLat = Math.min(Math.max(data.center[0], MY.minLat), MY.maxLat);
+        //             const navLng = Math.min(Math.max(data.center[1], MY.minLng), MY.maxLng);
 
-                popup.style.left = left + 'px';
-                popup.style.top = (y - 110) + 'px';
-                popup.style.display = 'block';
-            } else {
-                popup.style.display = 'none';
+        //             // Best-effort place name with 3 fallback layers
+        //             let placeName = data.buildingName
+        //                 || (data.description || '').replace(/^Navigating to\s*/i,'').replace(/\.$/,'').trim()
+        //                 || prompt.replace(/^(go|fly|show|zoom|navigate|take me)\s+(to\s+)?/i,'').trim().toUpperCase()
+        //                 || 'Location';
+
+        //             if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+
+        //             window.navMarker = viewer.entities.add({
+        //                 name: placeName,
+        //                 position: Cesium.Cartesian3.fromDegrees(navLng, navLat, 80),
+        //                 description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
+        //                     <div style="color:#ff6b6b;font-size:15px;font-weight:700;margin-bottom:6px;">📍 ${placeName}</div>
+        //                     Lat: ${navLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${navLng.toFixed(5)}°E<br><br>
+        //                     <i style="color:#aac4e0;">Zoom out to explore the surroundings.</i>
+        //                 </div>`,
+        //                 billboard: {
+        //                     image: makeNavPinCanvas(),
+        //                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        //                     scale: 1.3
+        //                 },
+        //                 label: {
+        //                     text: placeName,
+        //                     font: 'bold 14px Inter, sans-serif',
+        //                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        //                     outlineWidth: 4,
+        //                     outlineColor: Cesium.Color.BLACK,
+        //                     fillColor: Cesium.Color.fromCssColorString('#ff6b6b'),
+        //                     pixelOffset: new Cesium.Cartesian2(0, -62),
+        //                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        //                     showBackground: true,
+        //                     backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.85),
+        //                     backgroundPadding: new Cesium.Cartesian2(8, 5)
+        //                 }
+        //             });
+
+        //             viewer.camera.flyTo({
+        //                 destination: Cesium.Cartesian3.fromDegrees(navLng, navLat - 0.003, 900),
+        //                 orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 },
+        //                 duration: 2.8
+        //             });
+
+        //             status.innerText = `🧭 ${data.description ?? 'Navigating...'} Zoom out to explore.`;
+        //             input.value = '';
+        //             return;
+        //         }
+
+        //         // ── BUILD MODE ──
+        //         const bLat = (chosenLat !== null) ? chosenLat : data.center[0];
+        //         const bLng = (chosenLng !== null) ? chosenLng : data.center[1];
+        //         const h    = data.building?.height ?? 40;
+        //         const l    = data.building?.length ?? 40;
+        //         const w    = data.building?.width  ?? 40;
+
+        //         // Use color from server (server already sanitised near-white)
+        //         const hexColor     = data.color ?? '#00BFFF';
+        //         const fillColor    = hexToCesiumColor(hexColor, 0.6);
+        //         const outlineColor = hexToCesiumColor(hexColor, 1.0);
+
+        //         const buildingName = data.buildingName ?? prompt;
+
+        //         if (pinEntity) { viewer.entities.remove(pinEntity); pinEntity = null; }
+        //         if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+
+        //         const newBuilding = viewer.entities.add({
+        //             name: buildingName,
+        //             position: Cesium.Cartesian3.fromDegrees(bLng, bLat, h / 2),
+        //             description: `<div style="font-family:Inter,sans-serif;font-size:13px;padding:10px;color:#dce8f5;background:#001a33;border-radius:6px;">
+        //                 <div style="color:${hexColor};font-size:15px;font-weight:700;margin-bottom:8px;">🏗️ ${buildingName}</div>
+        //                 <b>Type:</b> ${(data.buildingType ?? 'building').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}<br><br>
+        //                 <b>Dimensions:</b><br>
+        //                 &nbsp;&nbsp;Length: ${l} m &nbsp;|&nbsp; Width: ${w} m &nbsp;|&nbsp; Height: ${h} m<br><br>
+        //                 <b>Location:</b><br>
+        //                 &nbsp;&nbsp;Lat: ${bLat.toFixed(5)}°N &nbsp;|&nbsp; Lng: ${bLng.toFixed(5)}°E<br><br>
+        //                 <i style="color:#aac4e0;">${data.description ?? ''}</i>
+        //             </div>`,
+        //             box: {
+        //                 dimensions: new Cesium.Cartesian3(l, w, h),
+        //                 material: fillColor,
+        //                 outline: true,
+        //                 outlineColor: outlineColor,
+        //                 outlineWidth: 2
+        //             },
+        //             label: {
+        //                 text: buildingName,
+        //                 font: 'bold 12px Inter, sans-serif',
+        //                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        //                 outlineWidth: 3,
+        //                 outlineColor: Cesium.Color.BLACK,
+        //                 fillColor: Cesium.Color.fromCssColorString(hexColor),
+        //                 pixelOffset: new Cesium.Cartesian2(0, -(h * 0.5 + 40)),
+        //                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        //                 showBackground: true,
+        //                 backgroundColor: Cesium.Color.fromCssColorString('#001a33').withAlpha(0.75),
+        //                 backgroundPadding: new Cesium.Cartesian2(6, 4),
+        //                 scaleByDistance: new Cesium.NearFarScalar(200, 1.0, 5000, 0.4)
+        //             }
+        //         });
+
+        //         buildingStack.push(newBuilding);
+        //         updateBuildingUI();
+
+        //         const camAlt = Math.max(h * 7, 250);
+        //         viewer.camera.flyTo({
+        //             destination: Cesium.Cartesian3.fromDegrees(bLng + 0.0015, bLat - 0.002, camAlt),
+        //             orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-28), roll:0 },
+        //             duration: 2.5,
+        //             easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
+        //         });
+
+        //         chosenLat = null; chosenLng = null;
+        //         banner.textContent = '📍 Click anywhere on the map to choose a build location';
+        //         banner.classList.remove('placed');
+        //         input.value = '';
+        //         status.innerText = `✅ ${buildingName} has been placed on the map.`;
+
+        //     } catch(err) {
+        //         status.innerText = "❌ Error: " + err.message;
+        //         console.error(err);
+        //     } finally {
+        //         btn.disabled = false; btn.textContent = 'SIMULATE';
+        //     }
+        // }
+
+
+        // GENERATE POPUPS
+
+        function createPopups() {
+            const popup = document.getElementById('map-popup');
+            const popupBadge = document.getElementById('popup-badge');
+            const popupName = document.getElementById('popup-name');
+            const popupBlurb = document.getElementById('popup-blurb');
+
+            if (!popup || !popupBadge || !popupName || !popupBlurb) {
+                console.error('Popup elements are missing in the HTML.');
+                return;
             }
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-    }
 
-    async function callApi() {
-        const inputText = `
+            const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+            clickHandler.setInputAction(function (click) {
+                const picked = viewer.scene.pick(click.position);
+
+                if (Cesium.defined(picked) && Cesium.defined(picked.id)) {
+                    const entity = picked.id;
+                    const name = entity.name ?? '';
+                    const blurb = entity.blurb ?? entity.description ?? '';
+                    const type = entity.entityType ?? 'feature';
+
+                    if (!name && !blurb) {
+                        popup.style.display = 'none';
+                        return;
+                    }
+
+                    popupBadge.textContent = type;
+                    popupName.textContent = name;
+                    popupBlurb.textContent = blurb;
+
+                    const mapFrame = document.querySelector('.map-frame');
+                    const rect = mapFrame.getBoundingClientRect();
+                    const x = click.position.x;
+                    const y = click.position.y;
+
+                    const popupWidth = 220;
+                    const left = Math.min(x + 10, rect.width - popupWidth - 10);
+
+                    popup.style.left = left + 'px';
+                    popup.style.top = (y - 110) + 'px';
+                    popup.style.display = 'block';
+                } else {
+                    popup.style.display = 'none';
+                }
+            }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+        }
+
+        async function callApi() {
+            const inputText = `
         [POINT | x1 | Bus Priority Signal | Jalan Ampang - Jalan Tun Razak Intersection | color:green, size:large | Dedicated bus-priority signal providing a 6-second head start phase at node 1198097188]
         [POLYLINE | x1 | Channelized Lane Segment | Jalan Ampang | color:yellow, width:thick | 17.1m segment with physical separators for bus-only movement across the junction]
         [POLYGON | x1 | Advanced Bus Box | Jalan Ampang - Jalan Tun Razak Intersection | color:yellow, opacity:0.4 | Dedicated 'bus box' stop area at the junction entrance for prioritized clearance]
@@ -1408,272 +1709,347 @@
         `
 
 
-        try {
-            const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/buildingAgentHelper', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: inputText })
-            });
+            try {
+                const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/buildingAgentHelper', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: inputText })
+                });
 
-            const data = await response.json();
+                const data = await response.json();
 
-            if (data.status === 'ok') {
-                return data.message; // 👈 was missing the return!
-            } else {
-                console.error('API error:', data.message);
+                if (data.status === 'ok') {
+                    return data.message; // 👈 was missing the return!
+                } else {
+                    console.error('API error:', data.message);
+                    return null;
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
                 return null;
             }
-
-        } catch (error) {
-            console.error('Error:', error);
-            return null;
         }
-    }
-    
-    // Assume 'mapData' is the JSON array output from your Python script
-    function renderStreetsToCesium(mapData) {
-        mapData.forEach(asset => {
-            // Only process the polylines (streets and bridges)
-            if (asset.entity_type === 'polyline_existing' || asset.entity_type === 'polyline_new') {
-                
-                // 1. Flatten your coordinates into the format Cesium expects:
-                // [lon1, lat1, height1, lon2, lat2, height2, ...]
-                let degreesArray = [];
-                asset.polyline_positions.forEach(coord => {
-                    degreesArray.push(coord.lng);
-                    degreesArray.push(coord.lat);
-                    degreesArray.push(coord.height);
-                });
 
-                // 2. Add the Entity to the Viewer
-                viewer.entities.add({
-                    id: asset.id,
-                    name: asset.name,
-                    blurb: asset.blurb,
-                    entityType: asset.entity_type,
-                    description: asset.blurb,
-                    polyline: {
-                        positions: Cesium.Cartesian3.fromDegreesArrayHeights(degreesArray),
-                        material: Cesium.Color.fromCssColorString(asset.style.color).withAlpha(asset.style.opacity),
-                        width: asset.style.width,
-                        clampToGround: asset.entity_type === 'polyline_existing',
-                    }
-                });
-            }
-        });
+        // Assume 'mapData' is the JSON array output from your Python script
+        function renderStreetsToCesium(mapData) {
+            mapData.forEach(asset => {
+                // Only process the polylines (streets and bridges)
+                if (asset.entity_type === 'polyline_existing' || asset.entity_type === 'polyline_new') {
 
-        // // Optional: Make the camera zoom to the newly added streets
-        viewer.zoomTo(viewer.entities);
-    }
+                    // 1. Flatten your coordinates into the format Cesium expects:
+                    // [lon1, lat1, height1, lon2, lat2, height2, ...]
+                    let degreesArray = [];
+                    asset.polyline_positions.forEach(coord => {
+                        degreesArray.push(coord.lng);
+                        degreesArray.push(coord.lat);
+                        degreesArray.push(coord.height);
+                    });
 
-    function showLoader() {
-        document.getElementById("mapLoader").style.display = "flex";
-    }
-
-    function hideLoader() {
-        document.getElementById("mapLoader").style.display = "none";
-    }
-
-    function showChatView() {
-        document.body.classList.remove("map-mode");
-        document.body.classList.add("chat-mode");
-
-        document.getElementById("chatView").classList.add("active");
-        document.getElementById("mapView").classList.remove("active");
-    }
-
-    function showMapView() {
-        document.body.classList.remove("chat-mode");
-        document.body.classList.add("map-mode");
-
-        document.getElementById("mapView").classList.add("active");
-        document.getElementById("chatView").classList.remove("active");
-
-        initMapIfNeeded();
-
-        if (viewer && viewer.scene) {
-            viewer.resize();
-        }
-    }
-
-    function formatReply(text) {
-        if (!text) return "";
-
-        const escapeHTML = (str) =>
-            str.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-
-        let formatted = escapeHTML(text);
-
-        // Bold "Challenge X:"
-        formatted = formatted.replace(
-            /(Challenge\s+\d+:.*)/g,
-            '<strong>$1</strong>'
-        );
-
-        // Bold common labels
-        formatted = formatted.replace(/(Macro root cause:)/g, "<strong>$1</strong>");
-        formatted = formatted.replace(/(Primary location:)/g, "<strong>$1</strong>");
-        formatted = formatted.replace(/(Roads:)/g, "<strong>$1</strong>");
-        formatted = formatted.replace(/(Symptom:)/g, "<strong>$1</strong>");
-
-        // Line breaks
-        formatted = formatted.replace(/\n/g, "<br>");
-
-        return formatted;
-    }
-
-    function addChatMessage(role, text) {
-        const chatMessages = document.getElementById("chatMessages");
-
-        const bubble = document.createElement("div");
-        bubble.className = `chat-bubble ${role}`;
-
-        // 👇 CHANGE THIS
-        bubble.innerHTML = formatReply(text);
-
-        chatMessages.appendChild(bubble);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    let currentSessionId = null;
-
-    async function startWorkflow() {
-        try {
-            const response = await fetch("http://localhost:8000/api/start", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({})
+                    // 2. Add the Entity to the Viewer
+                    viewer.entities.add({
+                        id: asset.id,
+                        name: asset.name,
+                        blurb: asset.blurb,
+                        entityType: asset.entity_type,
+                        description: asset.blurb,
+                        polyline: {
+                            positions: Cesium.Cartesian3.fromDegreesArrayHeights(degreesArray),
+                            material: Cesium.Color.fromCssColorString(asset.style.color).withAlpha(asset.style.opacity),
+                            width: asset.style.width,
+                            clampToGround: asset.entity_type === 'polyline_existing',
+                        }
+                    });
+                }
             });
 
-            const data = await response.json();
-            console.log("START RESPONSE:", data);
-
-            if (!data.ok) {
-                addChatMessage("agent", "Failed to start workflow.");
-                return;
-            }
-
-            currentSessionId = data.session_id;
-            addChatMessage("agent", data.reply);
-
-            // First prompt should guide the user to provide location
-            document.getElementById("aiInput").placeholder =
-                "Reply with one or two Malaysian cities or towns...";
-        } catch (err) {
-            addChatMessage("agent", "Error starting workflow: " + err.message);
+            // // Optional: Make the camera zoom to the newly added streets
+            viewer.zoomTo(viewer.entities);
         }
-    }
 
-    function addLoadingMessage(text = "Thinking") {
-        const chatMessages = document.getElementById("chatMessages");
+        function showLoader() {
+            document.getElementById("mapLoader").style.display = "flex";
+        }
 
-        const bubble = document.createElement("div");
-        bubble.className = "chat-bubble loading";
-        bubble.id = "loadingBubble";
-        bubble.innerHTML = `
+        function hideLoader() {
+            document.getElementById("mapLoader").style.display = "none";
+        }
+
+        function showChatView() {
+            document.body.classList.remove("map-mode");
+            document.body.classList.add("chat-mode");
+
+            document.getElementById("chatView").classList.add("active");
+            document.getElementById("mapView").classList.remove("active");
+        }
+
+        function showMapView() {
+            document.body.classList.remove("chat-mode");
+            document.body.classList.add("map-mode");
+
+            document.getElementById("mapView").classList.add("active");
+            document.getElementById("chatView").classList.remove("active");
+
+            initMapIfNeeded();
+
+            if (viewer && viewer.scene) {
+                viewer.resize();
+            }
+        }
+
+        function setLegendExpanded(isExpanded) {
+            const legend = document.getElementById("legend");
+            const toggleBtn = document.getElementById("legendToggleBtn");
+            const toggleLabel = document.getElementById("legendToggleLabel");
+            if (!legend || !toggleBtn || !toggleLabel) return;
+
+            legend.classList.toggle("is-collapsed", !isExpanded);
+            toggleBtn.classList.toggle("is-collapsed", !isExpanded);
+            toggleBtn.setAttribute("aria-expanded", String(isExpanded));
+            toggleLabel.textContent = isExpanded ? "Hide Categories" : "Show Categories";
+        }
+
+        function toggleLegendPanel() {
+            const legend = document.getElementById("legend");
+            if (!legend) return;
+            const isCollapsed = legend.classList.contains("is-collapsed");
+            setLegendExpanded(isCollapsed);
+        }
+
+        function formatReply(text) {
+            if (!text) return "";
+
+            const escapeHTML = (str) =>
+                str.replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+
+            let formatted = escapeHTML(text);
+
+            // Bold "Challenge X:"
+            formatted = formatted.replace(
+                /(Challenge\s+\d+:.*)/g,
+                '<strong>$1</strong>'
+            );
+
+            // Bold common labels
+            formatted = formatted.replace(/(Macro root cause:)/g, "<strong>$1</strong>");
+            formatted = formatted.replace(/(Primary location:)/g, "<strong>$1</strong>");
+            formatted = formatted.replace(/(Roads:)/g, "<strong>$1</strong>");
+            formatted = formatted.replace(/(Symptom:)/g, "<strong>$1</strong>");
+
+            // Line breaks
+            formatted = formatted.replace(/\n/g, "<br>");
+
+            return formatted;
+        }
+
+        function isErrorMessage(text = "") {
+            const lower = String(text).toLowerCase();
+            return (
+                lower.startsWith("error") ||
+                lower.includes("failed") ||
+                lower.includes("something went wrong")
+            );
+        }
+
+        function updateEmptyState() {
+            const chatMessages = document.getElementById("chatMessages");
+            const emptyState = document.getElementById("chatEmptyState");
+            if (!chatMessages || !emptyState) return;
+
+            const bubbles = chatMessages.querySelectorAll(".chat-bubble");
+            emptyState.hidden = bubbles.length > 0;
+        }
+
+        function addChatMessage(role, text) {
+            const chatMessages = document.getElementById("chatMessages");
+
+            const bubble = document.createElement("div");
+            bubble.className = `chat-bubble ${role}`;
+            if (role === "agent" && isErrorMessage(text)) {
+                bubble.classList.add("error");
+            }
+            bubble.innerHTML = formatReply(text);
+
+            chatMessages.appendChild(bubble);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            updateEmptyState();
+        }
+
+        let currentSessionId = null;
+
+        async function startWorkflow() {
+            try {
+                const response = await fetch("http://localhost:8000/api/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+                console.log("START RESPONSE:", data);
+
+                if (!data.ok) {
+                    addChatMessage("agent", "Failed to start workflow.");
+                    return;
+                }
+
+                currentSessionId = data.session_id;
+                addChatMessage("agent", data.reply);
+
+                // First prompt should guide the user to provide location
+                document.getElementById("aiInput").placeholder =
+                    "Reply with one or two Malaysian cities or towns...";
+            } catch (err) {
+                addChatMessage("agent", "Error starting workflow: " + err.message);
+            }
+        }
+
+        function addLoadingMessage(text = "Thinking") {
+            const chatMessages = document.getElementById("chatMessages");
+
+            const bubble = document.createElement("div");
+            bubble.className = "chat-bubble loading";
+            bubble.id = "loadingBubble";
+            bubble.innerHTML = `
             <span>${text}</span>
             <span class="typing-dots">
                 <span></span><span></span><span></span>
             </span>
         `;
 
-        chatMessages.appendChild(bubble);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
+            chatMessages.appendChild(bubble);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            updateEmptyState();
+        }
 
-    function removeLoadingMessage() {
-        const bubble = document.getElementById("loadingBubble");
-        if (bubble) bubble.remove();
-    }
+        function removeLoadingMessage() {
+            const bubble = document.getElementById("loadingBubble");
+            if (bubble) bubble.remove();
+            updateEmptyState();
+        }
 
-    async function submitPrompt() {
-        const input = document.getElementById("aiInput");
-        const btn = document.getElementById("btnSend");
-        const text = input.value.trim();
-
-        if (!text || !currentSessionId) return;
-
-        addChatMessage("user", text);
-        input.value = "";
-
-        btn.disabled = true;
-        input.disabled = true;
-        btn.textContent = "WAIT...";
-        input.placeholder = "The agent is thinking...";
-
-        addLoadingMessage("Thinking");
-
-        try {
-            const response = await fetch("http://localhost:8000/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    session_id: currentSessionId,
-                    message: text
-                })
-            });
-
-            const data = await response.json();
-            console.log("CHAT RESPONSE:", data);
-
-            removeLoadingMessage();
-
-            if (!data.ok) {
-                addChatMessage("agent", "Something went wrong.");
-                return;
-            }
-
-            if (data.needs_input === false){
-                submitPrompt()
-            }else{
-                addChatMessage("agent", data.reply);
-            }
-
-            if (data.stage === "done" || data.show_map === true) {
-                showMapView();
-
-                if (data.entities) {
-                    console.log("okay")
-                    renderEntities(data.entities);
-                    createPopups();
-                    renderStreetsToCesium(data.entities);
-                }
-            }
-
-        } catch (err) {
-            removeLoadingMessage();
-            addChatMessage("agent", "Error: " + err.message);
-        } finally {
-            btn.disabled = false;
-            input.disabled = false;
-            btn.textContent = "SEND";
-            input.placeholder = "Type your message to the agent...";
+        function setPromptFromSuggestion(promptText) {
+            const input = document.getElementById("aiInput");
+            if (!input) return;
+            input.value = promptText;
             input.focus();
         }
-    }
-        
-    async function main() {
-        showChatView();
-        await startWorkflow();
 
-//        manual input
-        // showMapView();
-        // const data = await callApi();  
-        // console.log("API RETURN:", data);
+        async function retryWorkflowConnection() {
+            currentSessionId = null;
+            const chatMessages = document.getElementById("chatMessages");
+            if (chatMessages) {
+                chatMessages.querySelectorAll(".chat-bubble").forEach((el) => el.remove());
+            }
+            updateEmptyState();
+            await startWorkflow();
+        }
 
-        // if (!data) {
-        //     console.error("No data returned");
-        //     return;
-        // }
+        async function submitPrompt() {
+            const input = document.getElementById("aiInput");
+            const btn = document.getElementById("btnSend");
+            const text = input.value.trim();
 
-        // renderEntities(data);
-        // createPopups();
-        // renderStreetsToCesium(data);
-    }
+            if (!text || !currentSessionId) return;
 
-    main();
-</script>
+            addChatMessage("user", text);
+            input.value = "";
+
+            btn.disabled = true;
+            input.disabled = true;
+            btn.textContent = "WAIT...";
+            input.placeholder = "The agent is thinking...";
+
+            addLoadingMessage("Thinking");
+
+            try {
+                const response = await fetch("http://localhost:8000/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        message: text
+                    })
+                });
+
+                const data = await response.json();
+                console.log("CHAT RESPONSE:", data);
+
+                removeLoadingMessage();
+
+                if (!data.ok) {
+                    addChatMessage("agent", "Something went wrong.");
+                    return;
+                }
+
+                if (data.needs_input === false) {
+                    submitPrompt()
+                } else {
+                    addChatMessage("agent", data.reply);
+                }
+
+                if (data.stage === "done" || data.show_map === true) {
+                    showMapView();
+
+                    if (data.entities) {
+                        console.log("okay")
+                        renderEntities(data.entities);
+                        createPopups();
+                        renderStreetsToCesium(data.entities);
+                    }
+                }
+
+            } catch (err) {
+                removeLoadingMessage();
+                addChatMessage("agent", "Error: " + err.message);
+            } finally {
+                btn.disabled = false;
+                input.disabled = false;
+                btn.textContent = "SEND";
+                input.placeholder = "Type your message to the agent...";
+                input.focus();
+            }
+        }
+
+        async function main() {
+            showChatView();
+            document.querySelectorAll(".quick-prompt").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const prompt = btn.getAttribute("data-prompt") || "";
+                    setPromptFromSuggestion(prompt);
+                });
+            });
+            const retryBtn = document.getElementById("retryWorkflowBtn");
+            if (retryBtn) {
+                retryBtn.addEventListener("click", retryWorkflowConnection);
+            }
+            const legendToggleBtn = document.getElementById("legendToggleBtn");
+            if (legendToggleBtn) {
+                legendToggleBtn.addEventListener("click", toggleLegendPanel);
+            }
+            setLegendExpanded(true);
+            // updateEmptyState();
+            // await startWorkflow();
+
+            //        manual input
+            // showMapView();
+            // const data = await callApi();  
+            // console.log("API RETURN:", data);
+
+            // if (!data) {
+            //     console.error("No data returned");
+            //     return;
+            // }
+
+            // renderEntities(data);
+            // createPopups();
+            // renderStreetsToCesium(data);
+        }
+
+        main();
+    </script>
 </body>
+
 </html>
