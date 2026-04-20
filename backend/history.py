@@ -5,9 +5,7 @@ from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 import os
 
-cred = credentials.Certificate(
-    "hackathon-2eedf-firebase-adminsdk-fbsvc-f5c671d9a2.json"
-)
+cred = credentials.ApplicationDefault()
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
