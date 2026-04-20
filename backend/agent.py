@@ -22,7 +22,7 @@ load_dotenv()
 
 place_intake_agent = LlmAgent(
     name="place_intake_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Collects one or two Malaysian cities/towns from the user with a natural feedback loop.",
     instruction="""
         You are the intake agent for an infrastructure planning assistant.
@@ -72,7 +72,7 @@ place_intake_agent = LlmAgent(
 
 find_needs_agent = LlmAgent(
     name="find_needs_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Identifies the top 3 broad transport-related challenges for the selected Malaysian city or town.",
     instruction="""
         You are the Lead Transport Systems Analysis Supervisor for Malaysia.
@@ -135,7 +135,7 @@ find_needs_agent = LlmAgent(
 
 find_hotspot_agent = LlmAgent(
     name="find_hotspot_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Generates one graph-routable hotspot hypothesis for a selected transport challenge.",
     instruction="""
         You are a hotspot hypothesis agent.
@@ -176,7 +176,7 @@ find_hotspot_agent = LlmAgent(
 
 planning_agent = LlmAgent(
     name="planning_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
     instruction = """
         You are a Transport Planning Decision Agent for Malaysia.
@@ -264,9 +264,9 @@ planning_agent = LlmAgent(
 )
 
 solution_agent = LlmAgent(
-    name="planning_agent",
-    model="gemini-3-flash-preview",
-    description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
+    name="solution_agent",
+    model="gemini-3.1-flash-lite-preview",
+    description="Translates transport planning decisions into detailed, actionable engineering solutions.",
     instruction = """
         You are a Transport Infrastructure Solution Designer.
 
@@ -382,7 +382,7 @@ solution_agent = LlmAgent(
 
 building_agent = LlmAgent(
     name="building_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Converts a selected infrastructure option into structured map scene data for CesiumJS.",
     instruction="""
         You are a Transport Infrastructure Map Building Agent.
@@ -497,7 +497,7 @@ building_agent = LlmAgent(
 
 activity_agent = LlmAgent(
     name="activity_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Simulates how public activity changes after the infrastructure improvements.",
     instruction="""
 Simulate human activity based on session.state["simulation_result"].
@@ -516,7 +516,7 @@ Show:
 
 analysis_agent = LlmAgent(
     name="analysis_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Analyzes the final impact of the infrastructure proposal.",
     instruction="""
 Analyze session.state["activity_simulation"].
@@ -540,7 +540,7 @@ Include justification for each score.
 
 review_agent = LlmAgent(
     name="review_agent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
     instruction="""
         You are a review agent for a multi-step infrastructure planning workflow.
@@ -1152,7 +1152,7 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
             "secondary": secondary_result
         }
     
-    def run_analysis_from_agent_output(self, agent_output, user_city, regions_path="regions.json", city_buffer_m=2000):
+    def run_analysis_from_agent_output(self, agent_output, user_city, regions_path="regions.json", city_buffer_m=1000):
         primary = agent_output.get("PRIMARY_MICRO", {})
         secondary = agent_output.get("SECONDARY_MICRO", {})
 

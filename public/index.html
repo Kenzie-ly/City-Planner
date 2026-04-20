@@ -13,14 +13,19 @@
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
         :root {
-            --primary: #003366;
-            --bg: #f4f7f9;
+            --primary: #dce8ff;
+            --bg: #050b16;
             --border: #ccd6dd;
-            --text: #1c2e42;
-            --muted: #5a6484;
+            --text: #dce8ff;
+            --muted: #a9b9d6;
             --panel: rgba(0, 20, 50, 0.90);
             --panel-soft: rgba(0, 20, 50, 0.75);
-            --accent: #7ec8f7;
+            --accent: #9fb6ff;
+            --success: #35d07f;
+            --panel-border: rgba(138, 162, 255, 0.24);
+            --shadow: 0 20px 42px rgba(0, 0, 0, 0.28);
+            --primary-cta: #5b70ff;
+            --primary-cta-strong: #7a6dff;
         }
 
         * {
@@ -34,11 +39,18 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: var(--bg);
+            background:
+                radial-gradient(circle at 20% 12%, rgba(66, 106, 210, 0.2), transparent 34%),
+                radial-gradient(circle at 82% 88%, rgba(123, 105, 255, 0.16), transparent 36%),
+                linear-gradient(160deg, #050b16 0%, #0a1427 58%, #0b1322 100%);
             margin: 0;
             font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             color: var(--text);
             overflow: hidden;
+        }
+
+        .page {
+            background: transparent;
         }
 
         body::before {
@@ -54,15 +66,15 @@
         }
 
         .container {
-            width: min(1360px, calc(100vw - clamp(16px, 3vw, 44px)));
-            height: calc(100vh - clamp(16px, 3vw, 44px));
-            margin: clamp(8px, 1.5vw, 22px) auto;
-            flex:1;
-            max-width: 1100px;
-            margin: 0 auto;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: clamp(8px, 1.5vw, 22px);
             display: flex;
             flex-direction: column;
             gap: clamp(10px, 1.3vw, 16px);
+            min-width: 0;
+            grid-area: main;
         }
 
         header {
@@ -102,7 +114,7 @@
         }
 
         .header-subtitle {
-            color: var(--muted);
+            color: #b9c8e3;
             font-size: clamp(0.84rem, 0.35vw + 0.72rem, 0.98rem);
             line-height: 1.42;
             max-width: 72ch;
@@ -123,9 +135,9 @@
             gap: 8px;
             padding: clamp(8px, 0.5vw + 5px, 10px) clamp(12px, 1.4vw, 16px);
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--muted);
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(168, 184, 255, 0.34);
+            color: #d7e6ff;
             font-size: clamp(0.74rem, 0.2vw + 0.68rem, 0.82rem);
             font-weight: 700;
             letter-spacing: 0.04em;
@@ -144,6 +156,7 @@
         .map-frame {
             flex: 1;
             min-height: 0;
+            position: relative;
             border-radius: 8px;
             border: 2px solid var(--border);
             overflow: hidden;
@@ -192,56 +205,11 @@
             display: flex;
         }
 
-        .chat-header {
+        .chat-shell {
+            flex: 1;
+            min-height: 0;
             display: flex;
-            justify-content: space-between;
-            gap: clamp(10px, 1.6vw, 16px);
-            align-items: flex-start;
-            padding: clamp(10px, 1.2vw, 14px) clamp(12px, 1.4vw, 16px);
-            border: 1px solid rgba(125, 163, 255, 0.15);
-            border-radius: 16px;
-            background:
-                linear-gradient(105deg, rgba(255, 255, 255, 0.03), rgba(79, 124, 255, 0.08));
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            flex-shrink: 0;
-        }
-
-        .chat-header-left {
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
-        }
-
-        .agent-badge {
-            width: 40px;
-            height: 40px;
-            border-radius: 13px;
-            display: grid;
-            place-items: center;
-            font-size: 1rem;
-            background: linear-gradient(135deg, rgba(79, 124, 255, 0.26), rgba(127, 231, 255, 0.18));
-            border: 1px solid rgba(127, 231, 255, 0.2);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-        }
-
-        .chat-title {
-            font-family: "Sora", "Manrope", sans-serif;
-            font-size: clamp(1.02rem, 0.64vw + 0.82rem, 1.28rem);
-            font-weight: 800;
-            color: var(--primary);
-            letter-spacing: 0.02em;
-        }
-
-        .chat-subtitle {
-            margin-top: 2px;
-            color: var(--muted);
-            line-height: 1.42;
-            font-size: clamp(0.8rem, 0.22vw + 0.72rem, 0.9rem);
-            max-width: 70ch;
-        }
-
-        .chat-stage {
-            flex-shrink: 0;
+            flex-direction: column;
         }
 
         .chat-messages {
@@ -251,7 +219,7 @@
             display: flex;
             flex-direction: column;
             gap: clamp(10px, 1.2vw, 14px);
-            padding: 6px clamp(10px, 1vw, 14px) 122px 6px;
+            padding: 0 clamp(10px, 1vw, 14px) 122px 6px;
             scroll-behavior: smooth;
             scroll-padding-bottom: 122px;
             align-items: stretch;
@@ -310,8 +278,8 @@
 
         .quick-prompt:hover {
             transform: translateY(-1px);
-            background: rgba(79, 124, 255, 0.14);
-            border-color: rgba(127, 231, 255, 0.34);
+            background: rgba(92, 112, 255, 0.2);
+            border-color: rgba(170, 190, 255, 0.42);
         }
 
         .empty-actions {
@@ -364,7 +332,7 @@
             max-inline-size: min(66%, 48ch);
             min-inline-size: 0;
             margin-right: 2px;
-            background: linear-gradient(135deg, #3657d6 0%, #4a75ff 100%);
+            background: linear-gradient(135deg, #3f5fe0 0%, #6a74ff 100%);
             color: #f7faff;
             border-bottom-right-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -374,11 +342,10 @@
 
         .chat-bubble.assistant {
             align-self: flex-start;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.045) 100%);
-            color: var(--text);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(180deg, rgba(223, 231, 255, 0.94), rgba(210, 221, 255, 0.9));
+            color: #243352;
+            border: 1px solid rgba(173, 188, 239, 0.9);
             border-bottom-left-radius: 8px;
-            backdrop-filter: blur(10px);
         }
 
         .chat-bubble.system {
@@ -386,9 +353,9 @@
             max-width: 92%;
             padding: 10px 16px;
             border-radius: 999px;
-            background: rgba(127, 231, 255, 0.08);
-            border: 1px solid rgba(127, 231, 255, 0.16);
-            color: #b4ebff;
+            background: rgba(103, 122, 255, 0.16);
+            border: 1px solid rgba(156, 170, 255, 0.34);
+            color: #dbe3ff;
             font-size: 0.78rem;
             font-weight: 700;
             text-align: center;
@@ -398,9 +365,9 @@
 
         .chat-bubble.loading {
             align-self: flex-start;
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--muted);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(180deg, rgba(73, 90, 170, 0.26), rgba(52, 67, 132, 0.2));
+            color: #cbd7ff;
+            border: 1px solid rgba(142, 161, 245, 0.3);
             border-bottom-left-radius: 8px;
             font-style: italic;
         }
@@ -430,16 +397,17 @@
 
         .chat-bubble.user {
             align-self: flex-end;
-            background: var(--primary);
-            color: #fff;
-            border-bottom-right-radius: 4px;
+            background: linear-gradient(135deg, #3f5fe0 0%, #6a74ff 100%);
+            color: #f7faff;
+            border-bottom-right-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .chat-bubble.agent {
             align-self: flex-start;
-            background: #ffffff;
-            color: var(--text);
-            border: 1px solid #d6e0ea;
+            background: linear-gradient(180deg, rgba(223, 231, 255, 0.95), rgba(211, 222, 255, 0.92));
+            color: #243352;
+            border: 1px solid rgba(173, 188, 239, 0.9);
             border-bottom-left-radius: 4px;
         }
 
@@ -535,7 +503,7 @@
             border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.08);
             background: rgba(255, 255, 255, 0.05);
-            color: var(--text);
+            color: #1f2f47;
             font-size: clamp(0.9rem, 0.2vw + 0.84rem, 0.98rem);
             outline: none;
             font-family: inherit;
@@ -545,8 +513,12 @@
         .chat-input-row input:focus,
         #aiInput:focus {
             border-color: rgba(127, 231, 255, 0.4);
-            background: rgba(255, 255, 255, 0.07);
+            background: #ffffff;
             box-shadow: 0 0 0 4px rgba(79, 124, 255, 0.14);
+        }
+
+        #aiInput::placeholder {
+            color: #6f7d96;
         }
 
         .chat-input-row button,
@@ -560,14 +532,14 @@
             font-size: clamp(0.82rem, 0.15vw + 0.78rem, 0.92rem);
             letter-spacing: 0.03em;
             color: #f7fbff;
-            background: linear-gradient(135deg, #4b75ff 0%, #6a95ff 100%);
-            box-shadow: 0 10px 24px rgba(58, 103, 235, 0.45);
+            background: linear-gradient(135deg, #4e66f0 0%, #7a6dff 100%);
+            box-shadow: 0 10px 24px rgba(86, 105, 245, 0.45);
             transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
         }
 
         .chat-input-row button:hover,
         button#btnSend:hover {
-            background: #0056b3;
+            background: #4a5cd5;
         }
 
         .chat-input-row button:disabled,
@@ -681,7 +653,7 @@
             top: 12px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,51,102,0.88);
+            background: rgba(0, 51, 102, 0.88);
             color: #fff;
             padding: 7px 20px;
             border-radius: 50px;
@@ -834,7 +806,7 @@
             position: absolute;
             bottom: 12px;
             right: 12px;
-            background: rgba(0,20,50,0.75);
+            background: rgba(0, 20, 50, 0.75);
             color: #aac4e0;
             border-radius: 8px;
             padding: 6px 12px;
@@ -1074,46 +1046,192 @@
             display: none !important;
         }
 
-        .no-history {
-            color: gray;
-            text-align: center;
-            margin-top: 20px;
-        }
-
         .page {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
+            grid-template-areas: "main side";
             height: 100vh;
+            overflow: hidden;
         }
 
         .sidebar {
-            width: 300px;
-            background: black;
-            color: white;
-            padding: 16px;
+            grid-area: side;
+            color: #eef5ff;
+            padding: clamp(8px, 1.5vw, 22px) clamp(8px, 1.3vw, 16px) clamp(8px, 1.5vw, 22px) 0;
             box-sizing: border-box;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .history-panel {
+            height: 100%;
+            min-height: 0;
+            border-radius: clamp(18px, 2vw, 26px);
+            border: 1px solid rgba(132, 170, 240, 0.2);
+            background:
+                radial-gradient(circle at top left, rgba(78, 131, 255, 0.16), transparent 42%),
+                linear-gradient(180deg, rgba(7, 18, 38, 0.92) 0%, rgba(8, 18, 37, 0.9) 100%);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 18px 36px rgba(0, 0, 0, 0.3);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        .history-head {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 14px;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            border-radius: 14px;
+            border: 1px solid rgba(140, 178, 255, 0.2);
+            background:
+                linear-gradient(130deg, rgba(255, 255, 255, 0.07), rgba(104, 118, 255, 0.18)),
+                rgba(7, 18, 38, 0.85);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(7px);
+        }
+
+        .history-kicker {
+            display: inline-flex;
+            align-items: center;
+            width: fit-content;
+            padding: 4px 9px;
+            border-radius: 999px;
+            font-size: 0.66rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #c9d7ff;
+            border: 1px solid rgba(158, 182, 255, 0.36);
+            background: rgba(84, 110, 210, 0.26);
+        }
+
+        .history-title {
+            margin: 0;
+            font-family: "Sora", "Manrope", sans-serif;
+            font-size: 1.22rem;
+            line-height: 1.2;
+            color: #f2f7ff;
+        }
+
+        .history-subtitle {
+            margin: 0;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: #a6bddf;
+        }
+
+        .history-meta {
+            margin: 0;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #a8bfff;
+        }
+
+        .history-head-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .history-panel-btn {
+            border: 1px solid rgba(143, 188, 255, 0.28);
+            background: rgba(69, 112, 215, 0.18);
+            color: #e8f1ff;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        .history-panel-btn:first-child {
+            background: linear-gradient(135deg, var(--primary-cta), var(--primary-cta-strong));
+            color: #f5f8ff;
+            border-color: rgba(182, 210, 255, 0.65);
+            box-shadow: 0 8px 18px rgba(87, 122, 255, 0.35);
+        }
+
+        .history-panel-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(182, 221, 255, 0.48);
+            background: rgba(100, 145, 255, 0.3);
+        }
+
+        .history-panel-btn.secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: #bfd4f5;
+        }
+
+        .history-reference-chip {
+            margin: 0;
+            padding: 8px 10px;
+            border-radius: 9px;
+            border: 1px solid rgba(146, 171, 255, 0.36);
+            background: rgba(82, 106, 215, 0.22);
+            color: #d9e4ff;
+            font-size: 0.7rem;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .history-reference-chip[hidden] {
+            display: none;
+        }
+
+        .history-list-label {
+            margin: 6px 4px 0;
+            font-size: 0.68rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: #83a6de;
+            opacity: 0.9;
+        }
+
+        .no-history {
+            color: #9fb3d8;
+            text-align: center;
+            margin-top: 10px;
+            padding: 20px 14px;
+            border-radius: 12px;
+            border: 1px dashed rgba(145, 180, 242, 0.34);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .chat-bubble {
+            max-width: 92%;
+        }
+
+        .chat-bubble.user {
+            max-width: 74%;
+            min-width: 0;
+        }
+
+        .city-chips {
+            bottom: 86px;
+            max-height: 100px;
             overflow-y: auto;
         }
-            .chat-bubble {
-                max-width: 92%;
-            }
 
-            .chat-bubble.user {
-                max-width: 74%;
-                min-width: 0;
-            }
-
-            .city-chips {
-                bottom: 86px;
-                max-height: 100px;
-                overflow-y: auto;
-            }
-
-            #legend,
-            #legendToggleBtn,
-            #osmNote {
-                display: none;
-            }
+        #legend,
+        #legendToggleBtn,
+        #osmNote {
+            display: none;
         }
+
 
         @media (max-width: 640px) {
             body {
@@ -1168,173 +1286,309 @@
                 min-width: 98px;
             }
 
-            #placeBanner {
-                max-width: calc(100% - 20px);
-                text-align: center;
-                white-space: normal;
-            }
+        }
+
+        #historyContainer {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            padding-bottom: 10px;
+        }
+
         .box {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            border: 1px solid #ddd;
-            padding: 10px;
-            margin: 8px 0;
+            gap: 9px;
+            border: 1px solid rgba(143, 173, 235, 0.2);
+            padding: 12px;
+            margin: 0;
             cursor: pointer;
-            border-radius: 6px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .box::before {
+            content: "";
+            position: absolute;
+            top: 10px;
+            bottom: 10px;
+            left: 0;
+            width: 3px;
+            border-radius: 0 999px 999px 0;
+            background: linear-gradient(180deg, rgba(127, 231, 255, 0.55), rgba(79, 124, 255, 0.1));
+            opacity: 0.35;
+        }
+
+        .box:hover {
+            background: linear-gradient(135deg, rgba(95, 140, 255, 0.2), rgba(255, 255, 255, 0.05));
+            border-color: rgba(156, 210, 255, 0.48);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+        }
+
+        .box.is-reference {
+            border-color: rgba(139, 237, 204, 0.52);
+            box-shadow: 0 0 0 1px rgba(116, 226, 189, 0.2), 0 12px 28px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, rgba(56, 171, 136, 0.2), rgba(95, 140, 255, 0.1));
         }
 
         .box-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
+        }
+
+        .history-card-title {
+            margin: 0;
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: #ecf4ff;
+            letter-spacing: 0.02em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-card-date {
+            margin: 0;
+            font-size: 0.72rem;
+            color: #a4bbdf;
+            opacity: 0.95;
         }
 
         .delete-btn {
-            background: red;
-            color: white;
-            border: none;
-            float: right;
+            background: rgba(255, 107, 107, 0.14);
+            color: #ff9f9f;
+            border: 1px solid rgba(255, 130, 130, 0.25);
+            border-radius: 9px;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            transition: all 0.15s ease;
+        }
+
+        .delete-btn:hover {
+            background: #ff6b6b;
+            color: white;
+            border-color: #ff6b6b;
+            transform: scale(1.06);
+        }
+
+        .box small {
+            font-size: 0.72rem;
+            color: #93add4;
+            opacity: 0.92;
+        }
+
+        .history-card-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 7px;
+        }
+
+        .history-action-btn {
+            border: 1px solid rgba(148, 186, 250, 0.24);
+            background: rgba(255, 255, 255, 0.03);
+            color: #dce9ff;
+            border-radius: 9px;
+            padding: 7px 8px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        .history-action-btn:hover {
+            background: rgba(95, 140, 255, 0.22);
+            border-color: rgba(183, 220, 255, 0.5);
+        }
+
+        .history-action-btn.reference {
+            border-color: rgba(131, 223, 191, 0.25);
+            color: #baf2e1;
+            background: rgba(32, 150, 118, 0.11);
+        }
+
+        .history-action-btn.reference.is-selected {
+            border-color: rgba(155, 239, 208, 0.65);
+            background: rgba(41, 179, 140, 0.34);
+            color: #effff9;
+        }
+
+        @media (max-width: 980px) {
+            .page {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "main"
+                    "side";
+                height: auto;
+                min-height: 100vh;
+            }
+
+            .sidebar {
+                max-height: 38vh;
+                padding: 0 10px 10px;
+            }
+
+            .container {
+                min-height: 62vh;
+            }
+
+            .history-panel {
+                border-radius: 18px;
+            }
         }
     </style>
 </head>
 
 <body class="chat-mode">
-    <div class="container">
-        <header>
-            <div class="brand-block">
-                <h1>Infrastructure Planning Agent — Malaysia</h1>
-                <div class="header-subtitle">Geospatial planning workspace for analyzing cities, mobility, and
-                    infrastructure improvements.</div>
+    <div class="page">
+        <div class="sidebar">
+            <div class="history-panel">
+                <div class="history-head">
+                    <span class="history-kicker">Workspace</span>
+                    <h2 class="history-title">Analysis History</h2>
+                    <p class="history-subtitle">Use previous completed analyses as reference for your next session.</p>
+                    <div class="history-head-actions">
+                        <button id="historyNewAnalysisBtn" class="history-panel-btn" type="button">+ New Analysis</button>
+                        <button id="historyClearRefBtn" class="history-panel-btn secondary" type="button">Clear Ref</button>
+                    </div>
+                    <p id="historyReferenceChip" class="history-reference-chip" hidden></p>
+                </div>
+                <p class="history-list-label">Recent Analyses</p>
+                <div id="historyContainer"></div>
             </div>
-            <div class="header-right">
-                <div class="status-pill"><span class="status-dot"></span> System online</div>
-            </div>
-        </header>
+        </div>
+        <div class="container">
+            <header>
+                <div class="brand-block">
+                    <h1>Infrastructure Planning Agent — Malaysia</h1>
+                    <div class="header-subtitle">Geospatial planning workspace for analyzing cities, mobility, and
+                        infrastructure improvements.</div>
+                </div>
+                <div class="header-right">
+                    <div class="status-pill"><span class="status-dot"></span> System online</div>
+                </div>
+            </header>
 
-        <div class="map-frame">
-            <div id="chatView" class="frame-view active">
-                <div class="chat-shell">
-                    <div class="chat-header">
-                        <div class="chat-header-left">
-                            <div class="agent-badge">🛰️</div>
-                            <div>
-                                <div class="chat-title">Infrastructure Planning Agent</div>
-                                <div class="chat-subtitle">
-                                    Describe the location, issue, or improvement you want to analyze. Start with one or
-                                    two Malaysian cities or towns, and the agent will guide the rest of the workflow.
+            <div class="map-frame">
+                <div id="chatView" class="frame-view active">
+                    <div class="chat-shell">
+                        <div id="chatMessages" class="chat-messages">
+                            <div id="chatEmptyState" class="chat-empty-state">
+                                <h3 class="empty-title">Start with a city and challenge</h3>
+                                <p class="empty-subtitle">Use one of these starter prompts to quickly generate
+                                    diagnostics
+                                    and infrastructure interventions.</p>
+                                <div class="quick-prompt-grid">
+                                    <button class="quick-prompt"
+                                        data-prompt="Analyze traffic congestion and bus reliability issues in Kuala Lumpur.">Kuala
+                                        Lumpur: congestion + bus reliability</button>
+                                    <button class="quick-prompt"
+                                        data-prompt="Identify flood mitigation and drainage upgrades for Johor Bahru city center.">Johor
+                                        Bahru: flood & drainage upgrades</button>
+                                    <button class="quick-prompt"
+                                        data-prompt="Suggest first-last mile mobility improvements around Penang transit nodes.">Penang:
+                                        first/last-mile mobility</button>
+                                    <button class="quick-prompt"
+                                        data-prompt="Evaluate logistics bottlenecks and road safety interventions in Kota Kinabalu.">Kota
+                                        Kinabalu: logistics & road safety</button>
+                                </div>
+                                <div class="empty-actions">
+                                    <button id="retryWorkflowBtn" class="btn-ghost" type="button">Retry workflow
+                                        connection</button>
                                 </div>
                             </div>
                         </div>
-                        <div class="chat-stage">
-                            <div class="step-pill">Step-based planning</div>
-                        </div>
-                    </div>
-
-                    <div id="chatMessages" class="chat-messages">
-                        <div id="chatEmptyState" class="chat-empty-state">
-                            <h3 class="empty-title">Start with a city and challenge</h3>
-                            <p class="empty-subtitle">Use one of these starter prompts to quickly generate diagnostics
-                                and infrastructure interventions.</p>
-                            <div class="quick-prompt-grid">
-                                <button class="quick-prompt"
-                                    data-prompt="Analyze traffic congestion and bus reliability issues in Kuala Lumpur.">Kuala
-                                    Lumpur: congestion + bus reliability</button>
-                                <button class="quick-prompt"
-                                    data-prompt="Identify flood mitigation and drainage upgrades for Johor Bahru city center.">Johor
-                                    Bahru: flood & drainage upgrades</button>
-                                <button class="quick-prompt"
-                                    data-prompt="Suggest first-last mile mobility improvements around Penang transit nodes.">Penang:
-                                    first/last-mile mobility</button>
-                                <button class="quick-prompt"
-                                    data-prompt="Evaluate logistics bottlenecks and road safety interventions in Kota Kinabalu.">Kota
-                                    Kinabalu: logistics & road safety</button>
-                            </div>
-                            <div class="empty-actions">
-                                <button id="retryWorkflowBtn" class="btn-ghost" type="button">Retry workflow
-                                    connection</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="mapView" class="frame-view">
-                <div id="map"></div>
-                <div id="mapLoader">
-                    <div class="loader-content">
-                        <div class="spinner"></div>
-                        <p>Loading map data...</p>
                     </div>
                 </div>
 
-                <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
-
-                <div id="map-popup">
-                    <div id="popup-badge"></div>
-                    <div id="popup-name"></div>
-                    <div id="popup-blurb"></div>
-                </div>
-
-                <button id="legendToggleBtn" type="button" aria-controls="legend" aria-expanded="true">
-                    <span class="legend-toggle-chevron">▾</span>
-                    <span id="legendToggleLabel">Hide Categories</span>
-                </button>
-
-                <div id="legend">
-                    <b>LAND-USE CATEGORIES</b>
-                    <div class="leg-grid">
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#d96f63"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Commercial</div>
-                                <div class="leg-sub">Mall, Retail, Office, Hotel, Airport, Restaurant, Logistics, Theme
-                                    Park</div>
-                            </div>
+                <div id="mapView" class="frame-view">
+                    <div id="map"></div>
+                    <div id="mapLoader">
+                        <div class="loader-content">
+                            <div class="spinner"></div>
+                            <p>Loading map data...</p>
                         </div>
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#e8ba69"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Residential</div>
-                                <div class="leg-sub">Houses, Apartments, Housing Estate, Residential zones</div>
+                    </div>
+
+                    <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
+
+                    <div id="map-popup">
+                        <div id="popup-badge"></div>
+                        <div id="popup-name"></div>
+                        <div id="popup-blurb"></div>
+                    </div>
+
+                    <button id="legendToggleBtn" type="button" aria-controls="legend" aria-expanded="true">
+                        <span class="legend-toggle-chevron">▾</span>
+                        <span id="legendToggleLabel">Hide Categories</span>
+                    </button>
+
+                    <div id="legend">
+                        <b>LAND-USE CATEGORIES</b>
+                        <div class="leg-grid">
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#d96f63"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Commercial</div>
+                                    <div class="leg-sub">Mall, Retail, Office, Hotel, Airport, Restaurant, Logistics,
+                                        Theme
+                                        Park</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#e7dd72"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Industrial</div>
-                                <div class="leg-sub">Factory, Refinery, Warehouse, Plant, Industrial facilities</div>
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#e8ba69"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Residential</div>
+                                    <div class="leg-sub">Houses, Apartments, Housing Estate, Residential zones</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#8dc06f"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Public</div>
-                                <div class="leg-sub">Hospital, Government, LRT/MRT/KTM, Bus Terminal, School, Civic
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#e7dd72"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Industrial</div>
+                                    <div class="leg-sub">Factory, Refinery, Warehouse, Plant, Industrial facilities
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#8dc06f"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Public</div>
+                                    <div class="leg-sub">Hospital, Government, LRT/MRT/KTM, Bus Terminal, School, Civic
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#a6d6ee"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Religious</div>
+                                    <div class="leg-sub">Mosque, Church, Temple, Surau, Places of worship</div>
+                                </div>
+                            </div>
+                            <div class="leg-item">
+                                <div class="leg-dot" style="background:#b8a2e8"></div>
+                                <div class="leg-content">
+                                    <div class="leg-label">Other</div>
+                                    <div class="leg-sub">Mixed-use, Unclassified, Unknown or miscellaneous assets</div>
                                 </div>
                             </div>
                         </div>
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#a6d6ee"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Religious</div>
-                                <div class="leg-sub">Mosque, Church, Temple, Surau, Places of worship</div>
-                            </div>
-                        </div>
-                        <div class="leg-item">
-                            <div class="leg-dot" style="background:#b8a2e8"></div>
-                            <div class="leg-content">
-                                <div class="leg-label">Other</div>
-                                <div class="leg-sub">Mixed-use, Unclassified, Unknown or miscellaneous assets</div>
-                            </div>
-                        </div>
                     </div>
+                    <div id="osmNote">Building colors follow land-use categories from OSM tiles.</div>
                 </div>
-                <div id="osmNote">Building colors follow land-use categories from OSM tiles.</div>
-            </div>
 
-            <!-- <div class="city-chips">
+                <!-- <div class="city-chips">
             <span class="city-chips-label">Quick select:</span>
             <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
             <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
@@ -1348,21 +1602,23 @@
             <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
         </div> -->
 
-            <div class="input-group">
-                <input type="text" id="aiInput" placeholder="Enter a Malaysian city, town, or planning request..."
-                    onkeydown="if(event.key==='Enter') submitPrompt()">
-                <button onclick="submitPrompt()" id="btnSend">Send</button>
-            </div>
+                <div class="input-group">
+                    <input type="text" id="aiInput" placeholder="Enter a Malaysian city, town, or planning request..."
+                        onkeydown="if(event.key==='Enter') submitPrompt()">
+                    <button onclick="submitPrompt()" id="btnSend">Send</button>
+                </div>
 
-            <div class="clear-row">
-                <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo Last
-                    Building</button>
-                <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All
-                    Buildings</button>
-                <span class="buildings-count" id="buildingCount">No buildings placed</span>
-            </div>
+                <div class="clear-row">
+                    <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo
+                        Last
+                        Building</button>
+                    <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All
+                        Buildings</button>
+                    <span class="buildings-count" id="buildingCount">No buildings placed</span>
+                </div>
 
-            <div id="status">Step 1: Click on the map to choose where to build.</div>
+                <div id="status">Step 1: Click on the map to choose where to build.</div>
+            </div>
         </div>
     </div>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
@@ -1842,13 +2098,13 @@
 
                 const data = await response.json();
 
-            if (data.status === 'ok') {
-                console.log(data.message)
-                return data.message; // 👈 was missing the return!
-            } else {
-                console.error('API error:', data.message);
-                return null;
-            }
+                if (data.status === 'ok') {
+                    console.log(data.message)
+                    return data.message; // 👈 was missing the return!
+                } else {
+                    console.error('API error:', data.message);
+                    return null;
+                }
 
             } catch (error) {
                 console.error('Error:', error);
@@ -2000,34 +2256,195 @@
             chatMessages.appendChild(bubble);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             updateEmptyState();
+            return bubble;
+        }
+
+        function addAgentMessageOnce(text) {
+            const chatMessages = document.getElementById("chatMessages");
+            if (!chatMessages) return;
+            const agentBubbles = chatMessages.querySelectorAll(".chat-bubble.agent");
+            const lastAgent = agentBubbles.length ? agentBubbles[agentBubbles.length - 1] : null;
+            const nextText = String(text || "").trim();
+            if (lastAgent && lastAgent.textContent.trim() === nextText) return;
+            addChatMessage("agent", text);
         }
 
         let currentSessionId = null;
+        let selectedHistoryReference = null;
+        let selectedHistoryReferenceId = null;
+        let isStartingWorkflow = false;
+        let mainInitialized = false;
+        let systemNoticeTimer = null;
+
+        function showSystemNotice(text, timeoutMs = 2600) {
+            const chatMessages = document.getElementById("chatMessages");
+            if (!chatMessages) return;
+
+            chatMessages.querySelectorAll(".chat-bubble.system").forEach((el) => el.remove());
+            const noticeBubble = addChatMessage("system", text);
+
+            if (systemNoticeTimer) clearTimeout(systemNoticeTimer);
+            systemNoticeTimer = setTimeout(() => {
+                if (noticeBubble && noticeBubble.parentNode) {
+                    noticeBubble.remove();
+                    updateEmptyState();
+                }
+            }, timeoutMs);
+        }
+
+        function getHistoryEntry(item) {
+            return item?.entities || item;
+        }
+
+        function setReferenceChip(text = "") {
+            const chip = document.getElementById("historyReferenceChip");
+            if (!chip) return;
+            if (!text) {
+                chip.hidden = true;
+                chip.textContent = "";
+                return;
+            }
+            chip.hidden = false;
+            chip.textContent = text;
+        }
+
+        function clearHistoryReference() {
+            selectedHistoryReference = null;
+            selectedHistoryReferenceId = null;
+            setReferenceChip("");
+            loadHistories();
+        }
+
+        function selectHistoryReference(item, index) {
+            selectedHistoryReference = item;
+            selectedHistoryReferenceId = item?.id || null;
+            const createdAt = item?.created_at || "-";
+            setReferenceChip(`Reference ready: Session ${index + 1} (${createdAt})`);
+            showChatView();
+            const input = document.getElementById("aiInput");
+            if (input) {
+                input.focus();
+                if (!input.value.trim()) {
+                    input.value = "Create a new analysis and refer to the selected previous session.";
+                }
+            }
+            showSystemNotice(`Session ${index + 1} is selected as reference for your next analysis.`);
+            loadHistories();
+        }
+
+        function buildReferencedMessage(userText) {
+            if (!selectedHistoryReference) return userText;
+            const item = selectedHistoryReference;
+            const entry = getHistoryEntry(item);
+            const entities = Array.isArray(entry?.entities) ? entry.entities : [];
+            const names = entities
+                .map((entity) => entity?.name || entity?.entity_type || entity?.id)
+                .filter(Boolean)
+                .slice(0, 6)
+                .join(", ");
+
+            const createdAt = item?.created_at || "-";
+            const lastSeen = item?.last_seen || "Never";
+            const entityCount = entities.length;
+
+            const referenceBlock = [
+                "[REFERENCE_PREVIOUS_ANALYSIS]",
+                `created_at: ${createdAt}`,
+                `last_seen: ${lastSeen}`,
+                `entity_count: ${entityCount}`,
+                names ? `entity_examples: ${names}` : "",
+                "[/REFERENCE_PREVIOUS_ANALYSIS]"
+            ].filter(Boolean).join("\n");
+
+            return `${referenceBlock}\n\n[NEW_ANALYSIS_REQUEST]\n${userText}\n[/NEW_ANALYSIS_REQUEST]`;
+        }
+
+        async function openHistoryEntry(item) {
+            const entry = getHistoryEntry(item);
+            if (!entry) return;
+            if (entry.stage === "done" || entry.show_map === true) {
+                showMapView();
+                if (entry.entities) {
+                    renderEntities(entry.entities);
+                    createPopups();
+                    renderStreetsToCesium(entry.entities);
+                    if (entry.camera) flyToCamera(entry.camera);
+                }
+            }
+
+            try {
+                await fetch('https://city-planner-847589656180.europe-west1.run.app/select_history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: item.id })
+                });
+                await loadHistories();
+            } catch (error) { console.log(error) }
+        }
+
+        async function startNewAnalysisSession() {
+            if (isStartingWorkflow) return;
+            const newAnalysisBtn = document.getElementById("historyNewAnalysisBtn");
+            if (newAnalysisBtn) {
+                newAnalysisBtn.disabled = true;
+                newAnalysisBtn.textContent = "Starting...";
+            }
+            showChatView();
+            currentSessionId = null;
+            const chatMessages = document.getElementById("chatMessages");
+            if (chatMessages) {
+                chatMessages.querySelectorAll(".chat-bubble").forEach((el) => el.remove());
+            }
+            updateEmptyState();
+            try {
+                await startWorkflow();
+                if (selectedHistoryReference) {
+                    showSystemNotice("Reference context is active. Ask for a new analysis and the agent will use it.");
+                }
+            } finally {
+                if (newAnalysisBtn) {
+                    newAnalysisBtn.disabled = false;
+                    newAnalysisBtn.textContent = "+ New Analysis";
+                }
+            }
+        }
 
         async function startWorkflow() {
+            if (isStartingWorkflow) return;
+            isStartingWorkflow = true;
             try {
-                const response = await fetch("http://localhost:8000/api/start", {
+                const response = await fetch("/api/start", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({})
                 });
 
+                if (!response.ok) {
+                    currentSessionId = null;
+                    addAgentMessageOnce(`Workflow start failed (${response.status}).`);
+                    return;
+                }
+
                 const data = await response.json();
                 console.log("START RESPONSE:", data);
 
                 if (!data.ok) {
-                    addChatMessage("agent", "Failed to start workflow.");
+                    currentSessionId = null;
+                    addAgentMessageOnce("Failed to start workflow.");
                     return;
                 }
 
                 currentSessionId = data.session_id;
-                addChatMessage("agent", data.reply);
+                addAgentMessageOnce(data.reply);
 
                 // First prompt should guide the user to provide location
                 document.getElementById("aiInput").placeholder =
                     "Reply with one or two Malaysian cities or towns...";
             } catch (err) {
-                addChatMessage("agent", "Error starting workflow: " + err.message);
+                currentSessionId = null;
+                addAgentMessageOnce("Error starting workflow: " + err.message);
+            } finally {
+                isStartingWorkflow = false;
             }
         }
 
@@ -2063,6 +2480,8 @@
         }
 
         async function retryWorkflowConnection() {
+            if (isStartingWorkflow) return;
+            showChatView();
             currentSessionId = null;
             const chatMessages = document.getElementById("chatMessages");
             if (chatMessages) {
@@ -2072,15 +2491,26 @@
             await startWorkflow();
         }
 
+        let chatAbortController = null;
+
         async function submitPrompt() {
             const input = document.getElementById("aiInput");
             const btn = document.getElementById("btnSend");
             const text = input.value.trim();
 
-            if (!text || !currentSessionId) return;
+            if (!text) return;
+            if (!currentSessionId) {
+                await startWorkflow();
+                if (!currentSessionId) {
+                    showSystemNotice("Workflow is not ready yet. Please try again.");
+                    return;
+                }
+            }
 
+            const requestId = currentSessionId;
             addChatMessage("user", text);
             input.value = "";
+            const messageToSend = buildReferencedMessage(text);
 
             btn.disabled = true;
             input.disabled = true;
@@ -2089,17 +2519,27 @@
 
             addLoadingMessage("Thinking");
 
+            if (chatAbortController) chatAbortController.abort();
+            chatAbortController = new AbortController();
+
             try {
-                const response = await fetch("http://localhost:8000/api/chat", {
+                const response = await fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         session_id: currentSessionId,
-                        message: text
-                    })
+                        message: messageToSend
+                    }),
+                    signal: chatAbortController.signal
                 });
 
                 const data = await response.json();
+                
+                if (requestId !== currentSessionId) {
+                    console.warn("Ignoring response from stale session.");
+                    return;
+                }
+
                 console.log("CHAT RESPONSE:", data);
 
                 removeLoadingMessage();
@@ -2109,39 +2549,155 @@
                     return;
                 }
 
-                if (data.needs_input === false) {
-                    submitPrompt()
-                } else {
+                if (data.needs_input !== false && data.reply) {
                     addChatMessage("agent", data.reply);
                 }
 
                 if (data.stage === "done" || data.show_map === true) {
                     showMapView();
 
-                    if (data.entities) {
-                        console.log("okay")
+                    if (Array.isArray(data.entities) && data.entities.length > 0) {
                         renderEntities(data.entities);
                         createPopups();
                         renderStreetsToCesium(data.entities);
-                        
+
                         addHistory(data);
                     }
                 }
 
             } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log("Request aborted.");
+                    return;
+                }
                 removeLoadingMessage();
                 addChatMessage("agent", "Error: " + err.message);
             } finally {
-                btn.disabled = false;
-                input.disabled = false;
-                btn.textContent = "SEND";
-                input.placeholder = "Type your message to the agent...";
-                input.focus();
+                if (requestId === currentSessionId) {
+                    btn.disabled = false;
+                    input.disabled = false;
+                    btn.textContent = "SEND";
+                    input.placeholder = "Type your message to the agent...";
+                    input.focus();
+                }
             }
+        }
+        async function loadHistories() {
+            try {
+                const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/get_history');
+                if (!response.ok) {
+                    console.error("HTTP Error");
+                    return;
+                }
+                const data = await response.json();
+                const container = document.getElementById("historyContainer");
+                const meta = document.getElementById("historyMeta");
+                container.innerHTML = "";
+                if (!Array.isArray(data) || data.length === 0) {
+                    container.innerHTML = `<div class="no-history">No history available</div>`;
+                    if (meta) meta.textContent = "0 sessions saved";
+                    return;
+                }
+                if (meta) meta.textContent = `${data.length} session${data.length > 1 ? "s" : ""} saved`;
+                data.forEach((item, index) => {
+                    const div = document.createElement("div");
+                    div.className = "box";
+                    if (selectedHistoryReferenceId && item?.id === selectedHistoryReferenceId) {
+                        div.classList.add("is-reference");
+                    }
+                    const header = document.createElement("div");
+                    header.className = "box-header";
+                    const title = document.createElement("p");
+                    title.className = "history-card-title";
+                    title.textContent = `Planning Session ${index + 1}`;
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.className = "delete-btn";
+                    deleteBtn.setAttribute("aria-label", "Delete history item");
+                    deleteBtn.textContent = "X";
+                    header.appendChild(title);
+                    header.appendChild(deleteBtn);
+                    const createdAt = document.createElement("p");
+                    createdAt.className = "history-card-date";
+                    createdAt.textContent = "Created: " + (item.created_at || "-");
+                    const small = document.createElement("small");
+                    small.textContent = "Last seen: " + (item.last_seen || "Never");
+                    const actions = document.createElement("div");
+                    actions.className = "history-card-actions";
+                    const openBtn = document.createElement("button");
+                    openBtn.className = "history-action-btn";
+                    openBtn.type = "button";
+                    openBtn.textContent = "Open";
+                    const refBtn = document.createElement("button");
+                    refBtn.className = "history-action-btn reference";
+                    refBtn.type = "button";
+                    const isSelectedRef = selectedHistoryReferenceId && item?.id === selectedHistoryReferenceId;
+                    if (isSelectedRef) {
+                        refBtn.classList.add("is-selected");
+                        refBtn.textContent = "Selected Ref";
+                    } else {
+                        refBtn.textContent = "Use as Ref";
+                    }
+                    actions.appendChild(openBtn);
+                    actions.appendChild(refBtn);
+                    div.appendChild(header);
+                    div.appendChild(createdAt);
+                    div.appendChild(small);
+                    div.appendChild(actions);
+
+                    div.addEventListener("click", async (e) => {
+                        if (e.target.closest(".delete-btn") || e.target.closest(".history-action-btn")) return;
+                        await openHistoryEntry(item);
+                    });
+
+                    div.querySelector(".delete-btn").addEventListener("click", async (e) => {
+                        try {
+                            e.stopPropagation();
+                            const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/delete_history', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: item.id })
+                            });
+                            const result = await response.json();
+                            if (response.ok && result.status === "ok") {
+                                div.remove();
+                                await loadHistories();
+                            }
+                        } catch (error) { console.log(error) }
+                    });
+                    openBtn.addEventListener("click", async (e) => {
+                        e.stopPropagation();
+                        await openHistoryEntry(item);
+                    });
+                    refBtn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        selectHistoryReference(item, index);
+                    });
+                    container.appendChild(div);
+                });
+            } catch (error) { console.log(error) }
+        }
+
+        async function addHistory(data) {
+            try {
+                const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/add_history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entities: data })
+                });
+                if (response.ok) await loadHistories();
+            } catch (error) { console.log(error) }
         }
 
         async function main() {
+            if (mainInitialized) return;
+            mainInitialized = true;
             showChatView();
+
+            if (window.location.protocol === "file:") {
+                addAgentMessageOnce("Please open this app via http://localhost:3000 (served mode), not file://, to avoid CORS workflow errors.");
+                return;
+            }
+
             document.querySelectorAll(".quick-prompt").forEach((btn) => {
                 btn.addEventListener("click", () => {
                     const prompt = btn.getAttribute("data-prompt") || "";
@@ -2156,165 +2712,27 @@
             if (legendToggleBtn) {
                 legendToggleBtn.addEventListener("click", toggleLegendPanel);
             }
+            const historyNewAnalysisBtn = document.getElementById("historyNewAnalysisBtn");
+            if (historyNewAnalysisBtn) {
+                historyNewAnalysisBtn.addEventListener("click", startNewAnalysisSession);
+            }
+            const historyClearRefBtn = document.getElementById("historyClearRefBtn");
+            if (historyClearRefBtn) {
+                historyClearRefBtn.addEventListener("click", () => {
+                    clearHistoryReference();
+                    showSystemNotice("Reference context cleared. New prompts will run without previous-session context.");
+                });
+            }
             setLegendExpanded(true);
-            // updateEmptyState();
-            // await startWorkflow();
 
-            //        manual input
-            // showMapView();
-            // const data = await callApi();  
-            // console.log("API RETURN:", data);
-
-            // if (!data) {
-            //     console.error("No data returned");
-            //     return;
-            // }
-
-            // renderEntities(data);
-            // createPopups();
-            // renderStreetsToCesium(data);
-        }
-    
-    async function loadHistories() {
-        // Get the data saved in firebase - firestore and display
-        try {
-            const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/get_history'/*, {credentials: 'include'}*/)
-
-            if (!response.ok) {
-                console.error("HTTP Error");
-                return;
-            }
-
-            const data = await response.json();
-
-            const container = document.getElementById("historyContainer");
-            container.innerHTML = "";
-
-            if (!Array.isArray(data) || data.length === 0) {
-                container.innerHTML = `
-                    <div class="no-history">No history available</div>
-                `;
-                return;
-            }
-
-            data.forEach(item => {
-                const div = document.createElement("div");
-                div.className = "box";
-
-                const header = document.createElement("div");
-                header.className = "box-header";
-
-                const span = document.createElement("span");
-                span.textContent = "Created at: " + item.created_at; 
-
-                const deleteBtn = document.createElement("button");
-                deleteBtn.className = "delete-btn";
-                deleteBtn.textContent = "X";
-
-                header.appendChild(span);
-                header.appendChild(deleteBtn);
-
-                const small = document.createElement("small");
-                small.textContent = "Last seen: " + item.last_seen || "";
-
-                div.appendChild(header);
-                div.appendChild(small);
-
-                // Click/select history
-                div.addEventListener("click", async (e) => {
-                    if (e.target.closest(".delete-btn")) return;
-
-                    try {
-                        // Load the data to be displayed
-                        const entry = item.entities || item;
-
-                        if (!entry) {
-                            console.error("No data returned");
-                            return;
-                        }
-                    
-                        if (entry.stage === "done" || entry.show_map === true) {
-                            showMapView();
-
-                            if (entry.entities) {
-                                renderEntities(entry.entities);
-                                createPopups();
-                                renderStreetsToCesium(entry.entities);
-
-                                if (entry.camera) {
-                                    flyToCamera(entry.camera);
-                                }
-                            }
-                        }
-                    } catch (error) {console.log(error)}
-
-                    try { // update last seen
-                        const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/select_history', {
-                            method: 'POST',
-                            //credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({id:item.id})
-                        });
-
-                        await loadHistories();
-                    } catch (error) {console.log(error)}
-                });
-
-                // Delete history
-                div.querySelector(".delete-btn").addEventListener("click", async (e) => {
-                    try {
-                        e.stopPropagation();
-
-                        const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/delete_history', {
-                            method: 'POST',
-                            //credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({id:item.id})
-                        });
-
-                        const result = await response.json();
-
-                        if (response.ok && result.status === "ok") {
-                            // success then update UI
-                            div.remove();
-                        } else {
-                            console.error("Delete failed:", result.error || "unknown error");
-                        }
-                    } catch (error) {console.log(error)}
-                });
-
-                container.appendChild(div);
-            });
-        } catch (error) { console.log(error) }
-    }
-
-    async function addHistory(data) {
-        // add data to firebase - firestore
-        try {
-            const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/add_history', {
-                method: 'POST',
-                //credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({entities : data})
-            });
-
-            if (!response.ok) {
-                console.error("Add failed");
-                return;
-            }
-
+            await startWorkflow();
             await loadHistories();
-        } catch (error) { console.log(error) }
-    }
-
-    async function main() {
-        showChatView();    
-        await startWorkflow();
-    }
-
-    document.addEventListener("DOMContentLoaded", loadHistories);
-    main();
-</script>
+        }
+        document.addEventListener("DOMContentLoaded", main);
+    </script>
 </body>
 
 </html>
+
+
+
