@@ -2,3 +2,5 @@ requests
 geopy
 flask
 flask-cors
+firebase_admin
+gunicorn
