@@ -32,6 +32,7 @@
         }
 
         .container {
+            flex:1;
             max-width: 1100px;
             margin: 0 auto;
             display: flex;
@@ -609,9 +610,55 @@
         body.map-mode .input-group {
             display: none !important;
         }
+
+        .no-history {
+            color: gray;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .page {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: black;
+            color: white;
+            padding: 16px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        .box {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 8px 0;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .delete-btn {
+            background: red;
+            color: white;
+            border: none;
+            float: right;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+<div class="page">
 <div class="container">
     <header>
         <h1>MY Geospatial Data Center — Malaysia</h1>
@@ -715,6 +762,13 @@
     </div>
 
     <div id="status">Step 1: Click on the map to choose where to build.</div>
+</div>
+
+<div class="sidebar" id="sidebar">
+    <h3>History</h3>
+    <div id="historyContainer"></div>
+</div>
+
 </div>
 
 <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
@@ -1394,6 +1448,7 @@
                     if (data.camera) {
                         flyToCamera(data.camera);
                     }
+                    addHistory(data);
                 }
             }
 
@@ -1403,12 +1458,133 @@
             btn.disabled = false;
         }
     }
-        
+    
+    async function loadHistories() {
+        const response = await fetch('http://127.0.0.1:8080/get_history'/*, {credentials: 'include'}*/)
+
+        if (!response.ok) {
+            console.error("HTTP Error");
+            return;
+        }
+
+        const data = await response.json();
+
+        console.log("RAW DATA:", data);
+        console.log("IS ARRAY:", Array.isArray(data));
+
+        const container = document.getElementById("historyContainer");
+        container.innerHTML = "";
+
+        if (!Array.isArray(data) || data.length === 0) {
+            container.innerHTML = `
+                <div class="no-history">No history available</div>
+            `;
+            return;
+        }
+
+        data.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "box";
+
+            const header = document.createElement("div");
+            header.className = "box-header";
+
+            const span = document.createElement("span");
+            span.textContent = item.created_at; 
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "delete-btn";
+            deleteBtn.textContent = "X";
+
+            header.appendChild(span);
+            header.appendChild(deleteBtn);
+
+            const small = document.createElement("small");
+            small.textContent = item.last_seen || "";
+
+            div.appendChild(header);
+            div.appendChild(small);
+
+            // Click/select history
+            div.addEventListener("click", async (e) => {
+                if (e.target.closest(".delete-btn")) return;
+
+                try {
+                    const entry = item.entities
+
+                    if (!entry) {
+                        console.error("No data returned");
+                        return;
+                    }
+                
+                    if (entry.stage === "done" || entry.show_map === true) {
+                        showMapView();
+
+                        if (entry.entities) {
+                            renderEntities(entry.entities);
+                            createPopups();
+                            renderStreetsToCesium(entry.entities);
+
+                            if (entry.camera) {
+                                flyToCamera(entry.camera);
+                            }
+                        }
+                    }
+                }
+                catch (error) {}
+
+                const response = await fetch('http://127.0.0.1:8080/select_history', {
+                    method: 'POST',
+                    //credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({id:item.id})
+                });
+
+                loadHistories();
+            });
+
+            // Delete history
+            div.querySelector(".delete-btn").addEventListener("click", async (e) => {
+                e.stopPropagation();
+
+                const response = await fetch('http://127.0.0.1:8080/delete_history', {
+                    method: 'POST',
+                    //credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({id:item.id})
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === "ok") {
+                    // success then update UI
+                    div.remove();
+                } else {
+                    console.error("Delete failed:", result.error || "unknown error");
+                }
+            });
+
+            container.appendChild(div);
+        });
+    }
+
+    async function addHistory(data) {
+        const response = await fetch('http://127.0.0.1:8080/add_history', {
+            method: 'POST',
+            //credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({entities : data})
+        });
+
+        loadHistories();
+    }
+
     async function main() {
         showChatView();    
         await startWorkflow();
     }
 
+    document.addEventListener("DOMContentLoaded", loadHistories);
     main();
 </script>
 </body>
