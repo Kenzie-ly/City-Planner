@@ -3,17 +3,36 @@ from firebase_admin import credentials, firestore
 import uuid
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
+import os
 
-cred = credentials.Certificate(
-    "hackathon-2eedf-firebase-adminsdk-fbsvc-4f4a7a70c2.json"
-)
+cred = credentials.ApplicationDefault()
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
+app = Flask(__name__)
+CORS(
+    app,
+    resources={r"/*": {
+        "origins": [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000"
+        ]
+    }},
+    supports_credentials=False
+)
+"""
+app.secret_key = "Hackathon"
+CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",  # allow cross-site
+    SESSION_COOKIE_SECURE=True      # True ONLY if HTTPS
+)"""
+
 def getUserId():
-    if "user_id" not in session:
+    return "userTest01"
+""" if "user_id" not in session:
         session["user_id"] = str(uuid.uuid4())
-    return session["user_id"]
+    return session["user_id"]"""
 
 def addHistory(data):
     if data is None or type(data) != dict:
@@ -21,16 +40,16 @@ def addHistory(data):
     
     userId = getUserId()
 
-    data = {
+    payload = {
         **data,
         "created_at": firestore.SERVER_TIMESTAMP,
         "last_seen": firestore.SERVER_TIMESTAMP
     }
-
-    db.collection("users") \
+    
+    update_time, doc_ref = db.collection("users") \
         .document(userId) \
         .collection("map_history") \
-        .add(data)
+        .add(payload)
 
 def getHistoryList():
     userId = getUserId()
@@ -74,63 +93,80 @@ def deleteHistory(dataId):
         .document(dataId) \
         .delete()
 
-app = Flask(__name__)
-app.secret_key = "Hackathon"
-CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
-
-@app.get("/api/get_history")
+@app.route("/get_history", methods=["GET"])
 def sendHistoryList():
     histories = getHistoryList()
     return jsonify(histories)
 
-@app.post("/api/add_history")
+@app.route("/add_history", methods=["POST", "OPTIONS"])
 def addNewHistory():
-    data = request.get_json()
-    
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON"}), 400
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        data = request.get_json()
+        
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON"}), 400
 
-    addHistory(data)
+        addHistory(data)
 
-    return jsonify({
-        "status": "done"
-    })
+        return jsonify({
+            "status": "ok",
+            "message" : data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e) 
+        }), 500
     
-@app.post("/api/delete_history")
+@app.route("/delete_history", methods=["POST", "OPTIONS"])
 def deleteSelectedHistory():
-    data = request.get_json()
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        data = request.get_json()
+
+        dataId = data.get("id")
+
+        deleteHistory(dataId)
+
+        return jsonify({
+                "status": "ok",
+                "message" : data
+            })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e) 
+        }), 500
     
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON"}), 400
-
-    dataId = data.get("id")
-
-    if not dataId:
-        return jsonify({"error": "No id provided"}), 400
-
-    deleteHistory(dataId)
-
-    return jsonify({
-        "status": "done"
-    })
-    
-@app.post("/api/select_history")
+@app.route("/select_history", methods=["POST", "OPTIONS"])
 def selectHistory():
-    data = request.get_json()
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        data = request.get_json()
+
+        dataId = data.get("id")
+
+        updateTimestamp(dataId)
+        
+        return jsonify({
+            "status": "ok",
+            "message" : data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e) 
+        }), 500
+
     
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON"}), 400
-
-    dataId = data.get("id")
-
-    if not dataId:
-        return jsonify({"error": "No id provided"}), 400
-
-    updateTimestamp(dataId)
-
-    return jsonify({
-        "status": "done"
-    })
     
 if __name__ == "__main__":
-    app.run(port = 5000)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)

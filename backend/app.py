@@ -12,8 +12,6 @@ from typing import Any
 import uuid
 import json
 import re
-import os
-import requests
 
 from agent import (
     place_intake_agent,
@@ -115,10 +113,10 @@ def parse_review(text: str) -> dict[str, str]:
     result = {
         "verdict": "REVISE",
         "detail": "",
-        "resolved_reference": "",
         "final_output": "",
     }
 
+    verdict_match = re.search(r"VERDICT:\s*(PASS|REVISE|REVISE_TOTAL)", text, re.IGNORECASE)
     verdict_match = re.search(r"VERDICT:\s*(PASS|REVISE|REVISE_TOTAL)", text, re.IGNORECASE)
     if verdict_match:
         result["verdict"] = verdict_match.group(1).strip().upper()
@@ -662,6 +660,8 @@ async def chat(req: ChatRequest):
 
     if phase == "intake":
         intake_prompt = f"""
+User message:
+{user_message}
 User message:
 {user_message}
 

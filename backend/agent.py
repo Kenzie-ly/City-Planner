@@ -264,7 +264,7 @@ planning_agent = LlmAgent(
 )
 
 solution_agent = LlmAgent(
-    name="solution_agent",
+    name="planning_agent",
     model="gemini-3-flash-preview",
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
     instruction = """
@@ -541,14 +541,11 @@ Include justification for each score.
 review_agent = LlmAgent(
     name="review_agent",
     model="gemini-3-flash-preview",
-    description="Evaluates whether the user's response is a valid selection, approval, or revision request for the current step output.",
+    description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
     instruction="""
         You are a review agent for a multi-step infrastructure planning workflow.
 
-        You will receive:
-        - STEP NAME
-        - STEP OUTPUT
-        - USER RESPONSE
+        You will be receiving either challanges selection at run time.
 
         Your job:
         - decide whether the user response is a valid selection or approval
@@ -585,10 +582,11 @@ review_agent = LlmAgent(
         OR
 
         VERDICT: REVISE_TOTAL
-        INSTRUCTION: <brief instruction for regenerating the previous step>
+        INSTRUCTION: <specific actionable instruction based on the user's response>
         RESOLVED_REFERENCE:
     """,
 )
+
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────
 
@@ -1234,7 +1232,7 @@ planning_root = InfrastructurePlannerOrchestrator(
     pipeline=[
         ("Find needs", find_needs_agent,  "top_challenges"),
         ("Plan improvements",   planning_agent,    "improvement_plan"),
-        ("Generate solutions", solution_agent, "solution_plan"),
+        ("Generate solutions", solution_agent, "plan_solution"),
         ("Building simulations", building_agent,   "simulation_result")
         # ("Activity simulation", activity_agent,   "activity_simulation"),
         # ("Analysis",            analysis_agent,   "final_analysis"),

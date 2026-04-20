@@ -107,27 +107,9 @@ def clip_graph_to_polygon(G_region, polygon: BaseGeometry):
 def normalize_text(value) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
-
     text = str(value).lower()
-
-    # 🔥 remove road prefixes (CRITICAL)
-    replacements = [
-        "jalan", "jln", "lebuhraya",
-        "jalan raya", "persiaran"
-    ]
-
-    for r in replacements:
-        text = text.replace(r, "")
-
-    # normalize symbols
     text = text.replace("–", "-").replace("—", "-")
-
-    # remove non-alphanumeric
-    text = re.sub(r'[^a-z0-9 ]', ' ', text)
-
-    # collapse spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
@@ -936,7 +918,7 @@ def run_city_road_connection_analysis(
 
     return {
         "candidates": candidates,
-        "region": region,
+        "": region,
         "city_query": city_query,
         "city_polygon": city_polygon,
         "city_polygon_buffered": city_polygon_buffered,
