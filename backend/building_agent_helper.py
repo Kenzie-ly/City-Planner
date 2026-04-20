@@ -12,22 +12,7 @@ CORS(app)
 geolocator = Nominatim(user_agent="my_hackathon_kl_mapper_v2")
 
 
-# ─────────────────────────────────────────────────────────────
-# BUG FIX: Centralised location cleaner used by BOTH Nominatim
-#           and the Overpass street-name extractor.
-#
-# Original bugs:
-#  1. re.sub(r'(corner|...)') matched INSIDE 'corners', turning
-#     "four corners" → "four s" — garbage Nominatim query.
-#     FIX: use \b word-boundaries and match corners? so both
-#          "corner" and "corners" are caught cleanly.
-#  2. "Located at the base of the Menara IMC perimeter" was never
-#     cleaned because "Located" wasn't in the prefix list.
-#     FIX: expanded prefix pattern covers "located at/near/in".
-#  3. Dangling filler words ("of", "the", "four", "base of") left
-#     after stripping prefixes polluted every Nominatim query.
-#     FIX: second-pass removal of those residual stop-words.
-# ─────────────────────────────────────────────────────────────
+
 def _clean_location_string(location_string):
     """Return the best short place-name to feed into a geocoder."""
 

@@ -1401,12 +1401,12 @@
 
     async function callApi() {
         const inputText = `
-            [POLYLINE | x1 | Improved Connector | Lebuhraya Persekutuan to Jalan Kerinchi | color:blue, width:thick | 357m trunk_link connector segment targeted for restriping and lane optimization]
-            [POINT | x1 | Diverge Point | Lebuhraya Persekutuan | color:orange, size:large | Diverge node for auxiliary lane extension and channelizer installation]
-            [POLYGON | x1 | Deceleration Zone | Lebuhraya Persekutuan | color:yellow, opacity:0.4 | 300m footprint for auxiliary lane extension and shoulder reallocation]   
-            [POINT | x1 | Merge Point | Jalan Kerinchi | color:green, size:large | Merge node for reconfiguration into a protected add-lane entry]    
-            [LABEL | x1 | Project Title | Federal Highway Kerinchi Segment | color:white | Federal Highway - Kerinchi High-Efficiency Connector Optimization]
+        [POINT | x1 | Bus Priority Signal | Jalan Ampang - Jalan Tun Razak Intersection | color:green, size:large | Dedicated bus-priority signal providing a 6-second head start phase at node 1198097188]
+        [POLYLINE | x1 | Channelized Lane Segment | Jalan Ampang | color:yellow, width:thick | 17.1m segment with physical separators for bus-only movement across the junction]
+        [POLYGON | x1 | Advanced Bus Box | Jalan Ampang - Jalan Tun Razak Intersection | color:yellow, opacity:0.4 | Dedicated 'bus box' stop area at the junction entrance for prioritized clearance]
+        [POLYLINE | x1 | Bus Approach Lane | Jalan Ampang | color:yellow, width:medium, dashed:true | Reallocated leftmost lane for bus priority approaching the intersection]
         `
+
 
         try {
             const response = await fetch('https://city-planner-711110564007.europe-west1.run.app/buildingAgentHelper', {
@@ -1625,19 +1625,20 @@
                 return;
             }
 
-            addChatMessage("agent", data.reply);
+            if (data.needs_input === false){
+                submitPrompt()
+            }else{
+                addChatMessage("agent", data.reply);
+            }
 
             if (data.stage === "done" || data.show_map === true) {
                 showMapView();
 
                 if (data.entities) {
-                    renderEntities(data);
+                    console.log("okay")
+                    renderEntities(data.entities);
                     createPopups();
-                    renderStreetsToCesium(data);
-
-                    if (data.camera) {
-                        flyToCamera(data.camera);
-                    }
+                    renderStreetsToCesium(data.entities);
                 }
             }
 
@@ -1657,7 +1658,7 @@
         showChatView();
         await startWorkflow();
 
-        //manual input
+//        manual input
         // showMapView();
         // const data = await callApi();  
         // console.log("API RETURN:", data);

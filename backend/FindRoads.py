@@ -131,27 +131,51 @@ def normalize_text(value) -> str:
     return text
 
 
+def _join_listlike(val):
+    if isinstance(val, list):
+        return " ".join(str(x) for x in val if pd.notna(x))
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    return str(val)
+
 def prepare_edge_text_columns(edges: pd.DataFrame) -> pd.DataFrame:
     edges = edges.copy()
 
-    if "name" in edges.columns:
-        edges["name_norm"] = edges["name"].apply(normalize_text)
-    else:
-        edges["name_norm"] = ""
+    candidate_cols = [
+        "name",
+        "name:en",
+        "official_name",
+        "alt_name",
+        "short_name",
+        "ref",
+    ]
 
-    if "ref" in edges.columns:
-        edges["ref_norm"] = edges["ref"].apply(normalize_text)
-    else:
-        edges["ref_norm"] = ""
+    for col in candidate_cols:
+        if col not in edges.columns:
+            edges[col] = ""
+
+    # keep individual normalized fields if you still want them
+    edges["name_norm"] = edges["name"].apply(normalize_text)
+    edges["ref_norm"] = edges["ref"].apply(normalize_text)
+    edges["name_en_norm"] = edges["name:en"].apply(normalize_text)
+    edges["short_name_norm"] = edges["short_name"].apply(normalize_text)
+
+    # combine all possible labels into one searchable field
+    edges["search_text"] = edges.apply(
+        lambda row: normalize_text(" ".join(
+            _join_listlike(row[col]) for col in candidate_cols
+        )),
+        axis=1
+    )
 
     return edges
 
 
-def token_match(q: str, name: str) -> bool:
+def token_match(q: str, text: str) -> bool:
     q_tokens = set(q.split())
-    name_tokens = set(name.split())
-    return len(q_tokens & name_tokens) >= 2  # threshold
-
+    text_tokens = set(text.split())
+    # Match if at least one token overlaps (e.g. "Tun Razak" matches "Jalan Tun Razak")
+    return len(q_tokens & text_tokens) >= 1
 
 def match_road_edges(edges: pd.DataFrame, queries: list[str]) -> pd.DataFrame:
     mask = pd.Series(False, index=edges.index)
@@ -162,17 +186,13 @@ def match_road_edges(edges: pd.DataFrame, queries: list[str]) -> pd.DataFrame:
         if not qn:
             continue
 
-        # direct match
-        mask = mask | edges["name_norm"].str.contains(re.escape(qn), na=False)
-        mask = mask | edges["ref_norm"].str.contains(re.escape(qn), na=False)
-
-        # 🔥 fuzzy token match
-        mask = mask | edges["name_norm"].apply(lambda x: token_match(qn, x))
+        mask |= edges["search_text"].str.contains(re.escape(qn), na=False)
+        mask |= edges["search_text"].apply(lambda x: token_match(qn, x))
 
     matched = edges[mask].copy()
 
     if matched.empty:
-        raise ValueError(f"No roads matched: {queries}")
+        raise ValueError(f"No roads matched for queries: {queries}. Search text sample: {edges['search_text'].head(5).tolist()}")
 
     return matched
 
@@ -188,28 +208,31 @@ def get_road_node_ids(road_edges: pd.DataFrame) -> set:
 # =========================================================
 
 def find_best_connection_between_roads(G, road_a_nodes: set, road_b_nodes: set, weight: str = "length"):
-    best_path = None
-    best_cost = float("inf")
-    best_pair = None
-
-    for a in road_a_nodes:
+    print(f"Finding best connection between {len(road_a_nodes)} and {len(road_b_nodes)} nodes...")
+    try:
+        # Use multi-source Dijkstra to find shortest paths from all nodes in A to all other nodes
+        lengths, paths = nx.multi_source_dijkstra(G, road_a_nodes, weight=weight)
+        
+        best_target = None
+        min_dist = float("inf")
+        
         for b in road_b_nodes:
-            if a == b:
-                continue
-
-            try:
-                cost = nx.shortest_path_length(G, source=a, target=b, weight=weight)
-                if cost < best_cost:
-                    best_cost = cost
-                    best_path = nx.shortest_path(G, source=a, target=b, weight=weight)
-                    best_pair = (a, b)
-            except nx.NetworkXNoPath:
-                continue
-
-    if best_path is None:
+            if b in lengths and lengths[b] < min_dist:
+                min_dist = lengths[b]
+                best_target = b
+                
+        if best_target is None:
+            print("No path found between road sets.")
+            return None, None, None
+            
+        best_path = paths[best_target]
+        best_pair = (best_path[0], best_target)
+        
+        print(f"Connection found! Length: {min_dist:.2f}m")
+        return best_pair, best_path, min_dist
+    except Exception as e:
+        print(f"Error in shortest path: {e}")
         return None, None, None
-
-    return best_pair, best_path, best_cost
 
 
 # =========================================================
@@ -260,9 +283,13 @@ def build_corridor_polygon_from_two_roads(
 
 def safe_route_to_gdf(G, path: list[int], weight: str = "length"):
     if path is None or len(path) < 2:
-        raise ValueError("Path is too short to create route edges.")
+        # Return an empty GDF with expected columns to avoid downstream crashes
+        return pd.DataFrame(columns=["name", "ref", "length", "highway", "geometry"])
 
-    return ox.routing.route_to_gdf(G, path, weight=weight)
+    try:
+        return ox.routing.route_to_gdf(G, path, weight=weight)
+    except Exception:
+        return pd.DataFrame(columns=["name", "ref", "length", "highway", "geometry"])
 
 
 def print_route_summary(route_edges: pd.DataFrame):
@@ -652,22 +679,110 @@ def build_candidate_objects_from_routes(route_candidates, road_a_name, road_b_na
 
     return candidates
 
+NEIGHBOR_REGION_PRIORITY = {
+    "kuala_lumpur": ["selangor"],
+    "putrajaya": ["selangor"],
+    "selangor": ["kuala_lumpur", "putrajaya"],
+}
+
+
+def nominatim_last_chance_with_region(
+    edges_city: pd.DataFrame,
+    queries: list[str],
+    user_city: str,
+    region: dict,
+    buffer_m: float = 400,
+) -> pd.DataFrame:
+    """
+    Last-chance fallback:
+    - Try Nominatim with all cities in region
+    - Use geometry to find edges ONLY inside edges_city
+    """
+
+    cities = region.get("cities", [])
+    region_name = region["region_name"].replace("_", " ")
+
+    search_queries = []
+
+    for q in queries:
+        search_queries.append(f"{q}, {user_city}, Malaysia")
+
+    for city in cities:
+        for q in queries:
+            search_queries.append(f"{q}, {city}, Malaysia")
+
+    for q in queries:
+        search_queries.append(f"{q}, {region_name}, Malaysia")
+
+    seen = set()
+    geom = None
+
+    for sq in search_queries:
+        if sq in seen:
+            continue
+        seen.add(sq)
+
+        try:
+            gdf = ox.geocode_to_gdf(sq)
+            if not gdf.empty:
+                print(f"[Nominatim HIT] {sq}")
+                geom = gdf.iloc[0].geometry
+                break
+        except Exception:
+            continue
+
+    if geom is None:
+        raise ValueError(f"Nominatim failed for: {queries}")
+
+    search_area = buffer_wgs84_geometry_in_meters(geom, buffer_m)
+    idx = edges_city.sindex.query(search_area, predicate="intersects")
+    matched = edges_city.iloc[idx].copy()
+
+    if matched.empty:
+        raise ValueError(
+            f"Nominatim found location but no edges inside city graph: {queries}"
+        )
+
+    return matched
+
+def are_same_road(road_a_edges: pd.DataFrame, road_b_edges: pd.DataFrame) -> bool:
+    # exact edge overlap
+    if not road_a_edges.index.intersection(road_b_edges.index).empty:
+        return True
+
+    # strong ref overlap
+    a_refs = set(road_a_edges["ref_norm"].dropna()) if "ref_norm" in road_a_edges.columns else set()
+    b_refs = set(road_b_edges["ref_norm"].dropna()) if "ref_norm" in road_b_edges.columns else set()
+    if a_refs and b_refs and a_refs.intersection(b_refs):
+        return True
+
+    return False
 
 # =========================================================
 # MAIN PIPELINE
 # =========================================================
+
+GRAPH_CACHE = {}
 
 def run_city_road_connection_analysis(
     user_city: str,
     road_a_queries: list[str],
     road_b_queries: list[str],
     regions_path: str = "regions.json",
-    city_buffer_m: float = 500,
+    city_buffer_m: float = 2000,
 ):
     # 1. Find region and load regional graph
     region = find_region_for_city(user_city, regions_path=regions_path)
-    G_region = ox.load_graphml(region["graphml"])
-    print(f"Loaded graph for region: {region['region_name']}")
+    
+    graph_path = region["graphml"]
+    if graph_path in GRAPH_CACHE:
+        G_region = GRAPH_CACHE[graph_path]
+    else:
+        print(f"Loading graph for region: {region['region_name']} from {graph_path}")
+        G_region = ox.load_graphml(graph_path)
+        GRAPH_CACHE[graph_path] = G_region
+    
+    print(f"Using graph for region: {region['region_name']}")
 
     # 2. Geocode city and clip regional graph to city
     if region["region_name"] in ["kuala_lumpur", "putrajaya", "labuan"]:
@@ -675,47 +790,35 @@ def run_city_road_connection_analysis(
     else:
         city_query = f"{user_city}, {region['region_name'].replace('_', ' ')}, Malaysia"
 
+    print(f"Geocoding city: {city_query}")
     city_gdf = ox.geocode_to_gdf(city_query)
     city_polygon = city_gdf.iloc[0].geometry
     city_polygon_buffered = buffer_wgs84_geometry_in_meters(city_polygon, city_buffer_m)
 
-
-    #test
-    edges_region = prepare_edge_text_columns(
-        ox.graph_to_gdfs(G_region)[1]
-    )
-
-    debug = edges_region[
-        edges_region["name_norm"].str.contains("ring|lingkar", na=False) |
-        edges_region["ref_norm"].str.contains("28|ft28", na=False)
-    ]
-
-    print("FOUND IN REGION GRAPH:", len(debug))
-    debug_view = debug[["name", "ref"]].copy()
-    debug_view["name"] = debug_view["name"].apply(lambda x: " | ".join(map(str, x)) if isinstance(x, list) else x)
-    debug_view["ref"] = debug_view["ref"].apply(lambda x: " | ".join(map(str, x)) if isinstance(x, list) else x)
-
-    print(debug_view.drop_duplicates().head(20).to_string())
-    #test
-
+    print("Clipping graph to city polygon...")
     G_city, nodes_city, edges_city = clip_graph_to_polygon(G_region, city_polygon_buffered)
-    # print("City graph nodes:", len(G_city.nodes))
-    # print("City graph edges:", len(G_city.edges))
-
-    # print("FOUND IN CITY GRAPH:", len(
-    #     edges_city[
-    #         edges_city["name_norm"].str.contains("ring|lingkar", na=False)
-    #     ]
-    # ))
+    print(f"City graph: {len(G_city.nodes)} nodes, {len(G_city.edges)} edges")
 
     # 3. Prepare and match roads
     edges_city = prepare_edge_text_columns(edges_city)
 
-    road_a_edges = match_road_edges(edges_city, road_a_queries)
-    road_b_edges = match_road_edges(edges_city, road_b_queries)
 
-    # print(f"Matched road A edges: {len(road_a_edges)}")
-    # print(f"Matched road B edges: {len(road_b_edges)}")
+    print(f"Matching road edges for A: {road_a_queries}")
+    try:
+        road_a_edges = match_road_edges(edges_city, road_a_queries)
+    except Exception as e:
+        print(f"Road A local match failed: {e}. Trying Nominatim fallback...")
+        road_a_edges = nominatim_last_chance_with_region(edges_city, road_a_queries, user_city, region)
+
+    print(f"Matching road edges for B: {road_b_queries}")
+    try:
+        road_b_edges = match_road_edges(edges_city, road_b_queries)
+    except Exception as e:
+        print(f"Road B local match failed: {e}. Trying Nominatim fallback...")
+        road_b_edges = nominatim_last_chance_with_region(edges_city, road_b_queries, user_city, region)
+
+    print(f"Matched road A edges: {len(road_a_edges)}")
+    print(f"Matched road B edges: {len(road_b_edges)}")
 
     # 4. Merge road geometries (useful for optional corridor visualization)
     road_a_geom = unary_union(list(road_a_edges.geometry))
@@ -735,15 +838,22 @@ def run_city_road_connection_analysis(
     )
 
     if best_path is None:
-        raise ValueError("No path found between road A and road B")
+        raise ValueError(f"No path found between road A ({len(road_a_nodes)} nodes) and road B ({len(road_b_nodes)} nodes) in the city graph.")
 
-    # 7. Decide mode
-    if shared_nodes:
-        mode = "junction_or_direct_connection"
-    elif best_cost < 50:
-        mode = "junction_or_direct_connection"
+    same_road = are_same_road(road_a_edges, road_b_edges)
+
+    num_candidate = 3
+    if same_road:
+        mode = "same_road"
+        num_candidate = 1
     else:
-        mode = "corridor"
+        shared_nodes = road_a_nodes.intersection(road_b_nodes)
+        if shared_nodes:
+            mode = "junction_or_direct_connection"
+        elif best_cost < 50:
+            mode = "junction_or_direct_connection"
+        else:
+            mode = "corridor"
 
     # print("Mode:", mode)
     # print("Best pair:", best_pair)
@@ -754,13 +864,13 @@ def run_city_road_connection_analysis(
     route_edges = safe_route_to_gdf(G_city, best_path, weight="length")
 
     # #alternative paths
-    source_node, target_node = best_pair
+    source_node, target_node = best_pair    
 
     alternative_paths = generate_k_alternative_paths(
         G_city,
         source=source_node,
         target=target_node,
-        k=3,
+        k=num_candidate,
         weight="length"
     )
 
@@ -813,9 +923,9 @@ def run_city_road_connection_analysis(
 
 if __name__ == "__main__":
     result = run_city_road_connection_analysis(
-        user_city="Kuala Lumpur",
-        road_a_queries=["Middle Ring Road 2"],
-        road_b_queries=["duke"],
+        user_city="kuala lumpur",
+        road_a_queries=["Jalan 2/27e"],
+        road_b_queries=["Jalan Rampai Niaga 1"],
         regions_path="regions.json",
         city_buffer_m=500,
     )
@@ -832,4 +942,6 @@ if __name__ == "__main__":
         print("Road classes:", c["road_classes"])
         print("Dominant class:", c["dominant_class"])
         print("Evidence:", c["evidence"])
+        
+    print("mode result", result["mode"])
 
