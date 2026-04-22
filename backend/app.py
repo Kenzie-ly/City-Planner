@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+import os
+import requests
 
 from typing import Any
 import uuid
@@ -82,16 +84,22 @@ async def run_agent_once(agent, session_id: str, prompt: str) -> str:
     message = types.Content(role="user", parts=[types.Part(text=prompt)])
 
     response = ""
-    async for event in runner.run_async(
-        user_id=USER_ID,
-        session_id=session_id,
-        new_message=message,
-    ):
-        if event.is_final_response() and event.content:
-            for part in event.content.parts:
-                if hasattr(part, "text") and part.text:
-                    response += part.text
-    return response.strip()
+    try:
+        async for event in runner.run_async(
+            user_id=USER_ID,
+            session_id=session_id,
+            new_message=message,
+        ):
+            if event.is_final_response() and event.content:
+                for part in event.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        response += part.text
+        return response.strip()
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            return "VERDICT: RETRY\nFEEDBACK: The AI is currently busy (quota exceeded). Please wait a moment and try again."
+        return f"VERDICT: RETRY\nFEEDBACK: An error occurred: {error_msg}"
 
 
 def parse_place_result(text: str) -> dict[str, Any]:
@@ -117,24 +125,23 @@ def parse_review(text: str) -> dict[str, str]:
     }
 
     verdict_match = re.search(r"VERDICT:\s*(PASS|REVISE|REVISE_TOTAL)", text, re.IGNORECASE)
-    verdict_match = re.search(r"VERDICT:\s*(PASS|REVISE|REVISE_TOTAL)", text, re.IGNORECASE)
     if verdict_match:
         result["verdict"] = verdict_match.group(1).strip().upper()
 
-    detail_match = re.search(r"(?:REASON|INSTRUCTION):\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+    detail_match = re.search(r"(?:REASON|INSTRUCTION):\s*(.*?)(?=\s*\n[A-Z_]+:|$)", text, re.IGNORECASE | re.DOTALL)
     if detail_match:
         result["detail"] = detail_match.group(1).strip()
 
-    resolved_match = re.search(r"RESOLVED_REFERENCE:\s*(.*)", text, re.IGNORECASE)
+    resolved_match = re.search(r"RESOLVED_REFERENCE:\s*(.*?)(?=\s*\n[A-Z_]+:|$)", text, re.IGNORECASE | re.DOTALL)
     if resolved_match:
         result["resolved_reference"] = resolved_match.group(1).strip()
 
-    json_match = re.search(r"JSON_OUTPUT:\s*(\{.*\})", text, re.DOTALL | re.IGNORECASE)
+    json_match = re.search(r"JSON_OUTPUT:\s*(\{.*?\})(?=\s*\n[A-Z_]+:|$)", text, re.DOTALL | re.IGNORECASE)
     if json_match:
         result["final_output"] = json_match.group(1).strip()
         return result
 
-    output_match = re.search(r"OUTPUT:\s*(.+)", text, re.DOTALL | re.IGNORECASE)
+    output_match = re.search(r"OUTPUT:\s*(.*?)(?=\s*\n[A-Z_]+:|$)", text, re.DOTALL | re.IGNORECASE)
     if output_match:
         result["final_output"] = output_match.group(1).strip()
 
@@ -280,7 +287,8 @@ def get_here_traffic_evidence(city: str, hypothesis: dict[str, Any]) -> dict[str
     last_error = None
     lat = lon = None
 
-    for query in road_queries[:4]:
+    # Check up to 2 road queries to keep it fast
+    for query in road_queries[:2]:
         try:
             geo_resp = requests.get(
                 geocode_url,
@@ -373,7 +381,9 @@ async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_chall
                 "pass": score["pass"],
             }
         )
+        print(f"Hotspot Attempt {i+1} Score: {score['alignment_score']} (Pass: {score['pass']})")
         if score["pass"]:
+            print(f"Hotspot loop passed early at attempt {i+1}")
             break
 
         feedback = (
@@ -917,6 +927,29 @@ Remember:
 
         state["last_step_output"] = new_raw_step_output
         state["last_display_reply"] = display_reply
+
+        if step_name == "Building simulations":
+            city_name = (state.get("target_places") or ["Kuala Lumpur"])[0]
+            enriched_assets = process_agent_assets(new_raw_step_output, city_name=city_name)
+            entities = format_entities(enriched_assets)
+            
+            # Get city coords for camera
+            from building_agent_helper import get_malaysia_coords
+            coords = get_malaysia_coords(city_name)
+            
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "done",
+                "reply": display_reply,
+                "show_map": True,
+                "entities": entities,
+                "needs_input": False,
+                "city_name": city_name,
+                "target_lat": coords["lat"] if coords else 3.1390,
+                "target_lng": coords["lng"] if coords else 101.6869,
+            }
+
         return {
             "ok": True,
             "session_id": session_id,
@@ -965,8 +998,23 @@ Remember:
     next_raw_step_output = await run_agent_once(next_step_agent, session_id, next_prompt)
 
     if next_step_name == "Building simulations":
-        enriched_assets = process_agent_assets(next_raw_step_output)
+        city_name = (state.get("target_places") or ["Kuala Lumpur"])[0]
+        enriched_assets = process_agent_assets(next_raw_step_output, city_name=city_name)
         entities = format_entities(enriched_assets)
+        
+        # Get city coords for camera
+        from building_agent_helper import get_malaysia_coords
+        coords = get_malaysia_coords(city_name)
+
+        # Extract Impact Metrics from the solution state
+        solution = state.get("solution_result", {})
+        impact_metrics = {
+            "societal_impact": solution.get("societal_impact", "No societal impact data available."),
+            "expected_effects": solution.get("expected_effect", []),
+            "complexity": solution.get("implementation_complexity", "Unknown"),
+            "solution_title": solution.get("solution_title", "Proposed Solution")
+        }
+
         return {
             "ok": True,
             "session_id": session_id,
@@ -975,6 +1023,10 @@ Remember:
             "show_map": True,
             "entities": entities,
             "needs_input": False,
+            "city_name": city_name,
+            "target_lat": coords["lat"] if coords else 3.1390,
+            "target_lng": coords["lng"] if coords else 101.6869,
+            "impact_metrics": impact_metrics
         }
     elif next_step_name == "Plan improvements":
         return {

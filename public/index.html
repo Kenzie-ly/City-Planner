@@ -10,6 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700;800&display=swap"
         rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>
         :root {
@@ -584,33 +585,39 @@
             transform: none;
         }
 
-        .buildings-count {
-            margin-left: auto;
-            padding: 10px 14px;
-            border-radius: 12px;
-            background: rgba(7, 13, 26, 0.78);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--muted);
-            font-size: 0.8rem;
-            font-weight: 700;
-            backdrop-filter: blur(10px);
-        }
-
         #status {
             position: absolute;
-            top: 18px;
-            right: 18px;
-            z-index: 11;
-            max-width: min(420px, calc(100% - 36px));
-            padding: 10px 14px;
-            border-radius: 12px;
-            background: rgba(7, 13, 26, 0.8);
+            top: 20px;
+            left: 20px;
+            z-index: 20;
+            max-width: 400px;
+            padding: 10px 18px;
+            border-radius: 14px;
+            background: rgba(7, 13, 26, 0.82);
+            border: 1px solid rgba(127, 231, 255, 0.22);
+            color: #fff;
+            font-size: 0.82rem;
+            font-weight: 700;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+        }
+
+        .buildings-count {
+            padding: 10px 18px;
+            border-radius: 14px;
+            background: rgba(7, 13, 26, 0.82);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--muted);
+            color: #dbe6ff;
             font-size: 0.8rem;
-            font-weight: 600;
-            min-height: 20px;
-            backdrop-filter: blur(10px);
+            font-weight: 700;
+            backdrop-filter: blur(12px);
+            white-space: nowrap;
+        }
+
+        /* Hide Cesium credits */
+        .cesium-widget-credits {
+            display: none !important;
         }
 
         #mapView {
@@ -959,69 +966,61 @@
 
         /* Clear row */
         .clear-row {
-            flex-shrink: 0;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 20;
             display: flex;
-            gap: 8px;
+            gap: 10px;
             align-items: center;
         }
 
         .btn-clear {
-            padding: 6px 16px;
-            border-radius: 6px;
+            padding: 10px 18px;
+            border-radius: 14px;
             font-size: 0.78rem;
             font-weight: 700;
             cursor: pointer;
-            transition: 0.2s;
-            border: 2px solid;
+            transition: all 0.2s ease;
+            background: rgba(7, 13, 26, 0.82);
+            backdrop-filter: blur(12px);
             font-family: inherit;
         }
 
+        .btn-clear:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
         .btn-clear-last {
-            background: transparent;
-            border-color: #e67e22;
+            border: 1px solid rgba(230, 126, 34, 0.4);
             color: #e67e22;
         }
 
-        .btn-clear-last:hover {
-            background: #e67e22;
-            color: #fff;
+        .btn-clear-last:hover:not(:disabled) {
+            background: rgba(230, 126, 34, 0.2);
+            border-color: #e67e22;
         }
 
         .btn-clear-all {
-            background: transparent;
-            border-color: #c0392b;
-            color: #c0392b;
+            border: 1px solid rgba(192, 57, 43, 0.4);
+            color: #e74c3c;
         }
 
-        .btn-clear-all:hover {
-            background: #c0392b;
-            color: #fff;
+        .btn-clear-all:hover:not(:disabled) {
+            background: rgba(192, 57, 43, 0.2);
+            border-color: #e74c3c;
         }
 
         .btn-clear:disabled {
-            opacity: 0.35;
+            opacity: 0.4;
             cursor: not-allowed;
+            border-color: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.3);
         }
 
-        .buildings-count {
-            margin-left: auto;
-            font-size: 0.75rem;
-            color: var(--muted);
-            font-weight: 600;
-        }
 
-        #status {
-            flex-shrink: 0;
-            font-size: 0.8rem;
-            color: var(--muted);
-            font-weight: 500;
-            min-height: 18px;
-        }
 
-        .cesium-viewer-animationContainer,
-        .cesium-viewer-timelineContainer {
-            display: none !important;
-        }
 
         body.chat-mode .city-chips,
         body.chat-mode .clear-row,
@@ -1447,6 +1446,36 @@
                 border-radius: 18px;
             }
         }
+
+        .btn-play-sim {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: white;
+            background: linear-gradient(135deg, #00BFFF 0%, #1E90FF 100%);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0, 191, 255, 0.4);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-play-sim:hover {
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 6px 20px rgba(0, 191, 255, 0.6);
+        }
+
+        .btn-play-sim:active {
+            transform: translateX(-50%) scale(0.95);
+        }
     </style>
 </head>
 
@@ -1459,8 +1488,10 @@
                     <h2 class="history-title">Analysis History</h2>
                     <p class="history-subtitle">Use previous completed analyses as reference for your next session.</p>
                     <div class="history-head-actions">
-                        <button id="historyNewAnalysisBtn" class="history-panel-btn" type="button">+ New Analysis</button>
-                        <button id="historyClearRefBtn" class="history-panel-btn secondary" type="button">Clear Ref</button>
+                        <button id="historyNewAnalysisBtn" class="history-panel-btn" type="button">+ New
+                            Analysis</button>
+                        <button id="historyClearRefBtn" class="history-panel-btn secondary" type="button">Clear
+                            Ref</button>
                     </div>
                     <p id="historyReferenceChip" class="history-reference-chip" hidden></p>
                 </div>
@@ -1513,7 +1544,11 @@
                 </div>
 
                 <div id="mapView" class="frame-view">
-                    <div id="map"></div>
+                    <div id="map">
+                        <button id="btnPlaySim" class="btn-play-sim" onclick="playSimulation()" style="display:none;">
+                            <span style="font-size: 1.4rem;">▶</span> Play Simulation
+                        </button>
+                    </div>
                     <div id="mapLoader">
                         <div class="loader-content">
                             <div class="spinner"></div>
@@ -1608,18 +1643,77 @@
                     <button onclick="submitPrompt()" id="btnSend">Send</button>
                 </div>
 
-                <div class="clear-row">
-                    <button class="btn-clear btn-clear-last" id="btnClearLast" onclick="clearLast()" disabled>↩ Undo
-                        Last
-                        Building</button>
-                    <button class="btn-clear btn-clear-all" id="btnClearAll" onclick="clearAll()" disabled>🗑 Clear All
-                        Buildings</button>
-                    <span class="buildings-count" id="buildingCount">No buildings placed</span>
-                </div>
 
                 <div id="status">Step 1: Click on the map to choose where to build.</div>
+                <div id="simControls"
+                    style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 1000; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3); gap: 10px; align-items: center;">
+                    <button id="btnPlaySim" onclick="playSimulation()"
+                        style="display: flex; align-items: center; gap: 5px; background: #10B981; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                        <span class="material-icons" style="font-size: 16px;">play_arrow</span> Play Sim
+                    </button>
+                    <button id="btnReplaySim" onclick="replaySimulation()"
+                        style="display: flex; align-items: center; gap: 5px; background: #6366F1; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                        <span class="material-icons" style="font-size: 16px;">replay</span> Replay
+                    </button>
+                    <button onclick="document.getElementById('simControls').style.display='none'"
+                        style="background: transparent; color: #999; border: none; padding: 2px; cursor: pointer; margin-left: 5px;">
+                        <span class="material-icons" style="font-size: 16px;">close</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Impact Assessment Dashboard -->
+            <div id="impactDashboard"
+                style="display: none; position: fixed; top: 20px; left: 20px; z-index: 1000; width: 320px; background: rgba(10, 10, 15, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 16px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.5); font-family: 'Inter', sans-serif; user-select: none;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 12px;">
+                    <div
+                        style="font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; color: #10B981;">
+                        <span class="material-icons" style="font-size: 18px;">analytics</span>
+                        Impact Assessment
+                    </div>
+                    <button onclick="document.getElementById('impactDashboard').style.display='none'"
+                        style="background: transparent; border: none; color: #999; cursor: pointer; padding: 0;">
+                        <span class="material-icons" style="font-size: 18px;">close</span>
+                    </button>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <div
+                        style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        Proposed Solution</div>
+                    <div id="impactTitle" style="font-size: 14px; font-weight: 500; color: #fff;"></div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <div
+                        style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        Expected Effects</div>
+                    <ul id="impactEffects"
+                        style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.4;">
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <div
+                        style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        Complexity</div>
+                    <div id="impactComplexity"
+                        style="font-size: 13px; display: inline-block; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.1);">
+                    </div>
+                </div>
+
+                <div>
+                    <div
+                        style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        Societal Impact</div>
+                    <div id="impactSocietal"
+                        style="font-size: 13px; color: #E0E7FF; line-height: 1.4; background: rgba(99, 102, 241, 0.1); padding: 8px; border-radius: 6px; border-left: 3px solid #6366F1;">
+                    </div>
+                </div>
             </div>
         </div>
+    </div>
     </div>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
     <script src="cesiumRenderer.js"></script>
@@ -1636,11 +1730,12 @@
 
             viewer = new Cesium.Viewer('map', {
                 terrain: Cesium.Terrain.fromWorldTerrain(),
-                baseLayer: Cesium.ImageryLayer.fromWorldImagery({
-                    style: Cesium.IonWorldImageryStyle.SENTINEL2
-                }),
-                animation: false,
-                timeline: false,
+                baseLayer: new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({
+                    url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                    maximumLevel: 20
+                })),
+                animation: true,
+                timeline: true,
                 geocoder: false,
                 homeButton: false,
                 sceneModePicker: false,
@@ -1652,6 +1747,13 @@
             });
 
             viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80;
+            viewer.scene.globe.depthTestAgainstTerrain = false;
+            viewer.scene.logarithmicDepthBuffer = false;
+            viewer.targetFrameRate = 30;
+            viewer.resolutionScale = 0.9; // Slight downscale for performance
+            viewer.scene.fog.enabled = false; // Disable fog for speed
+            viewer.scene.highDynamicRange = false;
+            viewer.shadows = false;
             viewer.scene.screenSpaceCameraController.maximumZoomDistance = MY.maxAlt;
 
             viewer.camera.setView({
@@ -1982,11 +2084,11 @@
         //                 <i style="color:#aac4e0;">${data.description ?? ''}</i>
         //             </div>`,
         //             box: {
-        //                 dimensions: new Cesium.Cartesian3(l, w, h),
-        //                 material: fillColor,
+        //                 dimensions: new Cesium.Cartesian3(8.0, 4.0, 3.0),
+        //                 material: vehicleColor,
         //                 outline: true,
-        //                 outlineColor: outlineColor,
-        //                 outlineWidth: 2
+        //                 outlineColor: Cesium.Color.BLACK,
+        //                 heightReference: Cesium.HeightReference.NONE
         //             },
         //             label: {
         //                 text: buildingName,
@@ -2113,40 +2215,6 @@
         }
 
         // Assume 'mapData' is the JSON array output from your Python script
-        function renderStreetsToCesium(mapData) {
-            mapData.forEach(asset => {
-                // Only process the polylines (streets and bridges)
-                if (asset.entity_type === 'polyline_existing' || asset.entity_type === 'polyline_new') {
-
-                    // 1. Flatten your coordinates into the format Cesium expects:
-                    // [lon1, lat1, height1, lon2, lat2, height2, ...]
-                    let degreesArray = [];
-                    asset.polyline_positions.forEach(coord => {
-                        degreesArray.push(coord.lng);
-                        degreesArray.push(coord.lat);
-                        degreesArray.push(coord.height);
-                    });
-
-                    // 2. Add the Entity to the Viewer
-                    viewer.entities.add({
-                        id: asset.id,
-                        name: asset.name,
-                        blurb: asset.blurb,
-                        entityType: asset.entity_type,
-                        description: asset.blurb,
-                        polyline: {
-                            positions: Cesium.Cartesian3.fromDegreesArrayHeights(degreesArray),
-                            material: Cesium.Color.fromCssColorString(asset.style.color).withAlpha(asset.style.opacity),
-                            width: asset.style.width,
-                            clampToGround: asset.entity_type === 'polyline_existing',
-                        }
-                    });
-                }
-            });
-
-            // // Optional: Make the camera zoom to the newly added streets
-            viewer.zoomTo(viewer.entities);
-        }
 
         function showLoader() {
             document.getElementById("mapLoader").style.display = "flex";
@@ -2255,7 +2323,6 @@
 
             chatMessages.appendChild(bubble);
             chatMessages.scrollTop = chatMessages.scrollHeight;
-            updateEmptyState();
             return bubble;
         }
 
@@ -2367,7 +2434,6 @@
                 if (entry.entities) {
                     renderEntities(entry.entities);
                     createPopups();
-                    renderStreetsToCesium(entry.entities);
                     if (entry.camera) flyToCamera(entry.camera);
                 }
             }
@@ -2534,7 +2600,7 @@
                 });
 
                 const data = await response.json();
-                
+
                 if (requestId !== currentSessionId) {
                     console.warn("Ignoring response from stale session.");
                     return;
@@ -2559,7 +2625,48 @@
                     if (Array.isArray(data.entities) && data.entities.length > 0) {
                         renderEntities(data.entities);
                         createPopups();
-                        renderStreetsToCesium(data.entities);
+
+                        const hasSim = data.entities.some(e => e.entity_type === 'simulation_vehicle');
+                        const controls = document.getElementById("simControls");
+                        if (hasSim) {
+                            controls.style.display = "flex";
+                        } else {
+                            controls.style.display = "none";
+                        }
+
+                        if (data.target_lat && data.target_lng) {
+                            flyToCity(data.city_name || "Target Area", data.target_lat, data.target_lng);
+                        }
+
+                        // Populate and show Impact Dashboard if metrics exist
+                        if (data.impact_metrics) {
+                            const dashboard = document.getElementById('impactDashboard');
+                            const title = document.getElementById('impactTitle');
+                            const effectsList = document.getElementById('impactEffects');
+                            const complexity = document.getElementById('impactComplexity');
+                            const societal = document.getElementById('impactSocietal');
+
+                            title.textContent = data.impact_metrics.solution_title || "Proposed Intervention";
+
+                            effectsList.innerHTML = '';
+                            if (data.impact_metrics.expected_effects && Array.isArray(data.impact_metrics.expected_effects)) {
+                                data.impact_metrics.expected_effects.forEach(effect => {
+                                    const li = document.createElement('li');
+                                    li.textContent = effect;
+                                    effectsList.appendChild(li);
+                                });
+                            }
+
+                            const compLevel = (data.impact_metrics.complexity || "medium").toLowerCase();
+                            complexity.textContent = compLevel.toUpperCase();
+                            if (compLevel === 'low') complexity.style.color = '#10B981';
+                            else if (compLevel === 'medium') complexity.style.color = '#F59E0B';
+                            else complexity.style.color = '#EF4444';
+
+                            societal.textContent = data.impact_metrics.societal_impact || "Significant positive impact expected for local commuters.";
+
+                            dashboard.style.display = 'block';
+                        }
 
                         addHistory(data);
                     }
@@ -2729,10 +2836,22 @@
             await loadHistories();
         }
         document.addEventListener("DOMContentLoaded", main);
+        function playSimulation() {
+            if (!viewer) return;
+            // If we are at or near the end, reset to start
+            const isNearEnd = Cesium.JulianDate.compare(viewer.clock.currentTime, viewer.clock.stopTime) >= 0;
+            if (isNearEnd) {
+                viewer.clock.currentTime = viewer.clock.startTime;
+            }
+            viewer.clock.shouldAnimate = true;
+        }
+
+        function replaySimulation() {
+            if (!viewer) return;
+            viewer.clock.currentTime = viewer.clock.startTime;
+            viewer.clock.shouldAnimate = true;
+        }
     </script>
 </body>
 
 </html>
-
-
-

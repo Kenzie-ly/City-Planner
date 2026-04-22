@@ -34,12 +34,13 @@ place_intake_agent = LlmAgent(
         - decide whether the message contains acceptable location inputs
 
         Important rules:
-        - Accept any real city or town in Malaysia
-        - Accept at most two places
-        - Reject places that are too broad, such as a whole country or a state
-        - Reject places that are too specific, such as landmarks, stations, roads, buildings, or very small areas
-        - If part of the input is valid and part is not, return RETRY and explain naturally
-        - Keep the feedback concise and natural
+        - Accept any real city or town in Malaysia.
+        - Accept at most two places.
+        - Reject places that are too broad, such as a whole country or a whole state (e.g. "Selangor", "Johor", "Malaysia").
+        - HOWEVER, always accept major cities even if they are large (e.g. "Kuala Lumpur", "George Town", "Ipoh", "Shah Alam", "Petaling Jaya", "Klang").
+        - Reject places that are too specific, such as landmarks, stations, roads, buildings, or very small neighborhoods.
+        - If part of the input is valid and part is not, return RETRY and explain naturally.
+        - Keep the feedback concise and natural.
 
         Definition:
         - Input that needs confirmation is an input that has acceptable input and unacceptable input
@@ -188,14 +189,13 @@ planning_agent = LlmAgent(
         FEEDBACK LOOP:
         - If the previous plan was rejected, follow the user's instructions to select a different candidate or intervention type.
         
-        Your task is to:
-
         Compare all candidates carefully
         Select the MOST appropriate candidate for addressing the problem
         Identify the most suitable intervention type
         Justify your decision using ONLY the provided data
         Explain tradeoffs between candidates
         Assign a realistic confidence level
+        Calculate impact metrics aligned with JKR/MOT standards (e.g., commute time saved, economic benefit, or safety improvements).
         CRITICAL RULES (MUST FOLLOW)
         You MUST only choose from the provided candidates.
         You MUST NOT invent new roads, paths, or geometry.
@@ -404,11 +404,12 @@ building_agent = LlmAgent(
 
         Your job is to identify the visual map elements needed to represent the solution clearly.
 
-        These may include:
+        These MUST include:
 
         * POINT → for intervention nodes, kiosks, stations, conflict points
         * POLYLINE → for corridors, routes, connectors, lane-priority segments
-        * POLYGON → for zones, treatment areas, widened junction footprints, interchange treatment areas
+        * POLYGON → for zones, treatment areas, widened junction footprints
+        * SIMULATION → MANDATORY for transport/road projects. Use this to illustrate traffic flow. Place vehicles (x10 to x20) along the improved corridor or through the redesigned junction to show movement.
         * LABEL → for important annotations when needed
 
 
@@ -416,16 +417,15 @@ building_agent = LlmAgent(
 
         1. You MUST use only locations, roads, corridors, junctions, and nodes explicitly present in the input.
         2. You MUST NOT invent new roads, new places, or unsupported geometry.
-        3. You MUST keep the number of map objects minimal but meaningful.
-        4. Each object must help explain the intervention visually.
-        5. Use SEARCH_LOCATION as a human-readable place or road name that can be used later for geocoding or spatial lookup.
-        6. STYLE_HINT must be short and practical.
-        7. DESCRIPTION must explain what the object means on the map.
+        3. For every transport intervention (bridge, lane change, junction redesign), you MUST include at least one SIMULATION object to show how vehicles use the new infrastructure.
+        4. Use SEARCH_LOCATION as a real, geocodable place or road name (e.g. "Jalan Ampang", "Jalan Tun Razak"). NEVER use generic/invented names like "Connector", "New Lane", or "Junction". If referring to an intersection, use the name of the main road explicitly.
+        5. STYLE_HINT must be short. For SIMULATION, you can specify speed (e.g., speed:40).
+        6. DESCRIPTION must explain what the object means on the map.
 
 
         ## OUTPUT FORMAT (STRICT)
 
-        Return one line per map object using EXACTLY this format:
+        Return one line per map object using EXACTLY this bracketed format (DO NOT OMIT THE BRACKETS):
 
         [GEOMETRY_TYPE | COUNT | LABEL | SEARCH_LOCATION | STYLE_HINT | DESCRIPTION]
 
@@ -434,18 +434,28 @@ building_agent = LlmAgent(
         * POINT
         * POLYLINE
         * POLYGON
+        * SIMULATION
         * LABEL
 
         COUNT rules:
 
         * Use x1, x2, x3, etc.
-        * COUNT means how many similar objects of this type are needed
+        * COUNT means how many similar objects of this type are needed. For SIMULATION, this is the number of vehicles to simulate.
 
         STYLE_HINT examples:
-        * color:red, width:thick (Used for conflict points or bottlenecks)
-        * color:blue, width:medium (Used for transit/bus priority elements)
-        * color:green, size:large (Used for safety improvements or pedestrian zones)
-        * color:orange, opacity:0.4 (Used for general infrastructure zones)
+        * style:transit, color:blue (MANDATORY for bus routes, BRT, LRT to trigger Bus 3D models)
+        * style:freight, color:brown (MANDATORY for logistics/freight corridors to trigger Truck 3D models)
+        * style:pedestrian, color:green (MANDATORY for active mobility, walkways, cycle lanes)
+        * color:red, width:thick (Used for standard conflict points or car bottlenecks)
+        * speed:40 (Used for SIMULATION to set velocity)
+        * speed:20, flow:congested (Used for SIMULATION on existing roads to show current problem)
+        * speed:70, flow:optimized, height:medium (Used for SIMULATION on your NEW roads to show the improvement)
+
+        ## HIGH-IMPACT SIMULATION TIP:
+        To show traffic on a NEW road you just proposed:
+        1. Give your [POLYLINE_NEW] a unique label (e.g., "North Bypass").
+        2. Create a [SIMULATION] and set its SEARCH_LOCATION to "North Bypass". The system will automatically place the cars on your new road.
+        3. ALWAYS provide both a "congested" simulation (current state) and an "optimized" one (new state) for maximum visual impact.
         * color:yellow, width:medium, dashed:true (Used for temporary or secondary lanes)
 
 
@@ -559,7 +569,8 @@ review_agent = LlmAgent(
         RULES:
         - Return PASS only if the user response can be confidently mapped to the current output.
         - Return REVISE if the response is too vague, invalid, or unrelated.
-        - Return REVISE_TOTAL if the user is asking to regenerate or modify the previous step output itself.
+        - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
+        - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
         - If the user says "1", "2", "the first one", etc., resolve it explicitly.
         - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
         - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
