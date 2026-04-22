@@ -1,12 +1,10 @@
 import firebase_admin
-from firebase_admin import credentials, firestore
-import uuid
-from flask import Flask, request, jsonify, session
+from firebase_admin import credentials, firestore, auth
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 
-cred = credentials.ApplicationDefault()
-firebase_admin.initialize_app(cred)
+firebase_admin.initialize_app()
 db = firestore.client()
 
 app = Flask(__name__)
@@ -15,30 +13,33 @@ CORS(
     resources={r"/*": {
         "origins": [
             "http://localhost:3000",
-            "http://127.0.0.1:3000"
+            "http://127.0.0.1:3000",
+            "https://your-frontend-domain.com"
         ]
     }},
     supports_credentials=False
 )
-"""
-app.secret_key = "Hackathon"
-CORS(app, supports_credentials=True, origins=["http://127.0.0.1:3000", "http://localhost:3000"])
-app.config.update(
-    SESSION_COOKIE_SAMESITE="None",  # allow cross-site
-    SESSION_COOKIE_SECURE=True      # True ONLY if HTTPS
-)"""
 
 def getUserId():
-    return "userTest01"
-""" if "user_id" not in session:
-        session["user_id"] = str(uuid.uuid4())
-    return session["user_id"]"""
+    try:
+        header = request.headers.get("Authorization", "")
 
-def addHistory(data):
+        if not header.startswith("Bearer "):
+            return None
+
+        token = header.split("Bearer ")[1].strip()
+        if not token:
+            return None
+
+        decoded = auth.verify_id_token(token)
+        return decoded["uid"]
+
+    except Exception:
+        return None
+
+def addHistory(data, userId):
     if data is None or type(data) != dict:
         return
-    
-    userId = getUserId()
 
     payload = {
         **data,
@@ -46,14 +47,12 @@ def addHistory(data):
         "last_seen": firestore.SERVER_TIMESTAMP
     }
     
-    update_time, doc_ref = db.collection("users") \
+    db.collection("users") \
         .document(userId) \
         .collection("map_history") \
         .add(payload)
 
-def getHistoryList():
-    userId = getUserId()
-
+def getHistoryList(userId):
     docs = db.collection("users") \
         .document(userId) \
         .collection("map_history") \
@@ -65,27 +64,25 @@ def getHistoryList():
         for doc in docs
     ]
     
-def updateTimestamp(dataId):
+def updateTimestamp(dataId, userId):
     if dataId is None:
         return
-    
-    userId = getUserId()
 
     ref = db.collection("users") \
         .document(userId) \
         .collection("map_history") \
         .document(dataId)
 
-    if ref.get().exists:
+    try:
         ref.update({
             "last_seen": firestore.SERVER_TIMESTAMP
         })
+    except Exception:
+        pass
         
-def deleteHistory(dataId):
+def deleteHistory(dataId, userId):
     if dataId is None:
         return
-    
-    userId = getUserId()
 
     db.collection("users") \
         .document(userId) \
@@ -95,20 +92,26 @@ def deleteHistory(dataId):
 
 @app.route("/get_history", methods=["GET"])
 def sendHistoryList():
-    histories = getHistoryList()
+    userId = getUserId()
+    if not userId:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    histories = getHistoryList(userId)
     return jsonify(histories)
 
-@app.route("/add_history", methods=["POST", "OPTIONS"])
+@app.route("/add_history", methods=["POST"])
 def addNewHistory():
-    if request.method == "OPTIONS":
-        return "", 204
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        
+        userId = getUserId()
+        if not userId:
+            return jsonify({"error": "Unauthorized"}), 401
         
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid JSON"}), 400
 
-        addHistory(data)
+        addHistory(data, userId)
 
         return jsonify({
             "status": "ok",
@@ -121,16 +124,18 @@ def addNewHistory():
             "message": str(e) 
         }), 500
     
-@app.route("/delete_history", methods=["POST", "OPTIONS"])
+@app.route("/delete_history", methods=["POST"])
 def deleteSelectedHistory():
-    if request.method == "OPTIONS":
-        return "", 204
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        
+        userId = getUserId()
+        if not userId:
+            return jsonify({"error": "Unauthorized"}), 401
 
         dataId = data.get("id")
 
-        deleteHistory(dataId)
+        deleteHistory(dataId, userId)
 
         return jsonify({
                 "status": "ok",
@@ -143,16 +148,24 @@ def deleteSelectedHistory():
             "message": str(e) 
         }), 500
     
-@app.route("/select_history", methods=["POST", "OPTIONS"])
+@app.route("/select_history", methods=["POST"])
 def selectHistory():
-    if request.method == "OPTIONS":
-        return "", 204
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
 
         dataId = data.get("id")
+        
+        userId = getUserId()
+        if not userId:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        if dataId is None:
+            return jsonify({
+                "status": "error",
+                "message": "invalid id" 
+            }), 400
 
-        updateTimestamp(dataId)
+        updateTimestamp(dataId, userId)
         
         return jsonify({
             "status": "ok",
@@ -165,8 +178,6 @@ def selectHistory():
             "message": str(e) 
         }), 500
 
-    
-    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
