@@ -70,16 +70,26 @@ function renderEntities(entities) {
                 const targetHeight = isBridge ? (entity.style.height ?? 40) : 0;
                 const shouldClamp = !isBridge;
                 const baseWidth = isBridge ? 18 : 12;
-
                 segments.forEach((positions, sIdx) => {
                     // VALIDATION: Ensure positions is an array of valid coordinate objects
                     if (!Array.isArray(positions) || positions.length < 2) return;
                     
                     const validPositions = positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
-                    if (validPositions.length < 2) return;
+                    const isExisting = (entity.entity_type === 'polyline_existing');
+                    const isBridge = (entity.entity_type === 'polyline_new');
+                    const targetHeight = isBridge ? (entity.style.height ?? 40) : 0;
+                    const shouldClamp = !isBridge;
+                    const baseWidth = isBridge ? 18 : (isExisting ? 6 : 12);
+                    const color = entity.style.color ? Cesium.Color.fromCssColorString(entity.style.color) : Cesium.Color.YELLOW;
+                    const alpha = entity.style.alpha ?? 0.8;
 
-                    const midIndex = Math.floor(validPositions.length / 2);
-                    const mid = validPositions[midIndex];
+                    let material = color.withAlpha(alpha);
+                    if (isExisting && entity.style.dashed) {
+                        material = new Cesium.PolylineDashMaterialProperty({
+                            color: color.withAlpha(0.6),
+                            dashLength: 16
+                        });
+                    }
 
                     if (isBridge) {
                         viewer.entities.add({
@@ -94,6 +104,9 @@ function renderEntities(entities) {
                             }
                         });
                     }
+
+                    const midIndex = Math.floor(validPositions.length / 2);
+                    const mid = validPositions[midIndex];
 
                     const addedSeg = viewer.entities.add({
                         id: entity.id + "_" + sIdx,
@@ -296,9 +309,12 @@ function getVehicleStyle(entity) {
     else if (flow === 'optimized' || speed >= 55) color = Cesium.Color.fromCssColorString('#00FF7F');
 
     // Multi-Modal Overrides
-    if (styleHint.includes('transit') || styleHint.includes('bus') || name.includes('bus') || name.includes('brt') || name.includes('lrt')) {
+    if (styleHint.includes('transit') || styleHint.includes('bus') || name.includes('bus') || name.includes('brt')) {
         dimensions = new Cesium.Cartesian3(12.0, 3.5, 4.0); // Longer and taller for Bus/Transit
         color = Cesium.Color.fromCssColorString('#3B82F6'); // Transit Blue
+    } else if (styleHint.includes('train') || styleHint.includes('lrt') || styleHint.includes('mrt') || name.includes('train') || name.includes('lrt') || name.includes('mrt') || name.includes('ktm')) {
+        dimensions = new Cesium.Cartesian3(24.0, 3.8, 4.5); // Very long for Train/MRT
+        color = Cesium.Color.fromCssColorString('#A78BFA'); // Train Purple
     } else if (styleHint.includes('freight') || styleHint.includes('truck') || name.includes('freight') || name.includes('truck')) {
         dimensions = new Cesium.Cartesian3(14.0, 4.0, 4.5); // Large HGV
         color = Cesium.Color.fromCssColorString('#8B5A2B'); // Freight Brown

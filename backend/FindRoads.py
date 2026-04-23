@@ -8,7 +8,7 @@ import networkx as nx
 import osmnx as ox
 import pandas as pd
 from pyproj import CRS, Transformer
-from shapely.geometry import LineString, MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiPolygon, Polygon, Point, MultiPoint
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, transform, unary_union
 import pandas as pd
@@ -189,11 +189,34 @@ def get_road_node_ids(road_edges: pd.DataFrame) -> set:
 # GRAPH-BASED ROAD-TO-ROAD CONNECTION
 # =========================================================
 
-def find_best_connection_between_roads(G, road_a_nodes: set, road_b_nodes: set, weight: str = "length"):
-    print(f"Finding best connection between {len(road_a_nodes)} and {len(road_b_nodes)} nodes...")
+def find_best_connection_between_roads(G, road_a_nodes: set, road_b_nodes: set, weight: str = "length", routing_mode: str = "drive"):
+    print(f"Finding best connection (Mode: {routing_mode})...")
+    
+    custom_weight = weight
+    if routing_mode == "transit":
+        custom_weight = "transit_weight"
+        for u, v, k, data in G.edges(data=True, keys=True):
+            has_transit = any(data.get(tag) and data.get(tag) != "no" for tag in ["bus", "psv", "busway", "lanes:bus"])
+            data["transit_weight"] = data.get("length", 1.0) * (0.5 if has_transit else 1.5)
+            
+    elif routing_mode == "walk":
+        custom_weight = "walk_weight"
+        for u, v, k, data in G.edges(data=True, keys=True):
+            hw = str(data.get("highway", "")).lower()
+            # Reward pedestrian-friendly roads
+            is_pedestrian = any(x in hw for x in ["footway", "path", "pedestrian", "residential", "living_street", "steps"])
+            # Penalize high-speed roads
+            is_high_speed = any(x in hw for x in ["motorway", "trunk", "primary"])
+            
+            penalty = 1.0
+            if is_pedestrian: penalty = 0.4
+            if is_high_speed: penalty = 5.0
+            
+            data["walk_weight"] = data.get("length", 1.0) * penalty
+
     try:
-        # Use multi-source Dijkstra to find shortest paths from all nodes in A to all other nodes
-        lengths, paths = nx.multi_source_dijkstra(G, road_a_nodes, weight=weight)
+        # Use multi-source Dijkstra to find shortest paths
+        lengths, paths = nx.multi_source_dijkstra(G, road_a_nodes, weight=custom_weight)
         
         best_target = None
         min_dist = float("inf")
@@ -210,16 +233,32 @@ def find_best_connection_between_roads(G, road_a_nodes: set, road_b_nodes: set, 
         best_path = paths[best_target]
         best_pair = (best_path[0], best_target)
         
-        print(f"Connection found! Length: {min_dist:.2f}m")
-        return best_pair, best_path, min_dist
+        actual_dist = lengths[best_target]
+        if routing_mode != "drive":
+            # Re-calculate true physical length for reporting
+            actual_dist = sum(G.get_edge_data(best_path[i], best_path[i+1], 0).get("length", 0) for i in range(len(best_path)-1))
+
+        print(f"Connection found! Length: {actual_dist:.2f}m")
+        return best_pair, best_path, actual_dist
     except Exception as e:
         print(f"Error in shortest path: {e}")
         return None, None, None
 
 
 # =========================================================
-# OPTIONAL CORRIDOR GEOMETRY
+# OPTIONAL CORRIDOR GEOMETRY & CATCHMENT
 # =========================================================
+
+def generate_isochrone_polygon(G, center_node, distance_m=400, weight='length'):
+    try:
+        subgraph = nx.ego_graph(G, center_node, radius=distance_m, distance=weight)
+        node_points = [Point(data['x'], data['y']) for node, data in subgraph.nodes(data=True)]
+        if len(node_points) < 3:
+            return None
+        return MultiPoint(node_points).convex_hull
+    except Exception as e:
+        print(f"Failed to generate isochrone: {e}")
+        return None
 
 def build_corridor_polygon_from_two_roads(
     road_a_geom: BaseGeometry,
@@ -782,6 +821,7 @@ def are_same_road(road_a_edges: pd.DataFrame, road_b_edges: pd.DataFrame) -> boo
 # =========================================================
 
 GRAPH_CACHE = {}
+CITY_GRAPH_CACHE = {}
 
 def run_city_road_connection_analysis(
     user_city: str,
@@ -789,6 +829,7 @@ def run_city_road_connection_analysis(
     road_b_queries: list[str],
     regions_path: str = "regions.json",
     city_buffer_m: float = 2000,
+    routing_mode: str = "drive",
 ):
     # 1. Find region and load regional graph
     region = find_region_for_city(user_city, regions_path=regions_path)
@@ -809,13 +850,30 @@ def run_city_road_connection_analysis(
     else:
         city_query = f"{user_city}, {region['region_name'].replace('_', ' ')}, Malaysia"
 
-    print(f"Geocoding city: {city_query}")
-    city_gdf = ox.geocode_to_gdf(city_query)
-    city_polygon = city_gdf.iloc[0].geometry
-    city_polygon_buffered = buffer_wgs84_geometry_in_meters(city_polygon, city_buffer_m)
+    city_cache_key = (graph_path, city_query.lower(), int(city_buffer_m))
+    if city_cache_key in CITY_GRAPH_CACHE:
+        cached = CITY_GRAPH_CACHE[city_cache_key]
+        city_polygon = cached["city_polygon"]
+        city_polygon_buffered = cached["city_polygon_buffered"]
+        G_city = cached["G_city"]
+        nodes_city = cached["nodes_city"]
+        edges_city = cached["edges_city"]
+        print(f"Using cached city graph for: {city_query}")
+    else:
+        print(f"Geocoding city: {city_query}")
+        city_gdf = ox.geocode_to_gdf(city_query)
+        city_polygon = city_gdf.iloc[0].geometry
+        city_polygon_buffered = buffer_wgs84_geometry_in_meters(city_polygon, city_buffer_m)
 
-    print("Clipping graph to city polygon...")
-    G_city, nodes_city, edges_city = clip_graph_to_polygon(G_region, city_polygon_buffered)
+        print("Clipping graph to city polygon...")
+        G_city, nodes_city, edges_city = clip_graph_to_polygon(G_region, city_polygon_buffered)
+        CITY_GRAPH_CACHE[city_cache_key] = {
+            "city_polygon": city_polygon,
+            "city_polygon_buffered": city_polygon_buffered,
+            "G_city": G_city,
+            "nodes_city": nodes_city,
+            "edges_city": edges_city,
+        }
     print(f"City graph: {len(G_city.nodes)} nodes, {len(G_city.edges)} edges")
 
     # 3. Prepare and match roads
@@ -853,7 +911,8 @@ def run_city_road_connection_analysis(
         G_city,
         road_a_nodes,
         road_b_nodes,
-        weight="length"
+        weight="length",
+        routing_mode=routing_mode
     )
 
     if best_path is None:
@@ -885,12 +944,16 @@ def run_city_road_connection_analysis(
     # #alternative paths
     source_node, target_node = best_pair    
 
+    weight_col = "length"
+    if routing_mode == "transit": weight_col = "transit_weight"
+    if routing_mode == "walk": weight_col = "walk_weight"
+
     alternative_paths = generate_k_alternative_paths(
         G_city,
         source=source_node,
         target=target_node,
         k=num_candidate,
-        weight="length"
+        weight=weight_col
     )
 
     if not alternative_paths:
@@ -916,9 +979,36 @@ def run_city_road_connection_analysis(
     # print("Road A edges:", len(road_a_edges))
     # print("Road B edges:", len(road_b_edges))
 
+    # Generate isochrones (400m catchment) for walk/transit interventions
+    isochrone_geoms = []
+    if routing_mode in ["walk", "transit"]:
+        iso_src = generate_isochrone_polygon(G_city, source_node, distance_m=400, weight=weight_col)
+        if iso_src: isochrone_geoms.append(iso_src)
+        iso_tgt = generate_isochrone_polygon(G_city, target_node, distance_m=400, weight=weight_col)
+        if iso_tgt: isochrone_geoms.append(iso_tgt)
+
+    # Extract exact polyline coordinates for the best route to render in Cesium
+    route_geometry = []
+    if not route_edges.empty:
+        for _, row in route_edges.iterrows():
+            if "geometry" in row and pd.notna(row["geometry"]):
+                for lng, lat in row["geometry"].coords:
+                    route_geometry.append({"lat": lat, "lng": lng, "height": 0})
+                    
+    # Deduplicate route coordinates
+    seen = set()
+    deduped_route = []
+    for c in route_geometry:
+        key = (round(c["lat"], 6), round(c["lng"], 6))
+        if key not in seen:
+            seen.add(key)
+            deduped_route.append(c)
+
     return {
         "candidates": candidates,
-        "": region,
+        "isochrone_geoms": isochrone_geoms,
+        "route_geometry": deduped_route,
+        "region": region,
         "city_query": city_query,
         "city_polygon": city_polygon,
         "city_polygon_buffered": city_polygon_buffered,

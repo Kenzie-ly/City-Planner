@@ -7,6 +7,7 @@ from google.genai import types
 from typing import AsyncGenerator
 from pydantic import ConfigDict
 import asyncio
+import os
 from dotenv import load_dotenv
 from google.adk.tools.google_search_tool import GoogleSearchTool
 import re
@@ -16,14 +17,15 @@ import json
 
 # Load API key from .env file
 load_dotenv()
+PLANNER_MODEL = os.getenv("PLANNER_MODEL", "gemini-3-flash-preview").strip() or "gemini-3.1-flash-lite-preview"
 
 
 # ── Step agents for later phases ──────────────────────────────────────────────
 
 place_intake_agent = LlmAgent(
     name="place_intake_agent",
-    model="gemini-3.1-flash-lite-preview",
-    description="Collects one or two Malaysian cities/towns from the user with a natural feedback loop.",
+    model=PLANNER_MODEL,
+    description="Collects 1-2 Malaysian cities/towns from the user.",
     instruction="""
         You are the intake agent for an infrastructure planning assistant.
 
@@ -73,23 +75,31 @@ place_intake_agent = LlmAgent(
 
 find_needs_agent = LlmAgent(
     name="find_needs_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Identifies the top 3 broad transport-related challenges for the selected Malaysian city or town.",
     instruction="""
         You are the Lead Transport Systems Analysis Supervisor for Malaysia.
 
         You will be given one or two Malaysian target places and optional geospatial evidence.
-        Your task is to identify the top 3 most critical BROAD transport-related infrastructure challenges.
+                Your task is to identify 1 to 3 critical BROAD transport-related infrastructure challenges that are DIRECTLY supported by the evidence.
+
+        EVIDENCE-FIRST POLICY:
+        - Do NOT invent statistics. Only use numbers found in the provided evidence snippets.
+        - Do NOT hallucinate sources. Only cite provided URLs.
+        - If the evidence only supports 1 or 2 challenges, return ONLY those. Do NOT fill the quota of 3 if the data is thin.
+        - Prioritize "Verified Complaints" (where human reports match infrastructure gaps).
+
 
         SCOPE:
-        - highway congestion assessment
-        - urban corridor performance monitoring
-        - junction bottleneck patterns
-        - transit bottleneck detection
+        - first-mile/last-mile connectivity gaps for B40/M40 commuters
+        - INDUSTRIAL zone accessibility (connecting housing to factory clusters)
+        - transit deserts (lack of nearby LRT/MRT/KTM stations)
+        - lack of feeder bus routes for essential workers
+        - poor pedestrian accessibility to transit hubs
+        - transit bottleneck detection near workplaces
         - bus reliability issues
-        - freight corridor performance
-        - road expansion screening
-        - transport infrastructure needs
+        - micromobility integration for industrial zones
+        - BRT (Bus Rapid Transit) corridor opportunities for workforce commuting
 
         HARD RULES:
         - ONLY discuss the target place(s)
@@ -98,6 +108,11 @@ find_needs_agent = LlmAgent(
         - NO PRIMARY_MICRO or SECONDARY_MICRO yet
         - NO routing labels yet
         - stay at challenge-category level
+        
+        CORRIDOR FUSION POLICY (EXPERT):
+        - Do NOT treat residential and industrial needs as isolated.
+        - Prioritize identifying STRATEGIC CORRIDORS that connect O-D (Origin-Destination) pairs (e.g. 'Cheras-Shah Alam Workforce Corridor').
+        - Every challenge should explain how it links residential hubs to workforce destinations.
 
         TOOL USAGE:
         - You MUST use the Google Search tool before answering.
@@ -105,6 +120,8 @@ find_needs_agent = LlmAgent(
 
         FEEDBACK LOOP:
         - If you are provided with feedback or a rejection reason from a previous attempt, you MUST address that feedback explicitly by generating DIFFERENT challenges or focusing on the requested aspects.
+        - If SELECTED_AREA_OPTION_JSON / MERGED_EVIDENCE_JSON is provided, anchor challenge ranking to that selected area and evidence.
+        - If you are asked to repair invalid output, strictly fix the schema and source validity requirements.
 
         OUTPUT FORMAT (STRICT JSON ONLY):
         Return exactly one JSON object and nothing else.
@@ -114,29 +131,116 @@ find_needs_agent = LlmAgent(
             "CHALLENGE_THEME": "<broad challenge>",
             "MACRO_ROOT_CAUSE": "<root cause>",
             "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points (e.g., hours lost, RM cost, vehicle counts) and explicit citations from credible sources (e.g., TomTom, World Bank, transport authorities)>"
+            "EVIDENCE_SUMMARY": "<Strong evidence-based justification with quantitative points>",
+            "TITLE": "<user-friendly challenge title>",
+            "STATISTICS": {
+              "metric_label_1": 123.0,
+              "metric_label_2": 45.0
+            },
+            "BRIEF_DESCRIPTION": "<1-3 sentences explaining the statistics and why they matter>",
+            "SOURCES": [
+              {
+                "publisher": "<publisher name>",
+                "url": "https://...",
+                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
+                "source_tier": "government | operator | study | major_media | local_media"
+              },
+              {
+                "publisher": "<publisher name>",
+                "url": "https://...",
+                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
+                "source_tier": "government | operator | study | major_media | local_media"
+              }
+            ],
+            "CHART_SPEC": {
+              "chart_type": "bar",
+              "labels": ["metric_label_1", "metric_label_2"],
+              "values": [123.0, 45.0]
+            }
           },
           "CHALLENGE_2": {
-            "CHALLENGE_THEME": "<broad challenge>",
-            "MACRO_ROOT_CAUSE": "<root cause>",
-            "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points and explicit citations>"
+            "..." : "..."
           },
           "CHALLENGE_3": {
-            "CHALLENGE_THEME": "<broad challenge>",
-            "MACRO_ROOT_CAUSE": "<root cause>",
-            "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<Strong evidence-based justification including specific quantitative data points and explicit citations>"
+            "..." : "..."
           }
         }
-    """,
+        
+        Return ONLY strict JSON with keys: CHALLENGE_1, CHALLENGE_2, CHALLENGE_3 (if available).
+        """,
     tools=[GoogleSearchTool()],
     output_key="top_challenges",
 )
 
+hallucination_audit_agent = LlmAgent(
+    name="hallucination_audit_agent",
+    model=PLANNER_MODEL,
+    description="Fact-checks generated transport challenges against raw search evidence.",
+    instruction="""
+        You are the Truth & Evidence Auditor for the Malaysia Transport Agency.
+        
+        You will receive:
+        1. RAW EVIDENCE (Search snippets)
+        2. GENERATED CHALLENGES (JSON)
+        
+        Your task is to audit the challenges for HALLUCINATIONS:
+        
+        AUDIT RULES:
+        - DATA INTEGRITY: If a statistic (e.g. "30%", "RM 500m") is in the challenge but NOT in the raw evidence, REMOVE it or flag the card for correction.
+        - CITATION ACCURACY: Ensure the cited source URL actually relates to the claim.
+        - SCHEMA PRESSURE: If a challenge seems to be "filler" with no evidence support, REMOVE it.
+        
+        OUTPUT:
+        Return the cleaned JSON array of CHALLENGE objects. 
+        Only include challenges that passed the audit.
+        """,
+)
+
+growth_signal_agent = LlmAgent(
+    name="growth_signal_agent",
+    model=PLANNER_MODEL,
+    description="Collects growth and demand-side area signals with citations for a selected Malaysian city.",
+    instruction="""
+        You are a growth-signal extraction agent for Malaysian urban mobility planning.
+
+        You MUST use Google Search tool to find recent evidence for:
+        - population or township growth (search for specific districts like Cheras, Kepong, Segambut, etc.)
+        - industrial / job cluster growth (search for specific industrial parks/zones)
+        - major trip generators (specific hospitals, universities, or commercial malls)
+        - first-mile barriers (search for 'feeder bus complaints', 'transit desert', or 'station accessibility issues' in specific districts)
+        
+        SPATIAL GRANULARITY POLICY:
+        - You MUST identify specific neighborhoods, sections, or townships (e.g. 'Bandar Sunway', 'Taman Tun Dr Ismail', 'Seksyen 13').
+        - Avoid broad city names as area labels if a more specific district is mentioned in the source.
+
+        Return STRICT JSON ARRAY only (no markdown, no prose):
+        [
+          {
+            "title": "...",
+            "url": "...",
+            "snippet": "...",
+            "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
+            "source_tier": "government | operator | study | major_media | local_media | community | other",
+            "claim_type": "population | industrial | trip_generator",
+            "area_label": "specific area/neighborhood/section if known, else city name",
+            "claim_key": "short dedup key",
+            "numerical_growth": "e.g. 5.4% increase in 2023 or 20,000 new units",
+            "data_narrative": "A detailed 1-2 paragraph explanation of growth metrics (YoY, economic impact, or project scale) strictly based on this source."
+          }
+        ]
+
+        Rules:
+        - Prefer authoritative Malaysian sources where possible.
+        - Keep area labels geocodable and concise.
+        - If uncertain about date or source tier, provide best estimate.
+    """,
+    tools=[GoogleSearchTool()],
+    output_key="growth_findings",
+)
+
 find_hotspot_agent = LlmAgent(
     name="find_hotspot_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Generates one graph-routable hotspot hypothesis for a selected transport challenge.",
     instruction="""
         You are a hotspot hypothesis agent.
@@ -153,6 +257,12 @@ find_hotspot_agent = LlmAgent(
         - produce exactly ONE graph-routable hotspot hypothesis
         - it must be specific enough for downstream road matching
         - output STRICT JSON only
+        
+        ENHANCED DESCRIPTION POLICY:
+        - You MUST provide a 3-paragraph RATIONALE that explains:
+            1. Why this hotspot was chosen (connecting to verified human complaints).
+            2. The expected impact on the B40/M40 workforce.
+            3. The technical justification for the chosen intervention type.
 
         OSM ROAD MATCHING RULES (CRITICAL):
         - Provide clean OpenStreetMap (OSM) road names in `road_a_queries` and `road_b_queries`.
@@ -162,8 +272,8 @@ find_hotspot_agent = LlmAgent(
 
         Required JSON:
         {
-        "location_label": "...",
-        "type": "corridor | junction | freight_route | transit_node",
+        "location_label": "<Concise geocodable neighborhood, landmark, or station name (e.g., 'Taman Maluri', 'KL Sentral')>",
+        "type": "transit_node | feeder_route | pedestrian_link | brt_corridor",
         "symptom": "...",
         "road_a_queries": ["alias 1", "alias 2", "ref code"],
         "road_b_queries": ["alias 1", "alias 2", "ref code"],
@@ -177,7 +287,7 @@ find_hotspot_agent = LlmAgent(
 
 planning_agent = LlmAgent(
     name="planning_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
     instruction = """
         You are a Transport Planning Decision Agent for Malaysia.
@@ -219,18 +329,18 @@ planning_agent = LlmAgent(
         INTERVENTION TYPE RULES
         You MUST select one of:
 
-        junction_redesign
-        corridor_improvement
-        local_connector_upgrade
-        bus_priority_corridor
-        freight_access_improvement
-        road_expansion_screening
-        mixed_intervention
+        transit_hub_upgrade
+        feeder_bus_route
+        brt_corridor
+        pedestrian_walkway
+        micromobility_station
+        transit_priority_lane
         Guidance:
 
-        If the problem is "junction" and the candidate is short/direct → prefer junction_redesign
-        If the candidate spans multiple segments → consider corridor-based interventions
-        If the candidate relies heavily on tertiary roads → treat as weaker option
+        If the problem relates to industrial worker mobility → prefer feeder_bus_route or brt_corridor connecting to industrial landuse
+        If the problem is "transit_node" and the candidate connects to low-to-middle income (B40/M40) residential areas → prefer feeder_bus_route or pedestrian_walkway
+        If the candidate spans a major arterial → consider brt_corridor or transit_priority_lane
+        If the candidate relies on local roads near LRT/MRT → consider micromobility_station or pedestrian_walkway
         CONFIDENCE RULES
         HIGH → one candidate clearly dominates
         MEDIUM → reasonable but not definitive
@@ -241,6 +351,7 @@ planning_agent = LlmAgent(
         "selected_candidate_id": "<candidate_id>",
         "intervention_type": "",
         "decision_summary": "<1-2 sentence explanation>",
+        "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and quantifies the expected social impact for B40/M40 commuters.>",
         "reasons": [
         "<reason 1 grounded in data>",
         "<reason 2 grounded in data>",
@@ -265,7 +376,7 @@ planning_agent = LlmAgent(
 
 solution_agent = LlmAgent(
     name="solution_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Translates transport planning decisions into detailed, actionable engineering solutions.",
     instruction = """
         You are a Transport Infrastructure Solution Designer.
@@ -282,6 +393,10 @@ solution_agent = LlmAgent(
         Translate the selected candidate into a REALISTIC and ACTIONABLE intervention
         Describe exactly WHAT should be changed, WHERE, and HOW
         Ensure all actions are grounded in the provided road structure
+        
+        CORRIDOR-CENTRIC DESIGN:
+        - Design solutions that facilitate seamless movement across the entire STRATEGIC CORRIDOR identified in the planning phase.
+        - Ensure first-mile (residential) and last-mile (destination) elements are integrated into a single cohesive engineering plan.
 
         
         CRITICAL RULES (MUST FOLLOW)
@@ -311,24 +426,25 @@ solution_agent = LlmAgent(
 
         INTERVENTION-SPECIFIC GUIDANCE
 
-        If intervention_type = junction_redesign:
+        If intervention_type = transit_hub_upgrade:
         Focus on:
-        merge/diverge behavior
-        turning movement conflicts
-        lane channelization
-        connector structure
+        station accessibility
+        feeder bus integration
+        pedestrian safety around station
 
-        If intervention_type = corridor_improvement:
+        If intervention_type = brt_corridor or transit_priority_lane:
         Focus on:
-        lane allocation
-        flow prioritization
-        access control
+        dedicated lane allocation
+        bus stop placements
+        transit signal priority
 
         OUTPUT FORMAT (STRICT JSON ONLY)
         {
         "solution_title": "",
 
         "solution_type": "",
+
+        "detailed_description": "<A technical 2-3 paragraph walkthrough of the intervention, explaining precisely how the proposed actions address the identified transit failures and validated human reports.>",
 
         "target_geometry": {
 
@@ -366,7 +482,7 @@ solution_agent = LlmAgent(
 
         "implementation_complexity": "<low | medium | high>",
         "confidence": "<low | medium | high>",
-        "societal_impact": "<A natural, 1-2 sentence paragraph explaining the positive impact on daily commuters, local residents, and the general public (e.g., focus on reliability, time savings, or safety).>"
+        "societal_impact": "<A natural, 1-2 sentence paragraph explaining the positive impact on daily commuters, local residents, and the general public (e.g., focus on ridership increases, accessibility radius, transit time savings, or carbon emission reductions).>"
         }
 
         FINAL CHECK (MANDATORY)
@@ -382,7 +498,7 @@ solution_agent = LlmAgent(
 
 building_agent = LlmAgent(
     name="building_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Converts a selected infrastructure option into structured map scene data for CesiumJS.",
     instruction="""
         You are a Transport Infrastructure Map Building Agent.
@@ -507,7 +623,7 @@ building_agent = LlmAgent(
 
 activity_agent = LlmAgent(
     name="activity_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Simulates how public activity changes after the infrastructure improvements.",
     instruction="""
 Simulate human activity based on session.state["simulation_result"].
@@ -526,7 +642,7 @@ Show:
 
 analysis_agent = LlmAgent(
     name="analysis_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Analyzes the final impact of the infrastructure proposal.",
     instruction="""
 Analyze session.state["activity_simulation"].
@@ -550,7 +666,7 @@ Include justification for each score.
 
 review_agent = LlmAgent(
     name="review_agent",
-    model="gemini-3.1-flash-lite-preview",
+    model=PLANNER_MODEL,
     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
     instruction="""
         You are a review agent for a multi-step infrastructure planning workflow.
@@ -1188,14 +1304,17 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
         attempts_errors = []
 
         for source_name, parsed in attempts:
-            if parsed["type"] == "transit_node":
-                continue
-
             if parsed["type"] == "freight_route":
                 label = (parsed.get("location_label") or "").lower()
                 if "port klang" in label or "federal highway freight link" in label:
                     print(f"Skipping {source_name}: freight corridor is too broad for current city graph.")
                     continue
+
+            routing_mode = "drive"
+            if parsed.get("type") in ["feeder_route", "brt_corridor"]:
+                routing_mode = "transit"
+            elif parsed.get("type") in ["pedestrian_link", "transit_node"]:
+                routing_mode = "walk"
 
             try:
                 result = run_city_road_connection_analysis(
@@ -1204,7 +1323,20 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
                     road_b_queries=parsed["road_b_queries"],
                     regions_path=regions_path,
                     city_buffer_m=city_buffer_m,
+                    routing_mode=routing_mode,
                 )
+
+                # GEOMETRIC SELF-CORRECTION LAYER
+                best_cand = result["candidates"][0]
+                dominant = best_cand.get("dominant_class", "unknown")
+                
+                if routing_mode == "walk" and dominant in ["motorway", "trunk"]:
+                    print(f"Safety Conflict: Pedestrian link planned on {dominant}. Retrying with feedback.")
+                    raise ValueError(f"The proposed pedestrian link is on a high-speed {dominant}. Please suggest a route that uses residential roads or specific crossings.")
+                
+                if routing_mode == "transit" and dominant == "motorway" and parsed.get("type") == "feeder_route":
+                    print(f"Operational Conflict: Feeder bus planned on motorway. Retrying.")
+                    raise ValueError(f"Feeder buses should serve local/collector roads, not motorways. Please re-route via residential or secondary roads.")
 
                 result["selected_micro_source"] = source_name
                 result["selected_micro_type"] = parsed["type"]
@@ -1308,3 +1440,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

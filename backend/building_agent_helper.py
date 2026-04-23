@@ -2,15 +2,6 @@ import requests
 import re
 import time
 import math
-from geopy.geocoders import Nominatim
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app)
-
-geolocator = Nominatim(user_agent="my_hackathon_kl_mapper_v2")
-
 
 
 def _clean_location_string(location_string):
@@ -182,7 +173,10 @@ def get_road_geometry(street_name, city_name=None):
     overpass_query = f"""
     [out:json][timeout:25];
     (
-      way["name"="{street_name}"]["highway"]({bbox});
+      way["name"="{street_name}"]({bbox});
+      node["name"="{street_name}"]["railway"="station"]({bbox});
+      way["name"="{street_name}"]["railway"="station"]({bbox});
+      relation["name"="{street_name}"]["route"="bus"]({bbox});
     );
     out geom qt;
     """
@@ -295,9 +289,8 @@ def process_agent_assets(planning_agent_output, city_name=None):
 
         if geom_type in ["POINT", "BOX"]:
             res = get_malaysia_coords(location_desc)
-            if not res and city_name:
-                print(f"  -> {geom_type} failed. Falling back to city: {city_name}")
-                res = get_malaysia_coords(city_name)
+            if not res:
+                print(f"  -> {geom_type} geocoding failed. Skipping entity: {label}")
             asset_data["coordinates"] = res
 
         elif geom_type in ["POLYLINE", "POLYLINE_EXISTING", "SIMULATION"]:
@@ -315,10 +308,10 @@ def process_agent_assets(planning_agent_output, city_name=None):
             for wp in waypoints:
                 clean_wp = re.sub(r"(?i)^(start|waypoint|end):\s*", "", wp.strip()).strip()
                 coord = get_malaysia_coords(clean_wp)
-                if not coord and city_name:
-                    coord = get_malaysia_coords(city_name)
                 if coord:
                     path_coords.append(coord)
+                else:
+                    print(f"  -> POLYLINE_NEW waypoint geocoding failed, skipping point: {clean_wp}")
 
             if len(path_coords) >= 2:
                 asset_data["coordinates"] = [path_coords]
@@ -329,13 +322,12 @@ def process_agent_assets(planning_agent_output, city_name=None):
         elif geom_type == "POLYGON":
             clean_zone = _clean_location_string(location_desc)
             center = get_malaysia_coords(clean_zone)
-            if not center and city_name:
-                center = get_malaysia_coords(city_name)
             if center:
                 asset_data["coordinates"] = generate_polygon_around_point(
                     center["lat"], center["lng"]
                 )
             else:
+                print(f"  -> POLYGON geocoding failed. Skipping entity: {label}")
                 asset_data["coordinates"] = []
 
         enriched_assets.append(asset_data)
@@ -620,43 +612,4 @@ def format_entities(enriched_assets):
         entities.append(base)
 
     return entities
-
-
-@app.route("/buildingAgentHelper", methods=["POST"])
-def buildingAgentHelper():
-    try:
-        data = request.get_json()
-        enriched_assets = process_agent_assets(data["text"])
-        entities        = format_entities(enriched_assets)
-
-        if not entities:
-            return jsonify({
-                "status": "error",
-                "message": "format_entities returned empty result"
-            }), 500
-
-        return jsonify({
-            "status": "ok",
-            "message": entities
-        })
-
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e) 
-        }), 500
-
-
-if __name__ == "__main__":
-    input_text = """
-        [POLYLINE | x1 | Improved Connector | Lebuhraya Persekutuan to Jalan Kerinchi | color:blue, width:thick | 357m trunk_link connector segment targeted for restriping and lane optimization]
-        [POINT | x1 | Diverge Point | Lebuhraya Persekutuan | color:orange, size:large | Diverge node for auxiliary lane extension and channelizer installation]
-        [POLYGON | x1 | Deceleration Zone | Lebuhraya Persekutuan | color:yellow, opacity:0.4 | 300m footprint for auxiliary lane extension and shoulder reallocation]   
-        [POINT | x1 | Merge Point | Jalan Kerinchi | color:green, size:large | Merge node for reconfiguration into a protected add-lane entry]    
-        [LABEL | x1 | Project Title | Federal Highway Kerinchi Segment | color:white | Federal Highway - Kerinchi High-Efficiency Connector Optimization]
-        """
-
-    enriched_assets = process_agent_assets(input_text)
-    entities        = format_entities(enriched_assets)
-
-    print(entities)
+

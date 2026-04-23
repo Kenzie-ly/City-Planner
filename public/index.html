@@ -12,6 +12,7 @@
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🇲🇾</text></svg>">
     <style>
         :root {
             --primary: #dce8ff;
@@ -477,6 +478,89 @@
             border-color: rgba(127, 231, 255, 0.38);
             transform: translateY(-1px);
             color: #fff;
+        }
+
+        /* AREA SELECTION & DIAGNOSTIC UI */
+        .find-needs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 14px;
+        }
+        .find-needs-card {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            padding: 16px;
+            cursor: pointer;
+            transition: 0.2s cubic-bezier(0.2, 0, 0, 1);
+            color: #dce8ff;
+        }
+        .find-needs-card:hover {
+            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(159, 182, 255, 0.4);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+        }
+        .find-needs-card-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 8px;
+            font-family: 'Sora', sans-serif;
+        }
+        .find-needs-card-desc {
+            font-size: 0.88rem;
+            line-height: 1.5;
+            color: var(--muted);
+            margin-top: 8px;
+        }
+        .area-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-left: 6px;
+        }
+        .area-badge.high { background: rgba(53, 208, 127, 0.2); color: #35d07f; border: 1px solid rgba(53, 208, 127, 0.4); }
+        .area-badge.medium { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .area-badge.low { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .area-badge.equity { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.4); }
+        .area-badge.complaint { background: rgba(239, 68, 68, 0.25); color: #ff6b6b; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 700; }
+
+        .evidence-summary-card {
+            border: 1px solid rgba(127, 231, 255, 0.3);
+            background: linear-gradient(135deg, rgba(7, 13, 26, 0.94), rgba(15, 25, 45, 0.94));
+            color: #dbe8ff;
+            padding: 20px;
+            border-radius: 18px;
+            margin-top: 15px;
+        }
+        .impact-pill {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 8px;
+            background: rgba(127, 231, 255, 0.12);
+            border: 1px solid rgba(127, 231, 255, 0.25);
+            color: #7fe7ff;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin: 4px;
+        }
+        .strategic-rationale {
+            margin-top: 12px;
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border-left: 3px solid var(--accent);
+            border-radius: 4px 12px 12px 4px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #dce8ff;
+            font-style: italic;
         }
 
         .input-group {
@@ -1703,7 +1787,16 @@
                     </div>
                 </div>
 
-                <div>
+                <div style="margin-top: 12px;">
+                    <div
+                        style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        Implementation Narrative</div>
+                    <div id="impactDescription"
+                        style="font-size: 12.5px; color: #D1D5DB; line-height: 1.5; background: rgba(255, 255, 255, 0.04); padding: 10px; border-radius: 6px; max-height: 150px; overflow-y: auto;">
+                    </div>
+                </div>
+
+                <div style="margin-top: 12px;">
                     <div
                         style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
                         Societal Impact</div>
@@ -2557,6 +2650,320 @@
             await startWorkflow();
         }
 
+        function createMiniChart(spec) {
+            if (!spec || !spec.labels || !spec.values) return null;
+            const wrap = document.createElement("div");
+            wrap.style.marginTop = "18px";
+            wrap.style.padding = "14px";
+            wrap.style.background = "rgba(10, 20, 40, 0.45)";
+            wrap.style.backdropFilter = "blur(10px)";
+            wrap.style.borderRadius = "12px";
+            wrap.style.border = "1px solid rgba(255, 255, 255, 0.08)";
+            wrap.style.boxShadow = "inset 0 1px 1px rgba(255,255,255,0.05)";
+
+            const title = document.createElement("div");
+            title.style.fontSize = "0.7rem";
+            title.style.fontWeight = "800";
+            title.style.color = "var(--accent)";
+            title.style.textTransform = "uppercase";
+            title.style.letterSpacing = "0.1em";
+            title.style.marginBottom = "10px";
+            title.textContent = "Evidence Growth Signals";
+            wrap.appendChild(title);
+
+            const barContainer = document.createElement("div");
+            barContainer.style.display = "flex";
+            barContainer.style.alignItems = "flex-end";
+            barContainer.style.gap = "10px";
+            barContainer.style.height = "60px";
+
+            spec.labels.forEach((label, i) => {
+                let val = parseFloat(spec.values[i]) || 0;
+                // Expert Scaling: If the signal is on a 0-3 scale (from our agent), boost it for visibility.
+                if (val <= 5) val = val * 30; // Scale 0-3 to 0-90%
+
+                const col = document.createElement("div");
+                col.style.flex = "1";
+                col.style.display = "flex";
+                col.style.flexDirection = "column";
+                col.style.alignItems = "center";
+                col.style.gap = "4px";
+
+                const barWrapper = document.createElement("div");
+                barWrapper.style.width = "100%";
+                barWrapper.style.height = "100%";
+                barWrapper.style.display = "flex";
+                barWrapper.style.alignItems = "flex-end";
+                barWrapper.style.background = "rgba(255,255,255,0.03)";
+                barWrapper.style.borderRadius = "4px";
+                barWrapper.style.overflow = "hidden";
+
+                const bar = document.createElement("div");
+                bar.style.width = "100%";
+                bar.style.height = `${Math.min(100, Math.max(5, val))}%`;
+                
+                // Vibrant Gradient Logic
+                let gradient = "linear-gradient(180deg, #9fb6ff 0%, #5b70ff 100%)";
+                if (val > 80) gradient = "linear-gradient(180deg, #35d07f 0%, #10b981 100%)";
+                if (val < 30) gradient = "linear-gradient(180deg, #ff9fb6 0%, #ef4444 100%)";
+                
+                bar.style.background = gradient;
+                bar.style.borderRadius = "2px";
+                bar.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+                bar.style.transition = "height 0.6s cubic-bezier(0.17, 0.67, 0.83, 0.67)";
+
+                barWrapper.appendChild(bar);
+
+                const lbl = document.createElement("div");
+                lbl.style.fontSize = "0.6rem";
+                lbl.style.fontWeight = "700";
+                lbl.style.color = "rgba(255,255,255,0.5)";
+                lbl.style.marginTop = "4px";
+                lbl.textContent = label.substring(0, 4);
+
+                col.appendChild(barWrapper);
+                col.appendChild(lbl);
+                barContainer.appendChild(col);
+            });
+
+            wrap.appendChild(barContainer);
+            return wrap;
+        }
+
+        function addAreaOptions(options) {
+            if (!Array.isArray(options) || options.length === 0) return;
+            const chatMessages = document.getElementById("chatMessages");
+            const getOverviewText = (opt) => {
+                const raw = String(opt?.rationale || opt?.brief_description || "").trim();
+                if (!raw) return "No verified overview is available for this corridor.";
+                if (raw.length <= 180) return raw;
+                return `${raw.slice(0, 177).trim()}...`;
+            };
+
+            const bubble = document.createElement("div");
+            bubble.className = "chat-bubble agent";
+            bubble.style.maxWidth = "90%";
+
+            const grid = document.createElement("div");
+            grid.className = "find-needs-grid";
+            grid.style.display = "grid";
+            grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(320px, 1fr))";
+            grid.style.gap = "20px";
+            grid.style.width = "100%";
+
+            options.forEach((opt, idx) => {
+                const card = document.createElement("div");
+                card.className = "find-needs-card";
+                card.style.background = "linear-gradient(145deg, rgba(20, 30, 60, 0.7), rgba(10, 15, 35, 0.8))";
+                card.style.border = "1px solid rgba(255,255,255,0.1)";
+                card.style.boxShadow = "0 10px 30px rgba(0,0,0,0.4)";
+                card.style.padding = "24px";
+                card.style.borderRadius = "20px";
+                card.style.transition = "transform 0.3s ease, border-color 0.3s ease";
+                card.style.cursor = "pointer";
+                
+                card.onmouseover = () => {
+                    card.style.transform = "translateY(-5px)";
+                    card.style.borderColor = "rgba(138, 162, 255, 0.4)";
+                };
+                card.onmouseout = () => {
+                    card.style.transform = "translateY(0)";
+                    card.style.borderColor = "rgba(255,255,255,0.1)";
+                };
+
+                const header = document.createElement("div");
+                header.style.display = "block";
+                header.style.marginBottom = "6px";
+
+                const title = document.createElement("div");
+                title.className = "find-needs-card-title";
+                title.style.margin = "0";
+                title.style.fontSize = "1.25rem";
+                title.style.fontWeight = "900";
+                title.style.color = "#ffffff";
+                title.style.lineHeight = "1.25";
+                title.style.letterSpacing = "-0.01em";
+                title.textContent = `${idx + 1}. ${String(opt?.area_label || "Unknown Area")}`;
+                header.appendChild(title);
+                card.appendChild(header);
+
+                const desc = document.createElement("div");
+                desc.className = "find-needs-card-desc";
+                desc.style.marginTop = "8px";
+                desc.style.lineHeight = "1.6";
+                desc.textContent = String(opt?.description_paragraph || getOverviewText(opt));
+                card.appendChild(desc);
+
+                const micro = document.createElement("div");
+                micro.className = "find-needs-card-desc";
+                micro.style.marginTop = "12px";
+                micro.style.lineHeight = "1.6";
+                micro.style.color = "#dbeafe";
+                micro.textContent = String(opt?.micro_paragraph || String(opt?.data_narrative || opt?.rationale || "").trim());
+                card.appendChild(micro);
+
+                const srcWrap = document.createElement("div");
+                srcWrap.style.marginTop = "12px";
+                srcWrap.style.display = "flex";
+                srcWrap.style.gap = "8px";
+                srcWrap.style.flexWrap = "wrap";
+                const evidence = Array.isArray(opt?.trusted_sources)
+                    ? opt.trusted_sources.slice(0, 3)
+                    : (Array.isArray(opt?.google_evidence) ? opt.google_evidence.slice(0, 3) : []);
+                evidence.forEach((ev) => {
+                    const url = String(ev?.url || "");
+                    if (!url.startsWith("http")) return;
+                    const a = document.createElement("a");
+                    a.style.fontSize = "0.72rem";
+                    a.style.color = "var(--accent)";
+                    a.style.border = "1px solid rgba(159,182,255,0.35)";
+                    a.style.borderRadius = "999px";
+                    a.style.padding = "4px 10px";
+                    a.style.textDecoration = "none";
+                    a.href = url;
+                    a.target = "_blank";
+                    a.rel = "noopener noreferrer";
+                    a.textContent = url.split('/')[2] || "Source";
+                    a.addEventListener("click", (ev) => ev.stopPropagation());
+                    srcWrap.appendChild(a);
+                });
+                card.appendChild(srcWrap);
+
+                const selectBtn = document.createElement("button");
+                selectBtn.type = "button";
+                selectBtn.style.marginTop = "12px";
+                selectBtn.style.padding = "8px 12px";
+                selectBtn.style.borderRadius = "10px";
+                selectBtn.style.border = "1px solid rgba(159,182,255,0.45)";
+                selectBtn.style.background = "rgba(76, 99, 255, 0.25)";
+                selectBtn.style.color = "#ffffff";
+                selectBtn.style.fontWeight = "700";
+                selectBtn.style.cursor = "pointer";
+                selectBtn.textContent = "Use this corridor";
+                selectBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    const input = document.getElementById("aiInput");
+                    input.value = `Select area: ${opt.area_label}`;
+                    submitPrompt();
+                });
+                card.appendChild(selectBtn);
+
+                card.addEventListener("click", () => {
+                    const input = document.getElementById("aiInput");
+                    input.value = `Select area: ${opt.area_label}`;
+                    submitPrompt();
+                });
+
+                grid.appendChild(card);
+            });
+
+            bubble.appendChild(grid);
+            chatMessages.appendChild(bubble);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+
+
+        function renderImplementationClusters(clusters) {
+            if (!Array.isArray(clusters) || clusters.length === 0) return;
+            
+            // Expert Transition: Clear previous and show map instantly
+            if (typeof clearAllEntities === 'function') clearAllEntities();
+            showMapView();
+            
+            const entities = [];
+
+            clusters.forEach((cluster, idx) => {
+                const center = cluster.center;
+                
+                // Expert Styling: Map color to intervention recommendation
+                let color = 'blue'; // Default Bus
+                if (cluster.intervention_type === 'TRAIN') color = 'purple';
+                if (cluster.intervention_type === 'BOTH') color = 'orange';
+
+                const centerId = `center_${idx}`;
+                // Add Center Mark
+                entities.push({
+                    entity_type: 'poi',
+                    id: centerId,
+                    label: `[${cluster.intervention_type}] ${cluster.label}`,
+                    lat: center.lat,
+                    lon: center.lon,
+                    style_hint: `color:${color}, size:large`,
+                    description: `Recommended: ${cluster.intervention_type}. Rationale: ${cluster.intervention_rationale}`
+                });
+
+                // Add Linked Feeder Bus if applicable
+                if (cluster.linked_feeder) {
+                    const feeder = cluster.linked_feeder;
+                    const feederId = `feeder_${idx}`;
+                    entities.push({
+                        entity_type: 'poi',
+                        id: feederId,
+                        label: `[FEEDER BUS] ${feeder.label}`,
+                        lat: feeder.lat,
+                        lon: feeder.lon,
+                        style_hint: 'color:cyan, size:medium',
+                        description: `Linked Feeder: ${feeder.rationale}`
+                    });
+
+                    // Add Connection Line (Dashed)
+                    entities.push({
+                        entity_type: 'polyline',
+                        id: `link_${idx}`,
+                        name: 'Intermodal Connection',
+                        polyline_positions: [[
+                            {lat: center.lat, lng: center.lon},
+                            {lat: feeder.lat, lng: feeder.lon}
+                        ]],
+                        style: { color: '#888888', width: 3, alpha: 0.6, dashed: true }
+                    });
+
+                    // Add Feeder Context Satellites
+                    if (Array.isArray(cluster.feeder_context)) {
+                        cluster.feeder_context.forEach((fCtx, fCIdx) => {
+                            entities.push({
+                                entity_type: 'poi',
+                                id: `feeder_context_${idx}_${fCIdx}`,
+                                label: fCtx.label || 'Feeder Area Context',
+                                lat: fCtx.lat,
+                                lon: fCtx.lon,
+                                style_hint: 'color:cyan, size:small, opacity:0.5',
+                                description: `Feeder Context: ${fCtx.description || 'Access zone'}`
+                            });
+                        });
+                    }
+                }
+
+                // Add Context Satellites
+                if (Array.isArray(cluster.context)) {
+                    cluster.context.forEach((ctx, cIdx) => {
+                        entities.push({
+                            entity_type: 'poi',
+                            id: `context_${idx}_${cIdx}`,
+                            label: ctx.label || 'Context Node',
+                            lat: ctx.lat,
+                            lon: ctx.lon,
+                            style_hint: 'color:yellow, size:small, opacity:0.6',
+                            description: `Context: ${ctx.description || 'Surrounding infrastructure'}`
+                        });
+                    });
+                }
+            });
+
+            if (typeof renderEntities === 'function') {
+                renderEntities(entities);
+            }
+
+            // Expert Navigation: Fly to the primary implementation node
+            if (clusters.length > 0 && typeof flyToCity === 'function') {
+                const primary = clusters[0].center;
+                if (primary && primary.lat && primary.lon) {
+                    flyToCity(clusters[0].label || "Implementation Site", primary.lat, primary.lon);
+                }
+            }
+        }
+
         let chatAbortController = null;
 
         async function submitPrompt() {
@@ -2619,6 +3026,16 @@
                     addChatMessage("agent", data.reply);
                 }
 
+                if (Array.isArray(data.area_options)) {
+                    addAreaOptions(data.area_options);
+                }
+
+
+
+                if (Array.isArray(data.implementation_clusters)) {
+                    renderImplementationClusters(data.implementation_clusters);
+                }
+
                 if (data.stage === "done" || data.show_map === true) {
                     showMapView();
 
@@ -2664,6 +3081,11 @@
                             else complexity.style.color = '#EF4444';
 
                             societal.textContent = data.impact_metrics.societal_impact || "Significant positive impact expected for local commuters.";
+
+                            const descDiv = document.getElementById('impactDescription');
+                            if (descDiv) {
+                                descDiv.textContent = data.impact_metrics.detailed_description || "No detailed implementation narrative available.";
+                            }
 
                             dashboard.style.display = 'block';
                         }
