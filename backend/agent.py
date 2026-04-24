@@ -260,10 +260,10 @@ find_hotspot_agent = LlmAgent(
         - If the user or the review system provides feedback (e.g., "too generic", "wrong road", "focus on X"), you MUST adjust your hypothesis to address it.
 
         Your task:
-        - produce exactly ONE graph-routable hotspot hypothesis
+        - produce specific, graph-routable hotspot hypotheses
         - it must be specific enough for downstream road matching
         - prioritise public-transport improvement logic: feeder buses, bus-priority corridors, train station access, interchange access, and walk-to-transit links
-        - output STRICT JSON only
+        - output STRICT JSON only (a single object or a list of objects as requested)
         
         ENHANCED DESCRIPTION POLICY:
         - You MUST provide a 3-paragraph RATIONALE that explains:
@@ -277,7 +277,7 @@ find_hotspot_agent = LlmAgent(
         - Provide an array of multiple name aliases and highway reference codes to maximize matching chances (e.g., ["Jalan Ampang", "Ampang Road", "B31"]).
         - `road_a_label` and `road_b_label` should be the clean primary display name.
 
-        Required JSON:
+        Required JSON Schema (Single object or List):
         {
         "location_label": "<Concise geocodable neighborhood, landmark, or station name (e.g., 'Taman Maluri', 'KL Sentral')>",
         "type": "transit_node | feeder_route | pedestrian_link | brt_corridor",

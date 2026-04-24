@@ -6,31 +6,41 @@ require('dotenv').config();
 const app = express();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const WORKFLOW_API_BASE = process.env.WORKFLOW_API_BASE || 'http://localhost:8000';
+const HISTORY_API_BASE = process.env.HISTORY_API_BASE || 'http://localhost:8080';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-async function proxyWorkflow(req, res, endpoint) {
+async function proxyRequest(req, res, baseUrl, endpoint, method = 'POST') {
     try {
-        const upstream = await fetch(`${WORKFLOW_API_BASE}${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body || {}),
-        });
+        const url = `${baseUrl}${endpoint}`;
+        const options = {
+            method: method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if (method !== 'GET') {
+            options.body = JSON.stringify(req.body || {});
+        }
 
+        const upstream = await fetch(url, options);
         const text = await upstream.text();
         const contentType = upstream.headers.get('content-type') || 'application/json';
         res.status(upstream.status);
         res.set('Content-Type', contentType);
         res.send(text);
     } catch (error) {
-        console.error(`Workflow proxy error for ${endpoint}:`, error?.message || error);
-        res.status(502).json({ error: `Failed to reach workflow backend at ${WORKFLOW_API_BASE}${endpoint}` });
+        console.error(`Proxy error for ${endpoint}:`, error?.message || error);
+        res.status(502).json({ error: `Failed to reach backend at ${baseUrl}${endpoint}` });
     }
 }
 
-app.post('/api/start', async (req, res) => proxyWorkflow(req, res, '/api/start'));
-app.post('/api/chat', async (req, res) => proxyWorkflow(req, res, '/api/chat'));
+app.post('/api/start', async (req, res) => proxyRequest(req, res, WORKFLOW_API_BASE, '/api/start'));
+app.post('/api/chat', async (req, res) => proxyRequest(req, res, WORKFLOW_API_BASE, '/api/chat'));
+
+app.get('/get_history', async (req, res) => proxyRequest(req, res, HISTORY_API_BASE, '/get_history', 'GET'));
+app.post('/add_history', async (req, res) => proxyRequest(req, res, HISTORY_API_BASE, '/add_history'));
+app.post('/delete_history', async (req, res) => proxyRequest(req, res, HISTORY_API_BASE, '/delete_history'));
+app.post('/select_history', async (req, res) => proxyRequest(req, res, HISTORY_API_BASE, '/select_history'));
 
 // app.post('/api/map-prompt', async (req, res) => {
 //     try {

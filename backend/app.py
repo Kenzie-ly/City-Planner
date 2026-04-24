@@ -91,14 +91,36 @@ class ChatRequest(BaseModel):
 
 def clean_json_text(text: str) -> str:
     text = (text or "").strip()
-    # Try to find the outer-most JSON object { ... }
-    match = re.search(r'(\{.*\})', text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    # Fallback to markdown block removal
-    if text.startswith("```"):
-        text = re.sub(r"```[a-zA-Z]*", "", text)
-        text = text.replace("```", "")
+    
+    # 1. Prioritize markdown blocks
+    if "```json" in text:
+        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+    
+    # If no json block, try any code block
+    match_code = re.search(r"```[a-zA-Z]*\s*(.*?)\s*```", text, re.DOTALL)
+    if match_code:
+        inner = match_code.group(1).strip()
+        # If it looks like JSON, return it
+        if ("{" in inner and "}" in inner) or ("[" in inner and "]" in inner):
+            return inner
+
+    # 2. Find the outer-most [ or {
+    # We want to pick the one that starts earliest to catch the true root
+    match_arr = re.search(r'(\[.*\])', text, re.DOTALL)
+    match_obj = re.search(r'(\{.*\})', text, re.DOTALL)
+    
+    if match_arr and match_obj:
+        if match_arr.start() < match_obj.start():
+            return match_arr.group(1).strip()
+        else:
+            return match_obj.group(1).strip()
+    elif match_arr:
+        return match_arr.group(1).strip()
+    elif match_obj:
+        return match_obj.group(1).strip()
+        
     return text.strip()
 
 
@@ -188,7 +210,11 @@ def _extract_ref_coords(entities: list[dict[str, Any]], fallback_coords: dict[st
     if not entities:
         return ref_lat, ref_lng
         
-    for ent in entities:
+    # Prioritize non-context entities (proposals)
+    proposal_ents = [e for e in entities if not str(e.get("id", "")).startswith(("existing_", "transit_route_", "station_", "bus_stop_", "workplace_"))]
+    search_list = proposal_ents if proposal_ents else entities
+
+    for ent in search_list:
         # Check polyline_positions
         polys = ent.get("polyline_positions")
         if polys and isinstance(polys, list) and len(polys) > 0:
@@ -2142,7 +2168,14 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
 
 
 def get_context_infrastructure(lat: float, lon: float, intervention_type: str = "general") -> list[dict[str, Any]]:
-    overpass_url = "https://overpass-api.de/api/interpreter"
+    overpass_servers = [
+        "https://overpass-api.de/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+    ]
+    import random
+    random.shuffle(overpass_servers)
+    
     transit_radius = 3000
     context_radius = 2500
     query = f"""
@@ -2160,13 +2193,30 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
     (.rail_ways; .transit_routes; .stations; .bus_stops; .bus_stations; .landuse; .factories;);
     out geom;
     """
+    headers = {"User-Agent": "city_planner_transit_validator_v2", "Accept": "*/*"}
+    resp_data = None
+    
+    for url in overpass_servers:
+        try:
+            print(f"  -> Fetching context from: {url}")
+            r = requests.post(url, data=query, headers=headers, timeout=30)
+            if r.status_code == 200:
+                resp_data = r.json()
+                break
+            else:
+                print(f"  -> Server {url} returned {r.status_code}")
+        except Exception as e:
+            print(f"  -> Error from {url}: {e}")
+            
+    if not resp_data:
+        print("  -> All Overpass servers failed or timed out for context data.")
+        return []
+
     try:
-        headers = {"User-Agent": "city_planner_transit_validator_v2", "Accept": "*/*"}
-        resp = requests.post(overpass_url, data=query, headers=headers, timeout=40).json()
         entities = []
         transit_route_ids_seen = set()
 
-        for el in resp.get("elements", []):
+        for el in resp_data.get("elements", []):
             tags = el.get("tags", {})
             name = tags.get("name", "")
             el_type = el.get("type")
@@ -2904,8 +2954,20 @@ def _build_done_response(
     solution = _compose_solution_display(solution, decision_package, str(decision_package.get("reliability_band") or "medium").lower())
     state["solution_result"] = solution
     city_center = _get_city_center(city_name)
-    proposal_entities = list(entities or [])
-    context_entities = _limit_context_entities(get_context_infrastructure(ref_lat, ref_lng), ref_lat, ref_lng)
+    
+    # Split incoming entities into proposal and existing context if they were pre-mixed
+    proposal_entities = []
+    pre_existing_context = []
+    for ent in (entities or []):
+        if str(ent.get("id", "")).startswith(("existing_", "transit_route_", "station_", "bus_stop_", "workplace_")):
+            pre_existing_context.append(ent)
+        else:
+            proposal_entities.append(ent)
+
+    if pre_existing_context:
+        context_entities = pre_existing_context
+    else:
+        context_entities = _limit_context_entities(get_context_infrastructure(ref_lat, ref_lng), ref_lat, ref_lng)
     analysis_entities = _build_analysis_entities(analysis_raw)
     anchor_entities = _build_anchor_entities(state.get("selected_micro", {}), analysis_raw)
     map_layers = {

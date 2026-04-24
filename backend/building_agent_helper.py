@@ -40,7 +40,7 @@ def _clean_location_string(location_string):
     return clean
 
 
-def get_malaysia_coords(location_string):
+def get_malaysia_coords(location_string, city_hint=None):
     """Fallback-heavy geocoder for Malaysian cities and roads."""
     if not location_string:
         return None
@@ -76,14 +76,22 @@ def get_malaysia_coords(location_string):
 
     # If not in hardcoded list, try Nominatim
     clean_query = _clean_location_string(location_string)
-
     queries_to_try = []
 
-    # If it looks like an intersection, try that first
+    # 1. Try with city hint if provided
+    if city_hint:
+        clean_city = _clean_location_string(city_hint)
+        queries_to_try.append(f"{clean_query}, {clean_city}, Malaysia")
+        queries_to_try.append(f"{location_string}, {clean_city}, Malaysia")
+
+    # 2. Try intersection with city hint
     if '/' in location_string or ' and ' in location_string.lower():
         intersect = location_string.replace('/', ' and ')
+        if city_hint:
+            queries_to_try.append(f"{intersect}, {city_hint}, Malaysia")
         queries_to_try.append(f"{intersect}, Malaysia")
 
+    # 3. Fallback broad queries
     queries_to_try.extend([
         f"{clean_query}, Malaysia",
         f"{location_string}, Malaysia",
@@ -91,14 +99,7 @@ def get_malaysia_coords(location_string):
         f"{clean_query}, Selangor",
     ])
 
-    # If we have two clear parts, try the first part alone
-    if '/' in clean_query:
-        parts = [p.strip() for p in clean_query.split('/') if p.strip()]
-        if parts:
-            queries_to_try.append(f"{parts[0]}, Malaysia")
-
     headers = {'User-Agent': 'CityPlannerSimulation/1.0 (kenzi@hackathon.local)'}
-
     for q in queries_to_try:
         try:
             params = {"q": q, "format": "json", "limit": 1}
@@ -288,7 +289,7 @@ def process_agent_assets(planning_agent_output, city_name=None):
         print(f"\nFetching spatial data for: {geom_type} - {label}")
 
         if geom_type in ["POINT", "BOX"]:
-            res = get_malaysia_coords(location_desc)
+            res = get_malaysia_coords(location_desc, city_hint=city_name)
             if not res:
                 print(f"  -> {geom_type} geocoding failed. Skipping entity: {label}")
             asset_data["coordinates"] = res
@@ -307,7 +308,7 @@ def process_agent_assets(planning_agent_output, city_name=None):
 
             for wp in waypoints:
                 clean_wp = re.sub(r"(?i)^(start|waypoint|end):\s*", "", wp.strip()).strip()
-                coord = get_malaysia_coords(clean_wp)
+                coord = get_malaysia_coords(clean_wp, city_hint=city_name)
                 if coord:
                     path_coords.append(coord)
                 else:
@@ -321,7 +322,7 @@ def process_agent_assets(planning_agent_output, city_name=None):
 
         elif geom_type == "POLYGON":
             clean_zone = _clean_location_string(location_desc)
-            center = get_malaysia_coords(clean_zone)
+            center = get_malaysia_coords(clean_zone, city_hint=city_name)
             if center:
                 asset_data["coordinates"] = generate_polygon_around_point(
                     center["lat"], center["lng"]

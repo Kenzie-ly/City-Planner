@@ -1,6 +1,16 @@
 function renderEntities(entities) {
     if (!viewer) return [];
 
+    const safeColor = (colorStr, defaultColor = Cesium.Color.YELLOW) => {
+        if (!colorStr) return defaultColor;
+        try {
+            const color = Cesium.Color.fromCssColorString(colorStr);
+            return color || defaultColor;
+        } catch (e) {
+            return defaultColor;
+        }
+    };
+
     // 1. CLEAR PREVIOUS STATE
     viewer.entities.removeAll();
     viewer.dataSources.removeAll();
@@ -11,8 +21,18 @@ function renderEntities(entities) {
         const labelMode = String(entity.label_mode || defaultMode || 'always').toLowerCase();
         if (labelMode === 'hidden' || labelMode === 'hover') return undefined;
         const label = {
+            font: '14px Inter, sans-serif',
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            showBackground: true,
+            backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
+            pixelOffset: new Cesium.Cartesian2(0, -30),
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
             ...baseOptions,
-            text: String(entity.name),
+            text: String(entity.name || 'Entity'),
         };
         if (labelMode === 'zoom') {
             label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 1400.0);
@@ -92,7 +112,7 @@ function renderEntities(entities) {
                     const targetHeight = isBridge ? (entity.style.height ?? 40) : 0;
                     const shouldClamp = !isBridge;
                     const baseWidth = isBridge ? 18 : (isExisting ? 6 : 12);
-                    const color = entity.style.color ? Cesium.Color.fromCssColorString(entity.style.color) : Cesium.Color.YELLOW;
+                    const color = safeColor(entity.style.color, (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk'))) ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
                     const alpha = entity.style.alpha ?? 0.8;
 
                     let material = color.withAlpha(alpha);
@@ -132,7 +152,7 @@ function renderEntities(entities) {
                             material: (() => {
                                 const styleHint = entity.style.hint ? entity.style.hint.toLowerCase() : '';
                                 const isActive = (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk'))) || styleHint.includes('pedestrian');
-                                const baseColor = Cesium.Color.fromCssColorString(entity.style.color ?? (isActive ? '#10B981' : '#FFD700'));
+                                const baseColor = safeColor(entity.style.color, isActive ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
                                 if (isActive) {
                                     return new Cesium.PolylineDashMaterialProperty({ color: baseColor, gapColor: Cesium.Color.TRANSPARENT, dashLength: 16.0, dashPattern: 255.0 });
                                 }
@@ -143,16 +163,6 @@ function renderEntities(entities) {
                             clampToGround: shouldClamp
                         },
                         label: sIdx === 0 ? buildLabel(entity, {
-                            font: '14px sans-serif',
-                            fillColor: Cesium.Color.WHITE,
-                            outlineColor: Cesium.Color.BLACK,
-                            outlineWidth: 2,
-                            showBackground: true,
-                            backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                            pixelOffset: new Cesium.Cartesian2(0, -20),
-                            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                             heightReference: shouldClamp ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE
                         }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always') : undefined
                     });
@@ -174,23 +184,13 @@ function renderEntities(entities) {
                     position: Cesium.Cartesian3.fromDegrees(entity.position.lng, entity.position.lat, 0),
                     point: {
                         pixelSize: entity.style.pixelSize ?? 16,
-                        color: Cesium.Color.fromCssColorString(entity.style.color).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 1.0),
+                        color: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#3B82F6')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 1.0),
                         outlineColor: Cesium.Color.WHITE,
                         outlineWidth: 2,
                         disableDepthTestDistance: Number.POSITIVE_INFINITY,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                     },
                     label: buildLabel(entity, {
-                        font: '14px sans-serif',
-                        fillColor: Cesium.Color.WHITE,
-                        outlineColor: Cesium.Color.BLACK,
-                        outlineWidth: 2,
-                        showBackground: true,
-                        backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
-                        pixelOffset: new Cesium.Cartesian2(0, -30),
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                     }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
@@ -208,17 +208,11 @@ function renderEntities(entities) {
                     ),
                     box: {
                         dimensions: new Cesium.Cartesian3(entity.building.length, entity.building.width, entity.building.height),
-                        material: Cesium.Color.fromCssColorString(entity.style.color).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.6),
+                        material: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFD700')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.6),
                         outline: true,
-                        outlineColor: Cesium.Color.fromCssColorString(entity.style.color)
+                        outlineColor: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFD700'))
                     },
-                    label: buildLabel(entity, {
-                        font: '14px sans-serif',
-                        pixelOffset: new Cesium.Cartesian2(0, -35),
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
+                    label: buildLabel(entity, {}, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
                 break;
             }
@@ -227,20 +221,25 @@ function renderEntities(entities) {
                 added = viewer.entities.add({
                     id: entity.id,
                     name: entity.name,
+                    position: (() => {
+                        if (entity.polygon_positions && entity.polygon_positions.length > 0) {
+                            const pts = entity.polygon_positions;
+                            const avgLat = pts.reduce((sum, p) => sum + p.lat, 0) / pts.length;
+                            const avgLng = pts.reduce((sum, p) => sum + p.lng, 0) / pts.length;
+                            return Cesium.Cartesian3.fromDegrees(avgLng, avgLat, (entity.style.height || 0) + 10);
+                        }
+                        return undefined;
+                    })(),
                     polygon: {
                         hierarchy: new Cesium.PolygonHierarchy(
                             Cesium.Cartesian3.fromDegreesArray(entity.polygon_positions.flatMap(p => [p.lng, p.lat]))
                         ),
-                        material: Cesium.Color.fromCssColorString(entity.style.color ?? '#FFA500').withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.3),
+                        material: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFA500')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.3),
                         outline: true,
-                        outlineColor: Cesium.Color.fromCssColorString(entity.style.color ?? '#FFA500'),
+                        outlineColor: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFA500')),
                         clampToGround: true
                     },
                     label: buildLabel(entity, {
-                        font: '14px sans-serif',
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                     }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
