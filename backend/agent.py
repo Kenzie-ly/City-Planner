@@ -645,46 +645,6 @@ building_agent = LlmAgent(
     output_key="simulation_result",
 )
 
-activity_agent = LlmAgent(
-    name="activity_agent",
-    model=PLANNER_MODEL,
-    description="Simulates how public activity changes after the infrastructure improvements.",
-    instruction="""
-Simulate human activity based on session.state["simulation_result"].
-
-If session.state["feedback"] exists, revise accordingly.
-
-Show:
-- pedestrian flow
-- traffic conditions
-- business activity
-- accessibility improvements
-- community/public usage changes
-""",
-    output_key="activity_simulation",
-)
-
-analysis_agent = LlmAgent(
-    name="analysis_agent",
-    model=PLANNER_MODEL,
-    description="Analyzes the final impact of the infrastructure proposal.",
-    instruction="""
-Analyze session.state["activity_simulation"].
-
-If session.state["feedback"] exists, deepen the analysis accordingly.
-
-Score from 1 to 10 for:
-- safety
-- economic growth
-- environment
-- accessibility
-- wellbeing
-
-Include justification for each score.
-""",
-    output_key="final_analysis",
-)
-
 
 # ── Review agent for later checkpoint-based pipeline ─────────────────────────
 
