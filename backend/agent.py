@@ -373,6 +373,12 @@ planning_agent = LlmAgent(
         "priority_level": "<low | medium | high>",
         "confidence": "<low | medium | high>"
         }
+
+        JSON SAFETY RULE:
+        - You MUST produce a single, valid JSON object.
+        - You MUST NOT include any conversational text before or after the JSON.
+        - You MUST escape all newlines as \n within JSON string values.
+        - Do NOT include literal newlines in strings.
         FINAL CHECK (MANDATORY)
         Before output:
 
@@ -496,6 +502,12 @@ solution_agent = LlmAgent(
         "confidence": "<low | medium | high>",
         "societal_impact": "<A natural, 1-2 sentence paragraph explaining the positive impact on daily commuters, local residents, and the general public (e.g., focus on ridership increases, accessibility radius, transit time savings, or carbon emission reductions).>"
         }
+
+        JSON SAFETY RULE:
+        - You MUST produce a single, valid JSON object.
+        - You MUST NOT include any conversational text before or after the JSON.
+        - You MUST escape all newlines as \n within JSON string values.
+        - Do NOT include literal newlines in strings.
 
         FINAL CHECK (MANDATORY)
 

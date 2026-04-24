@@ -91,6 +91,11 @@ class ChatRequest(BaseModel):
 
 def clean_json_text(text: str) -> str:
     text = (text or "").strip()
+    # Try to find the outer-most JSON object { ... }
+    match = re.search(r'(\{.*\})', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    # Fallback to markdown block removal
     if text.startswith("```"):
         text = re.sub(r"```[a-zA-Z]*", "", text)
         text = text.replace("```", "")
@@ -102,7 +107,17 @@ def safe_json_loads(value: Any) -> Any:
         return value
     if not isinstance(value, str):
         raise ValueError("Expected JSON string, dict, or list.")
-    return json.loads(clean_json_text(value))
+    
+    cleaned = clean_json_text(value)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        print(f"\n[DEBUG] JSON parsing failed. Error: {exc}")
+        print(f"[DEBUG] Raw value length: {len(value)}")
+        # If it's a small error, might be a trailing comma or literal newline
+        # We log it so developers can see it in uvicorn logs
+        print(f"--- RAW AGENT OUTPUT START ---\n{value}\n--- RAW AGENT OUTPUT END ---\n")
+        raise exc
 
 
 def is_retry_response(text: Any) -> bool:
@@ -424,13 +439,13 @@ def _default_credible_sources() -> list[dict[str, Any]]:
         [
             {
                 "publisher": "MOT Malaysia",
-                "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)",
+                "url": "https://www.mot.gov.my/",
                 "published_at": "2025-01-01",
                 "source_tier": "government",
             },
             {
                 "publisher": "DOSM Open Data",
-                "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)",
+                "url": "https://open.dosm.gov.my/",
                 "published_at": "2025-01-01",
                 "source_tier": "government",
             },
@@ -1066,20 +1081,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "Ministry of Transport Malaysia",
-                        "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)",
+                        "url": "https://www.mot.gov.my/",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                     {
                         "title": "DOSM Open Data",
-                        "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)",
+                        "url": "https://open.dosm.gov.my/",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "MOT Malaysia", "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)"},
-                    {"publisher": "DOSM", "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)"},
+                    {"publisher": "MOT Malaysia", "url": "https://www.mot.gov.my/"},
+                    {"publisher": "DOSM", "url": "https://open.dosm.gov.my/"},
                 ],
                 "growth_signals": {"population": 1, "industrial": 0, "trip_generator": 1},
                 "equity_flag": False,
@@ -1097,20 +1112,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "InvestKL News",
-                        "url": "[https://investkl.gov.my/news-and-events](https://investkl.gov.my/news-and-events)",
+                        "url": "https://investkl.gov.my/news-and-events",
                         "published_at": "2025-01-01",
                         "source_tier": "operator",
                     },
                     {
                         "title": "MIDA Insights",
-                        "url": "[https://www.mida.gov.my/](https://www.mida.gov.my/)",
+                        "url": "https://www.mida.gov.my/",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "InvestKL", "url": "[https://investkl.gov.my/news-and-events](https://investkl.gov.my/news-and-events)"},
-                    {"publisher": "MIDA", "url": "[https://www.mida.gov.my/](https://www.mida.gov.my/)"},
+                    {"publisher": "InvestKL", "url": "https://investkl.gov.my/news-and-events"},
+                    {"publisher": "MIDA", "url": "https://www.mida.gov.my/"},
                 ],
                 "growth_signals": {"population": 0, "industrial": 1, "trip_generator": 0},
                 "equity_flag": False,
@@ -1128,20 +1143,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "Prasarana Updates",
-                        "url": "[https://www.prasarana.com.my/](https://www.prasarana.com.my/)",
+                        "url": "https://www.prasarana.com.my/",
                         "published_at": "2025-01-01",
                         "source_tier": "operator",
                     },
                     {
                         "title": "DBKL Official Portal",
-                        "url": "[https://www.dbkl.gov.my/](https://www.dbkl.gov.my/)",
+                        "url": "https://www.dbkl.gov.my/",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "Prasarana", "url": "[https://www.prasarana.com.my/](https://www.prasarana.com.my/)"},
-                    {"publisher": "DBKL", "url": "[https://www.dbkl.gov.my/](https://www.dbkl.gov.my/)"},
+                    {"publisher": "Prasarana", "url": "https://www.prasarana.com.my/"},
+                    {"publisher": "DBKL", "url": "https://www.dbkl.gov.my/"},
                 ],
                 "growth_signals": {"population": 1, "industrial": 0, "trip_generator": 0},
                 "equity_flag": True,
@@ -2051,7 +2066,7 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
         for q in [f"{q_base}, {city}, Malaysia", f"{q_base}, Malaysia"]:
             try:
                 items = requests.get(
-                    "[https://nominatim.openstreetmap.org/search](https://nominatim.openstreetmap.org/search)",
+                    "https://nominatim.openstreetmap.org/search",
                     params={"q": q, "format": "json", "limit": 1},
                     headers={"User-Agent": "city_planner_transit_validator_v2"},
                     timeout=5
@@ -2067,7 +2082,7 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
     if lat is None or lon is None:
         return _evidence_fallback(city, location_label, f"Geocode failed: {last_error or 'no match'}")
 
-    overpass_url = "[https://overpass-api.de/api/interpreter](https://overpass-api.de/api/interpreter)"
+    overpass_url = "https://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json][timeout:25];
     (
@@ -2127,7 +2142,7 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
 
 
 def get_context_infrastructure(lat: float, lon: float, intervention_type: str = "general") -> list[dict[str, Any]]:
-    overpass_url = "[https://overpass-api.de/api/interpreter](https://overpass-api.de/api/interpreter)"
+    overpass_url = "https://overpass-api.de/api/interpreter"
     transit_radius = 3000
     context_radius = 2500
     query = f"""
