@@ -14,7 +14,7 @@ CORS(
         "origins": [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            "https://your-frontend-domain.com"
+            "https://city-planner-711110564007.asia-southeast1.run.app"
         ]
     }},
     supports_credentials=False
