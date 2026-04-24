@@ -1694,6 +1694,8 @@
                         </div>
                     </div>
 
+
+
                     <div id="map-popup">
                         <div id="popup-badge"></div>
                         <div id="popup-name"></div>
@@ -1766,20 +1768,6 @@
                     </div>
                     <div id="osmNote">Building colors follow land-use categories from OSM tiles.</div>
                 </div>
-
-                <!-- <div class="city-chips">
-            <span class="city-chips-label">Quick select:</span>
-            <button class="chip" onclick="flyToCity('Kuala Lumpur',3.1390,101.6869)">Kuala Lumpur</button>
-            <button class="chip" onclick="flyToCity('Putrajaya',2.9264,101.6964)">Putrajaya</button>
-            <button class="chip" onclick="flyToCity('Johor Bahru',1.4927,103.7414)">Johor Bahru</button>
-            <button class="chip" onclick="flyToCity('Penang',5.4141,100.3288)">Penang</button>
-            <button class="chip" onclick="flyToCity('Kota Kinabalu',5.9804,116.0735)">Kota Kinabalu</button>
-            <button class="chip" onclick="flyToCity('Kuching',1.5497,110.3592)">Kuching</button>
-            <button class="chip" onclick="flyToCity('Ipoh',4.5975,101.0901)">Ipoh</button>
-            <button class="chip" onclick="flyToCity('Shah Alam',3.0733,101.5185)">Shah Alam</button>
-            <button class="chip" onclick="flyToCity('Kota Bharu',6.1254,102.2381)">Kota Bharu</button>
-            <button class="chip" onclick="flyToCity('Terengganu',5.3302,103.1408)">Terengganu</button>
-        </div> -->
 
                 <div class="input-group">
                     <input type="text" id="aiInput" placeholder="Enter a Malaysian city, town, or planning request..."
@@ -2375,27 +2363,71 @@
             const context = currentMapLayerVisibility.context !== false && Array.isArray(mapLayers.context)
                 ? mapLayers.context
                 : [];
-            return [...proposal, ...anchors, ...context, ...analysis];
+            const combined = [...proposal, ...anchors, ...context, ...analysis];
+            console.log(`📍 getRenderableEntitiesFromLayers: proposal=${proposal.length}, anchors=${anchors.length}, context=${context.length}, analysis=${analysis.length}, total=${combined.length}`);
+            return combined;
         }
 
         function renderCurrentMapLayers() {
-            if (!currentMapLayers) return;
+            if (!currentMapLayers) {
+                console.warn("⚠️  renderCurrentMapLayers: currentMapLayers is not set");
+                return;
+            }
             const entities = getRenderableEntitiesFromLayers(currentMapLayers);
             if (Array.isArray(entities) && typeof renderEntities === 'function') {
+                console.log(`🎨 renderCurrentMapLayers: calling renderEntities with ${entities.length} entities`);
                 renderEntities(entities);
                 createPopups();
+            } else {
+                console.warn("⚠️  renderCurrentMapLayers: invalid entities or renderEntities not available");
             }
         }
 
         function applyMapPayload(data) {
             currentMapLayers = data && data.map_layers && typeof data.map_layers === "object" ? data.map_layers : null;
             syncMapLayerToggle();
+
+            // ✅ Collect whatever layers exist — don't fail if some are missing
+            let entities = [];
+
             if (currentMapLayers) {
-                renderCurrentMapLayers();
-            } else if (Array.isArray(data.entities) && data.entities.length > 0) {
-                renderEntities(data.entities);
-                createPopups();
+                const proposal = Array.isArray(currentMapLayers.proposal) ? currentMapLayers.proposal : [];
+                const anchors = Array.isArray(currentMapLayers.anchors) ? currentMapLayers.anchors : [];
+                const analysis = Array.isArray(currentMapLayers.analysis) ? currentMapLayers.analysis : [];
+                const context = currentMapLayerVisibility.context !== false && Array.isArray(currentMapLayers.context)
+                    ? currentMapLayers.context : [];
+
+                entities = [...proposal, ...anchors, ...analysis, ...context];
+
+                console.log(`📦 Layers found — proposal:${proposal.length}, anchors:${anchors.length}, analysis:${analysis.length}, context:${context.length}`);
             }
+
+            // ✅ Fall back to flat entities array if map_layers yielded nothing
+            if (entities.length === 0 && Array.isArray(data.entities) && data.entities.length > 0) {
+                console.log(`📦 Falling back to data.entities (${data.entities.length})`);
+                entities = data.entities;
+            }
+
+            if (entities.length === 0) {
+                console.warn("⚠️ No entities to render from any source");
+                return;
+            }
+
+            console.log(`🎨 Rendering ${entities.length} entities...`);
+            renderEntities(entities);
+
+            // Retry once if entities didn't land
+            setTimeout(() => {
+                const count = viewer?.entities?.values?.length ?? 0;
+                if (count === 0) {
+                    console.warn("⚠️ Entities didn't land, retrying...");
+                    renderEntities(entities);
+                } else {
+                    console.log(`✅ Confirmed: ${count} entities on viewer`);
+                }
+            }, 800);
+
+            createPopups();
         }
 
         function showSystemNotice(text, timeoutMs = 2600) {
@@ -2536,7 +2568,7 @@
             if (isStartingWorkflow) return;
             isStartingWorkflow = true;
             try {
-                const response = await fetch("/api/start", {
+                const response = await fetch("https://fastapi-711110564007.asia-southeast1.run.app/api/start", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({})
@@ -2908,6 +2940,19 @@
             renderOptionPayloadOnce(safeOptions, "specific");
         }
 
+        function flyToCity(name, lat, lng) {
+            if (!viewer) return;
+
+            status.innerText = `Flying to ${name}. Click to pin your build location.`;
+            banner.textContent = '📍 Click anywhere on the map to choose a build location';
+            banner.classList.remove('placed');
+            if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
+            viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(lng, lat, 900),
+                orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+                duration: 2.2
+            });
+        }
 
 
         function renderImplementationClusters(clusters, options = {}) {
@@ -3011,6 +3056,30 @@
             }
         }
 
+        function waitForCesiumReady() {
+            return new Promise((resolve) => {
+                if (!viewer) {
+                    resolve();
+                    return;
+                }
+
+                // If already rendered at least one frame, resolve immediately
+                if (viewer.scene.frameState.frameNumber > 0) {
+                    resolve();
+                    return;
+                }
+
+                // Otherwise wait for the first post-render event
+                const removeListener = viewer.scene.postRender.addEventListener(() => {
+                    removeListener(); // clean up listener
+                    resolve();
+                });
+
+                // Safety timeout — never block forever
+                setTimeout(resolve, 4000);
+            });
+        }
+
         let chatAbortController = null;
 
         async function submitPrompt() {
@@ -3096,12 +3165,37 @@
                 // Keep the interface in chat mode during analysis.
                 // The map should only appear once the workflow is finished.
                 if (data.stage === "done" || data.show_map === true) {
-                    if (Array.isArray(data.implementation_clusters)) {
-                        renderImplementationClusters(data.implementation_clusters, { showMap: false });
+                    console.log("🚦 Entered done block — stage:", data.stage, "show_map:", data.show_map);
+                    try {
+                        if (Array.isArray(data.implementation_clusters)) {
+                            console.log("🔧 Calling renderImplementationClusters...");
+                            renderImplementationClusters(data.implementation_clusters, { showMap: false });
+                            console.log("✅ renderImplementationClusters done");
+                        }
+
+                        console.log("🗺️ Calling showMapView...");
+                        showMapView();
+                        console.log("✅ showMapView done");
+
+                        console.log("⏳ Calling waitForCesiumReady...");
+                        await waitForCesiumReady();
+                        console.log("✅ waitForCesiumReady resolved");
+
+                        console.log("📊 Calling applyMapPayload...");
+                        applyMapPayload(data);
+                        console.log("✅ applyMapPayload done");
+
+                    } catch (err) {
+                        console.error("💥 Error inside done block:", err);
                     }
-                    showMapView();
 
                     if ((data.map_layers && typeof data.map_layers === "object") || (Array.isArray(data.entities) && data.entities.length > 0)) {
+                        console.log("📊 About to call applyMapPayload with:", {
+                            has_map_layers: !!data.map_layers,
+                            map_layers_keys: data.map_layers ? Object.keys(data.map_layers) : [],
+                            has_entities: Array.isArray(data.entities),
+                            entity_count: Array.isArray(data.entities) ? data.entities.length : 0
+                        });
                         applyMapPayload(data);
 
                         const renderedEntities = Array.isArray(data.entities) ? data.entities : getRenderableEntitiesFromLayers(currentMapLayers);
@@ -3221,7 +3315,7 @@
         }
         async function loadHistories() {
             try {
-                const response = await fetch('/get_history');
+                const response = await fetch('https://city-planner-847589656180.europe-west1.run.app/get_history');
                 if (!response.ok) {
                     console.error("HTTP Error");
                     return;

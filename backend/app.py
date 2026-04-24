@@ -54,7 +54,7 @@ ENABLE_SPECULATIVE_FIND_NEEDS = os.getenv("ENABLE_SPECULATIVE_FIND_NEEDS", "0").
 app = FastAPI(title="Infrastructure Planner API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://city-planner-711110564007.asia-southeast1.run.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -133,13 +133,15 @@ def safe_json_loads(value: Any) -> Any:
     cleaned = clean_json_text(value)
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        print(f"\n[DEBUG] JSON parsing failed. Error: {exc}")
-        print(f"[DEBUG] Raw value length: {len(value)}")
-        # If it's a small error, might be a trailing comma or literal newline
-        # We log it so developers can see it in uvicorn logs
-        print(f"--- RAW AGENT OUTPUT START ---\n{value}\n--- RAW AGENT OUTPUT END ---\n")
-        raise exc
+    except json.JSONDecodeError:
+        # Attempt to salvage by escaping literal newlines within string boundaries
+        salvaged = re.sub(
+            r'("(?:[^"\\]|\\.)*")',
+            lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r'),
+            cleaned,
+            flags=re.DOTALL
+        )
+        return json.loads(salvaged)
 
 
 def is_retry_response(text: Any) -> bool:
@@ -2091,16 +2093,20 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
         if not q_base or len(str(q_base).split()) > 6: continue
         for q in [f"{q_base}, {city}, Malaysia", f"{q_base}, Malaysia"]:
             try:
-                items = requests.get(
+                response = requests.get(
                     "https://nominatim.openstreetmap.org/search",
                     params={"q": q, "format": "json", "limit": 1},
                     headers={"User-Agent": "city_planner_transit_validator_v2"},
                     timeout=5
-                ).json()
-                if items:
-                    pos = items[0]
-                    lat, lon = float(pos["lat"]), float(pos["lon"])
-                    break
+                )
+                if response.status_code == 200:
+                    items = response.json()
+                    if items:
+                        pos = items[0]
+                        lat, lon = float(pos["lat"]), float(pos["lon"])
+                        break
+                else:
+                    last_error = f"Nominatim returned {response.status_code}"
             except Exception as exc:
                 last_error = str(exc)
         if lat: break
@@ -2126,7 +2132,10 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
     """
     try:
         headers = {"User-Agent": "city_planner_transit_validator_v2", "Accept": "*/*"}
-        resp = requests.post(overpass_url, data=overpass_query, headers=headers, timeout=25).json()
+        response = requests.post(overpass_url, data=overpass_query, headers=headers, timeout=25)
+        if response.status_code != 200:
+            raise Exception(f"Overpass API returned status {response.status_code}: {response.text[:200]}")
+        resp = response.json()
         elements = resp.get("elements", [])
         
         transit_count = 0
