@@ -65,45 +65,7 @@ from concurrency import llm_semaphore, nominatim_semaphore
 APP_NAME = "infrastructure_planner"
 
 session_service = InMemorySessionService()
-# workflow_state is now consolidated into session_service.state["workflow"]
-# We also add a disk-based persistence for Cloud Run resilience
-SESSION_PERSISTENCE_DIR = "session_data"
-os.makedirs(SESSION_PERSISTENCE_DIR, exist_ok=True)
-
-class RobustEncoder(json.JSONEncoder):
-    def default(self, obj):
-        # Handle Shapely geometries (OSMnx/Shapely)
-        if hasattr(obj, "wkt"):
-            return obj.wkt
-        if hasattr(obj, "__geo_interface__"):
-            return obj.__geo_interface__
-        # Handle sets and other iterables
-        if isinstance(obj, (set, tuple)):
-            return list(obj)
-        # Handle decimal or other numeric types
-        try:
-            return super().default(obj)
-        except TypeError:
-            # Last resort: string representation
-            return str(obj)
-
-def _persist_session_state(session_id: str, state: dict[str, Any]):
-    try:
-        path = os.path.join(SESSION_PERSISTENCE_DIR, f"{session_id}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, cls=RobustEncoder)
-    except Exception as e:
-        print(f"[RECOVERY] Failed to persist session {session_id}: {e}")
-
-def _recover_session_state(session_id: str) -> dict[str, Any] | None:
-    try:
-        path = os.path.join(SESSION_PERSISTENCE_DIR, f"{session_id}.json")
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"[RECOVERY] Failed to recover session {session_id}: {e}")
-    return None
+workflow_state: dict[str, dict[str, Any]] = {}
 production_counters: dict[str, int] = {
     "blocked_geo_inconsistency": 0,
     "downgraded_claim_audit": 0,
@@ -117,40 +79,6 @@ PIPELINE = [
     ("Building simulations", building_agent, "simulation_result"),
 ]
 
-
-def persist_session(func):
-    from functools import wraps
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        response = await func(*args, **kwargs)
-        # Check if we have a session_id in the response or if it was passed in kwargs
-        session_id = None
-        if isinstance(response, dict) and "session_id" in response:
-            session_id = response["session_id"]
-        
-        if not session_id:
-            # Try to find session_id in args or kwargs
-            for arg in args:
-                if hasattr(arg, "session_id"):
-                    session_id = getattr(arg, "session_id")
-                    break
-            if not session_id and "req" in kwargs and hasattr(kwargs["req"], "session_id"):
-                session_id = getattr(kwargs["req"], "session_id")
-        
-        if session_id:
-            try:
-                # We fetch the session from memory to get the latest state
-                current_session = await session_service.get_session(
-                    app_name=APP_NAME,
-                    user_id=session_id,
-                    session_id=session_id,
-                )
-                if current_session:
-                    _persist_session_state(session_id, current_session.state)
-            except Exception as e:
-                print(f"[RECOVERY] Decorator failed to persist session {session_id}: {e}")
-        return response
-    return wrapper
 
 class StartRequest(BaseModel):
     pass
@@ -1027,7 +955,6 @@ def _has_complete_find_needs_options(options: list[dict[str, Any]] | None) -> bo
 def _build_find_needs_fallback_response(
     session_id: str,
     target_places: list[str],
-    current_session: Any,
     *,
     selected_area: dict[str, Any] | None = None,
     merged_evidence: dict[str, Any] | None = None,
@@ -1061,7 +988,7 @@ def _build_find_needs_fallback_response(
         next_state["selected_area_option"] = selected_area
     if merged_evidence is not None:
         next_state["evidence_summary"] = merged_evidence
-    current_session.state["workflow"] = next_state
+    workflow_state[session_id] = next_state
 
     return {
         "ok": True,
@@ -1457,16 +1384,12 @@ async def _speculative_find_needs_task(session_id: str, city: str, top_candidate
             or '"CHALLENGE_' in raw_output
             or "challenge_theme" in raw_output.lower()
         )
-        if has_challenge_json:
-            current_session = await session_service.get_session(app_name=APP_NAME, user_id=session_id, session_id=session_id)
-            if current_session:
-                workflow = current_session.state.get("workflow", {})
-                workflow["speculative_find_needs"] = {
-                    "area_id": top_candidate.get("id"),
-                    "raw_output": raw_output,
-                }
-                current_session.state["workflow"] = workflow
-                print(f"Speculative Find-Needs warmed up for {top_candidate.get('area_label')}")
+        if has_challenge_json and session_id in workflow_state:
+            workflow_state[session_id]["speculative_find_needs"] = {
+                "area_id": top_candidate.get("id"),
+                "raw_output": raw_output,
+            }
+            print(f"Speculative Find-Needs warmed up for {top_candidate.get('area_label')}")
         else:
             print(f"Speculative Find-Needs discarded for {top_candidate.get('area_label')} (no valid challenge JSON)")
     except Exception as exc:
@@ -1612,7 +1535,7 @@ PROPOSED AREA OPTIONS:
     if not area_options:
         return await start_planning_phase(session_id, current_session)
 
-    current_session.state["workflow"] = {
+    workflow_state[session_id] = {
         "phase": "area_selection",
         "target_places": target_places,
         "area_options": area_options,
@@ -1644,7 +1567,6 @@ async def start_planning_phase(session_id: str, current_session) -> dict[str, An
         return _build_find_needs_fallback_response(
             session_id,
             target_places,
-            current_session,
             retry_feedback=extract_retry_feedback(initial_raw),
         )
     raw_step_output, display_reply, find_needs_options = await prepare_find_needs_output(
@@ -1664,7 +1586,7 @@ async def start_planning_phase(session_id: str, current_session) -> dict[str, An
             "needs_input": True,
         }
 
-    current_session.state["workflow"] = {
+    workflow_state[session_id] = {
         "phase": "challenge_selection",
         "last_step_output": raw_step_output,
         "last_display_reply": display_reply,
@@ -3160,7 +3082,6 @@ def analyze_selected_micro(selected_micro: dict[str, Any], selected_city: str) -
 
 
 @app.post("/api/start")
-@persist_session
 async def start(req: StartRequest):
     session_id = str(uuid.uuid4())
     session = await session_service.create_session(
@@ -3184,8 +3105,7 @@ FEEDBACK: <your greeting and question>
 
     greeting_text = await run_agent_once(place_intake_agent, session.id, greeting_prompt)
     greeting_parsed = parse_place_result(greeting_text)
-    session.state["workflow"] = {"phase": "intake"}
-    _persist_session_state(session.id, session.state)
+    workflow_state[session.id] = {"phase": "intake"}
 
     return {
         "ok": True,
@@ -3197,36 +3117,19 @@ FEEDBACK: <your greeting and question>
 
 
 @app.post("/api/chat")
-@persist_session
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     session_id = req.session_id
     user_message = req.message.strip()
+
+    if session_id not in workflow_state:
+        raise HTTPException(status_code=404, detail="Session not found")
 
     current_session = await session_service.get_session(
         app_name=APP_NAME,
         user_id=session_id,
         session_id=session_id,
     )
-    
-    if not current_session:
-        # ATTEMPT RECOVERY FROM DISK
-        recovered_state = _recover_session_state(session_id)
-        if recovered_state:
-            print(f"[RECOVERY] Recovered session {session_id} from disk.")
-            current_session = await session_service.create_session(
-                app_name=APP_NAME,
-                user_id=session_id,
-                session_id=session_id,
-                state=recovered_state
-            )
-        else:
-            raise HTTPException(status_code=404, detail="Session not found. Your session may have timed out or the server restarted.")
-
-    state = current_session.state.get("workflow")
-    if not state:
-        state = {"phase": "intake"}
-        current_session.state["workflow"] = state
-
+    state = workflow_state[session_id]
     phase = state["phase"]
 
     if phase == "intake":
@@ -3407,7 +3310,6 @@ Remember:
             return _build_find_needs_fallback_response(
                 session_id,
                 target_places,
-                current_session,
                 selected_area=selected_option,
                 merged_evidence=evidence_summary,
                 existing_state=state,
@@ -3433,7 +3335,6 @@ Remember:
                 return _build_find_needs_fallback_response(
                     session_id,
                     target_places,
-                    current_session,
                     selected_area=selected_option,
                     merged_evidence=evidence_summary,
                     existing_state=state,
