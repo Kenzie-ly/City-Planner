@@ -70,11 +70,28 @@ session_service = InMemorySessionService()
 SESSION_PERSISTENCE_DIR = "session_data"
 os.makedirs(SESSION_PERSISTENCE_DIR, exist_ok=True)
 
+class RobustEncoder(json.JSONEncoder):
+    def default(self, obj):
+        # Handle Shapely geometries (OSMnx/Shapely)
+        if hasattr(obj, "wkt"):
+            return obj.wkt
+        if hasattr(obj, "__geo_interface__"):
+            return obj.__geo_interface__
+        # Handle sets and other iterables
+        if isinstance(obj, (set, tuple)):
+            return list(obj)
+        # Handle decimal or other numeric types
+        try:
+            return super().default(obj)
+        except TypeError:
+            # Last resort: string representation
+            return str(obj)
+
 def _persist_session_state(session_id: str, state: dict[str, Any]):
     try:
         path = os.path.join(SESSION_PERSISTENCE_DIR, f"{session_id}.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False)
+            json.dump(state, f, ensure_ascii=False, cls=RobustEncoder)
     except Exception as e:
         print(f"[RECOVERY] Failed to persist session {session_id}: {e}")
 
@@ -4085,11 +4102,23 @@ Remember:
         if analysis_raw:
             primary_result = analysis_raw[0]
             if primary_result.get("route_geometry"):
+                route_geom = primary_result["route_geometry"]
+                if isinstance(route_geom, str):
+                    try:
+                        from shapely.wkt import loads
+                        route_geom = loads(route_geom)
+                    except:
+                        pass
+                
+                # Convert to list of coords if it's a shapely object
+                if hasattr(route_geom, "coords"):
+                    route_geom = list(route_geom.coords)
+                
                 entities.append({
                     "id": "main_route_primary",
                     "entity_type": "polyline",
                     "name": "Proposed Optimal Route (Calculated)",
-                    "polyline_positions": [primary_result["route_geometry"]],
+                    "polyline_positions": [route_geom],
                     "style": {
                         "color": "#3B82F6",
                         "width": 10,
@@ -4103,6 +4132,16 @@ Remember:
         for cand_res in analysis_raw:
             if "isochrone_geoms" in cand_res:
                 for idx, iso_poly in enumerate(cand_res["isochrone_geoms"]):
+                    if isinstance(iso_poly, str):
+                        try:
+                            from shapely.wkt import loads
+                            iso_poly = loads(iso_poly)
+                        except:
+                            continue
+                    
+                    if not hasattr(iso_poly, "exterior"):
+                        continue
+                        
                     iso_coords = list(iso_poly.exterior.coords)
                     positions = [{"lat": lat, "lng": lng, "height": 0} for lng, lat in iso_coords]
                     entities.append({
