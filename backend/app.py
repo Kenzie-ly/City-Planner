@@ -54,7 +54,7 @@ ENABLE_SPECULATIVE_FIND_NEEDS = os.getenv("ENABLE_SPECULATIVE_FIND_NEEDS", "0").
 app = FastAPI(title="Infrastructure Planner API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://city-planner-711110564007.asia-southeast1.run.app"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -4003,23 +4003,11 @@ Remember:
         if analysis_raw:
             primary_result = analysis_raw[0]
             if primary_result.get("route_geometry"):
-                route_geom = primary_result["route_geometry"]
-                if isinstance(route_geom, str):
-                    try:
-                        from shapely.wkt import loads
-                        route_geom = loads(route_geom)
-                    except:
-                        pass
-                
-                # Convert to list of coords if it's a shapely object
-                if hasattr(route_geom, "coords"):
-                    route_geom = list(route_geom.coords)
-                
                 entities.append({
                     "id": "main_route_primary",
                     "entity_type": "polyline",
                     "name": "Proposed Optimal Route (Calculated)",
-                    "polyline_positions": [route_geom],
+                    "polyline_positions": [primary_result["route_geometry"]],
                     "style": {
                         "color": "#3B82F6",
                         "width": 10,
@@ -4033,16 +4021,6 @@ Remember:
         for cand_res in analysis_raw:
             if "isochrone_geoms" in cand_res:
                 for idx, iso_poly in enumerate(cand_res["isochrone_geoms"]):
-                    if isinstance(iso_poly, str):
-                        try:
-                            from shapely.wkt import loads
-                            iso_poly = loads(iso_poly)
-                        except:
-                            continue
-                    
-                    if not hasattr(iso_poly, "exterior"):
-                        continue
-                        
                     iso_coords = list(iso_poly.exterior.coords)
                     positions = [{"lat": lat, "lng": lng, "height": 0} for lng, lat in iso_coords]
                     entities.append({
