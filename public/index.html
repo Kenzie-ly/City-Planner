@@ -1694,8 +1694,6 @@
                         </div>
                     </div>
 
-                    <div id="placeBanner">📍 Click anywhere on the map to choose a build location</div>
-
                     <div id="map-popup">
                         <div id="popup-badge"></div>
                         <div id="popup-name"></div>
@@ -1706,6 +1704,14 @@
                         <span class="legend-toggle-chevron">▾</span>
                         <span id="legendToggleLabel">Hide Categories</span>
                     </button>
+
+                    <div id="mapLayerControls"
+                        style="display: none; position: fixed; top: 110px; right: 20px; z-index: 1000; background: rgba(6, 12, 24, 0.82); backdrop-filter: blur(10px); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); color: #e5efff; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+                            <input id="toggleContextNetwork" type="checkbox" checked style="accent-color: #60A5FA;">
+                            Show surrounding network
+                        </label>
+                    </div>
 
                     <div id="legend">
                         <b>LAND-USE CATEGORIES</b>
@@ -1781,8 +1787,6 @@
                     <button onclick="submitPrompt()" id="btnSend">Send</button>
                 </div>
 
-
-                <div id="status">Step 1: Click on the map to choose where to build.</div>
                 <div id="simControls"
                     style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 1000; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3); gap: 10px; align-items: center;">
                     <button id="btnPlaySim" onclick="playSimulation()"
@@ -1797,13 +1801,6 @@
                         style="background: transparent; color: #999; border: none; padding: 2px; cursor: pointer; margin-left: 5px;">
                         <span class="material-icons" style="font-size: 16px;">close</span>
                     </button>
-                </div>
-                <div id="mapLayerControls"
-                    style="display: none; position: fixed; top: 110px; right: 20px; z-index: 1000; background: rgba(6, 12, 24, 0.82); backdrop-filter: blur(10px); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); color: #e5efff; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
-                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
-                        <input id="toggleContextNetwork" type="checkbox" checked style="accent-color: #60A5FA;">
-                        Show surrounding network
-                    </label>
                 </div>
             </div>
 
