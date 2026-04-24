@@ -3043,7 +3043,7 @@
             chatAbortController = new AbortController();
 
             try {
-                const response = await fetch("/api/chat", {
+                const response = await fetch("https://fastapi-711110564007.asia-southeast1.run.app/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
