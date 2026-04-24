@@ -248,10 +248,7 @@ def get_road_geometry(street_name, city_name=None):
         pt = get_malaysia_coords(city_name)
 
     if pt:
-        anchor = {"lat": pt["lat"], "lng": pt["lng"], "height": 0}
-        offset = {"lat": pt["lat"] + 0.001, "lng": pt["lng"] + 0.001, "height": 0}
-        return [[anchor, offset]]
-    
+        print(f"  -> Geocoder found only a point for {street_name}, so no reliable road geometry will be rendered.")
     return []
 
 
@@ -259,10 +256,13 @@ def process_agent_assets(planning_agent_output, city_name=None):
     enriched_assets = []
 
     # Use DOTALL so that [ ... ] can span multiple lines if the LLM adds them
-    matches = re.findall(r"\[(.*?)\s*\]", planning_agent_output, re.DOTALL)
+    matches = re.findall(r"\[((?:POINT|POLYLINE|POLYLINE_EXISTING|POLYLINE_NEW|POLYGON|BOX|SIMULATION|LABEL)\s*\|.*?)\]", planning_agent_output, re.DOTALL)
 
     for match in matches:
-        parts = [p.strip() for p in match.split("|")]
+        raw_match = match if isinstance(match, str) and "|" in match else None
+        if raw_match is None:
+            continue
+        parts = [p.strip() for p in raw_match.split("|")]
 
         if len(parts) < 5:
             print(f"⚠️ Skipping malformed asset string: [{match}]")
@@ -481,7 +481,7 @@ def format_entities(enriched_assets):
                 **base,
                 "id":   f"entity_{i}",
                 "name": asset["label"],
-                "polyline_positions": all_positions,
+                "polyline_positions": [all_positions],
                 "position": {"lat": mid["lat"], "lng": mid["lng"], "height": 80},
             }
             entities.append(seg_entity)
@@ -612,4 +612,4 @@ def format_entities(enriched_assets):
         entities.append(base)
 
     return entities
-
+

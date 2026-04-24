@@ -11,6 +11,10 @@ try:
 except Exception:  # pragma: no cover - fallback for minimal test/runtime envs
     requests = None  # type: ignore
 
+import asyncio
+import time
+from concurrency import nominatim_semaphore, overpass_semaphore
+
 
 SOURCE_TIER_WEIGHTS: dict[str, float] = {
     "government": 1.0,
@@ -181,11 +185,18 @@ def score_report_signal(option: dict[str, Any], current_date: date | None = None
     return round(clamp01(score), 3)
 
 
+EVIDENCE_CACHE: dict[str, list[dict[str, Any]]] = {}
+
 def collect_google_growth_signals(
     city: str,
     search_fn: Callable[[str], list[dict[str, Any]]] | None = None,
     iterations: int = 3,
 ) -> list[dict[str, Any]]:
+    cache_key = city.lower().strip()
+    if cache_key in EVIDENCE_CACHE:
+        print(f"[CACHE HIT] Using cached evidence for city: {city}")
+        return EVIDENCE_CACHE[cache_key]
+
     queries = [
         f"{city} population growth new township Malaysia",
         f"{city} industrial park jobs factory expansion Malaysia",
@@ -211,6 +222,9 @@ def collect_google_growth_signals(
                 "query": query,
             }
             findings.append(normalized)
+    
+    if findings:
+        EVIDENCE_CACHE[cache_key] = findings
     return findings
 
 
@@ -453,13 +467,33 @@ def cluster_findings_to_area_options(
     return options
 
 
+AUDIT_CACHE: dict[str, AuditResult] = {}
+
 def audit_osm_transit_gap(
     city: str,
     area: str,
     fetcher: Callable[[str, dict[str, Any], str, int], Any] | None = None,
 ) -> AuditResult:
-    headers = {"User-Agent": "transit_connectivity_audit_v1"}
+    cache_key = f"{city}|{area}".lower()
+    if cache_key in AUDIT_CACHE:
+        print(f"[CACHE HIT] Returning cached audit for: {cache_key}")
+        return AUDIT_CACHE[cache_key]
+
+    headers = {"User-Agent": "CityPlanner_Malaysia_Transit_Audit/1.0 (kenzi@hackathon.local)"}
+    
     try:
+        # Nominatim throttling
+        # Note: Since this is called via asyncio.to_thread, we need to handle the semaphore carefully
+        # if it's an async semaphore. However, concurrency.py uses asyncio.Semaphore.
+        # For simplicity in this threaded context, we'll use a standard lock or manage the loop.
+        # Better yet, let's make this function async if possible, but app.py calls it via to_thread.
+        
+        # FIX: We will handle the semaphore in app.py before calling to_thread 
+        # or use a threading.Semaphore. Since we want production async stability, 
+        # let's keep it simple here and add a time.sleep to enforce the 1s policy.
+        
+        time.sleep(1.1) # Enforce Nominatim policy of 1 req/sec
+        
         if fetcher:
             geocode = fetcher(
                 "https://nominatim.openstreetmap.org/search",
@@ -564,7 +598,9 @@ def audit_osm_transit_gap(
         "density_assets": density_assets,
         "elements_count": len(elements),
     }
-    return AuditResult(gap_score=round(gap_score, 3), completeness_score=round(completeness_score, 3), audit_details=details)
+    result = AuditResult(gap_score=round(gap_score, 3), completeness_score=round(completeness_score, 3), audit_details=details)
+    AUDIT_CACHE[cache_key] = result
+    return result
 
 
 def verify_complaint_against_osm(osm_audit: AuditResult, option: dict[str, Any]) -> bool:

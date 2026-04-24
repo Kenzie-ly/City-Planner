@@ -1,12 +1,24 @@
 function renderEntities(entities) {
     if (!viewer) return [];
-    
+
     // 1. CLEAR PREVIOUS STATE
     viewer.entities.removeAll();
     viewer.dataSources.removeAll();
     viewer.clock.shouldAnimate = false;
-    
+
     const addedEntities = [];
+    const buildLabel = (entity, baseOptions = {}, defaultMode = 'always') => {
+        const labelMode = String(entity.label_mode || defaultMode || 'always').toLowerCase();
+        if (labelMode === 'hidden' || labelMode === 'hover') return undefined;
+        const label = {
+            ...baseOptions,
+            text: String(entity.name),
+        };
+        if (labelMode === 'zoom') {
+            label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 1400.0);
+        }
+        return label;
+    };
 
     // 2. PRE-CALCULATE SIMULATION BOUNDS
     let globalMinStart = null;
@@ -18,18 +30,18 @@ function renderEntities(entities) {
             hasSimulation = true;
             const startOffset = entity.startTimeOffset || 0;
             const startTime = Cesium.JulianDate.addSeconds(viewer.clock.startTime, startOffset, new Cesium.JulianDate());
-            
+
             if (!globalMinStart || Cesium.JulianDate.compare(startTime, globalMinStart) < 0) {
                 globalMinStart = startTime;
             }
-            
+
             // Estimate duration
             let duration = 0;
             if (entity.path && entity.path.length > 1) {
                 for (let i = 1; i < entity.path.length; i++) {
-                    const p1 = Cesium.Cartesian3.fromDegrees(entity.path[i-1].lng, entity.path[i-1].lat);
+                    const p1 = Cesium.Cartesian3.fromDegrees(entity.path[i - 1].lng, entity.path[i - 1].lat);
                     const p2 = Cesium.Cartesian3.fromDegrees(entity.path[i].lng, entity.path[i].lat);
-                    duration += Cesium.Cartesian3.distance(p1, p2) / ((entity.speed || 60) * (1000/3600));
+                    duration += Cesium.Cartesian3.distance(p1, p2) / ((entity.speed || 60) * (1000 / 3600));
                 }
             }
             const endTime = Cesium.JulianDate.addSeconds(startTime, duration, new Cesium.JulianDate());
@@ -60,7 +72,7 @@ function renderEntities(entities) {
             case 'polyline_new': {
                 let segments = entity.polyline_positions;
                 if (!segments || segments.length === 0) break;
-                
+
                 // Ensure segments is a list of lists
                 if (!Array.isArray(segments[0])) {
                     segments = [segments];
@@ -73,7 +85,7 @@ function renderEntities(entities) {
                 segments.forEach((positions, sIdx) => {
                     // VALIDATION: Ensure positions is an array of valid coordinate objects
                     if (!Array.isArray(positions) || positions.length < 2) return;
-                    
+
                     const validPositions = positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
                     const isExisting = (entity.entity_type === 'polyline_existing');
                     const isBridge = (entity.entity_type === 'polyline_new');
@@ -124,14 +136,13 @@ function renderEntities(entities) {
                                 if (isActive) {
                                     return new Cesium.PolylineDashMaterialProperty({ color: baseColor, gapColor: Cesium.Color.TRANSPARENT, dashLength: 16.0, dashPattern: 255.0 });
                                 }
-                                return shouldClamp ? 
+                                return shouldClamp ?
                                     new Cesium.ColorMaterialProperty(baseColor.withAlpha(0.8)) :
                                     new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: baseColor });
                             })(),
                             clampToGround: shouldClamp
                         },
-                        label: sIdx === 0 ? {
-                            text: String(entity.name),
+                        label: sIdx === 0 ? buildLabel(entity, {
                             font: '14px sans-serif',
                             fillColor: Cesium.Color.WHITE,
                             outlineColor: Cesium.Color.BLACK,
@@ -143,14 +154,14 @@ function renderEntities(entities) {
                             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                             heightReference: shouldClamp ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE
-                        } : undefined
+                        }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always') : undefined
                     });
 
                     // Ensure ALL segments are tracked for cleanup/interaction
                     addedSeg.blurb = entity.blurb ?? '';
                     addedSeg.entityType = entity.entity_type;
                     addedEntities.push(addedSeg);
-                    
+
                     if (sIdx === 0) added = addedSeg;
                 });
                 break;
@@ -162,15 +173,14 @@ function renderEntities(entities) {
                     name: entity.name,
                     position: Cesium.Cartesian3.fromDegrees(entity.position.lng, entity.position.lat, 0),
                     point: {
-                        pixelSize: 16,
-                        color: Cesium.Color.fromCssColorString(entity.style.color),
+                        pixelSize: entity.style.pixelSize ?? 16,
+                        color: Cesium.Color.fromCssColorString(entity.style.color).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 1.0),
                         outlineColor: Cesium.Color.WHITE,
                         outlineWidth: 2,
                         disableDepthTestDistance: Number.POSITIVE_INFINITY,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                     },
-                    label: {
-                        text: String(entity.name),
+                    label: buildLabel(entity, {
                         font: '14px sans-serif',
                         fillColor: Cesium.Color.WHITE,
                         outlineColor: Cesium.Color.BLACK,
@@ -182,7 +192,7 @@ function renderEntities(entities) {
                         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    }
+                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
                 break;
             }
@@ -198,18 +208,17 @@ function renderEntities(entities) {
                     ),
                     box: {
                         dimensions: new Cesium.Cartesian3(entity.building.length, entity.building.width, entity.building.height),
-                        material: Cesium.Color.fromCssColorString(entity.style.color).withAlpha(0.6),
+                        material: Cesium.Color.fromCssColorString(entity.style.color).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.6),
                         outline: true,
                         outlineColor: Cesium.Color.fromCssColorString(entity.style.color)
                     },
-                    label: {
-                        text: String(entity.name),
+                    label: buildLabel(entity, {
                         font: '14px sans-serif',
                         pixelOffset: new Cesium.Cartesian2(0, -35),
                         disableDepthTestDistance: Number.POSITIVE_INFINITY,
                         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                         verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-                    }
+                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
                 break;
             }
@@ -222,19 +231,18 @@ function renderEntities(entities) {
                         hierarchy: new Cesium.PolygonHierarchy(
                             Cesium.Cartesian3.fromDegreesArray(entity.polygon_positions.flatMap(p => [p.lng, p.lat]))
                         ),
-                        material: Cesium.Color.fromCssColorString(entity.style.color ?? '#FFA500').withAlpha(entity.style.opacity ?? 0.3),
+                        material: Cesium.Color.fromCssColorString(entity.style.color ?? '#FFA500').withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.3),
                         outline: true,
                         outlineColor: Cesium.Color.fromCssColorString(entity.style.color ?? '#FFA500'),
                         clampToGround: true
                     },
-                    label: {
-                        text: String(entity.name),
+                    label: buildLabel(entity, {
                         font: '14px sans-serif',
                         disableDepthTestDistance: Number.POSITIVE_INFINITY,
                         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    }
+                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
                 });
                 break;
             }
@@ -252,7 +260,7 @@ function renderEntities(entities) {
                     } else {
                         const prev = entity.path[index - 1];
                         const d = Cesium.Cartesian3.distance(Cesium.Cartesian3.fromDegrees(prev.lng, prev.lat), Cesium.Cartesian3.fromDegrees(node.lng, node.lat));
-                        const dt = d / ((entity.speed || 60) * (1000/3600));
+                        const dt = d / ((entity.speed || 60) * (1000 / 3600));
                         currentTime = Cesium.JulianDate.addSeconds(currentTime, dt, new Cesium.JulianDate());
                         positionProperty.addSample(currentTime, pos);
                     }
@@ -299,7 +307,7 @@ function getVehicleStyle(entity) {
     let flow = entity.flow || 'normal';
     let styleHint = (entity.style && entity.style.hint) ? entity.style.hint.toLowerCase() : '';
     let name = (entity.name) ? entity.name.toLowerCase() : '';
-    
+
     // Default Car
     let dimensions = new Cesium.Cartesian3(8.0, 4.0, 3.0);
     let color = Cesium.Color.YELLOW;

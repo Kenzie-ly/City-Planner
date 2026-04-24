@@ -17,7 +17,7 @@ import json
 
 # Load API key from .env file
 load_dotenv()
-PLANNER_MODEL = os.getenv("PLANNER_MODEL", "gemini-3-flash-preview").strip() or "gemini-3.1-flash-lite-preview"
+PLANNER_MODEL = os.getenv("PLANNER_MODEL", "gemini-flash-latest").strip() or "gemini-3.1-flash-lite-preview"
 
 
 # ── Step agents for later phases ──────────────────────────────────────────────
@@ -175,24 +175,30 @@ find_needs_agent = LlmAgent(
 hallucination_audit_agent = LlmAgent(
     name="hallucination_audit_agent",
     model=PLANNER_MODEL,
-    description="Fact-checks generated transport challenges against raw search evidence.",
+    description="Fact-checks generated transport challenges against raw search evidence in batch.",
     instruction="""
         You are the Truth & Evidence Auditor for the Malaysia Transport Agency.
         
         You will receive:
-        1. RAW EVIDENCE (Search snippets)
-        2. GENERATED CHALLENGES (JSON)
+        1. RAW EVIDENCE (JSON array of search snippets)
+        2. PROPOSED AREA OPTIONS (JSON array of challenge/area objects)
         
-        Your task is to audit the challenges for HALLUCINATIONS:
+        Your task is to audit ALL options simultaneously for HALLUCINATIONS or inconsistencies.
         
         AUDIT RULES:
-        - DATA INTEGRITY: If a statistic (e.g. "30%", "RM 500m") is in the challenge but NOT in the raw evidence, REMOVE it or flag the card for correction.
-        - CITATION ACCURACY: Ensure the cited source URL actually relates to the claim.
-        - SCHEMA PRESSURE: If a challenge seems to be "filler" with no evidence support, REMOVE it.
+        - DATA INTEGRITY: If a statistic (e.g. "30%", "RM 500m") is in an option but NOT supported by the raw evidence, flag that specific option.
+        - CITATION ACCURACY: Ensure the cited source URL actually relates to the claim for that specific option.
+        - CROSS-CONSISTENCY: Ensure options don't contradict each other based on the same evidence pool.
+        - SCHEMA PRESSURE: If an option seems to be "filler" with no evidence support, reject it.
         
-        OUTPUT:
-        Return the cleaned JSON array of CHALLENGE objects. 
-        Only include challenges that passed the audit.
+        OUTPUT FORMAT (STRICT JSON ONLY):
+        Return a JSON object with a 'results' key. 'results' is a list of boolean verdicts (True for PASS, False for FAIL) corresponding to each input option.
+        
+        Example:
+        {
+          "results": [true, false, true],
+          "reasons": ["Solid evidence", "Hallucinated 50% stat", "Matches MOT report"]
+        }
         """,
 )
 
@@ -256,6 +262,7 @@ find_hotspot_agent = LlmAgent(
         Your task:
         - produce exactly ONE graph-routable hotspot hypothesis
         - it must be specific enough for downstream road matching
+        - prioritise public-transport improvement logic: feeder buses, bus-priority corridors, train station access, interchange access, and walk-to-transit links
         - output STRICT JSON only
         
         ENHANCED DESCRIPTION POLICY:
@@ -305,8 +312,9 @@ planning_agent = LlmAgent(
         Justify your decision using ONLY the provided data
         Explain tradeoffs between candidates
         Assign a realistic confidence level
-        Calculate impact metrics aligned with JKR/MOT standards (e.g., commute time saved, economic benefit, or safety improvements).
         CRITICAL RULES (MUST FOLLOW)
+        - You MUST NOT invent exact distances, lane counts, travel-time savings, percentages, economic values, or any other numeric impact metric unless that exact value already appears in the provided input JSON.
+        - If the provided input does not contain a required number, use qualitative wording such as "short connector", "limited road width", or "likely moderate benefit" instead of fabricating precision.
         You MUST only choose from the provided candidates.
         You MUST NOT invent new roads, paths, or geometry.
         You MUST base your reasoning ONLY on:
@@ -341,6 +349,7 @@ planning_agent = LlmAgent(
         If the problem is "transit_node" and the candidate connects to low-to-middle income (B40/M40) residential areas → prefer feeder_bus_route or pedestrian_walkway
         If the candidate spans a major arterial → consider brt_corridor or transit_priority_lane
         If the candidate relies on local roads near LRT/MRT → consider micromobility_station or pedestrian_walkway
+        If the input indicates official service overlap or duplication risk → prefer transit_hub_upgrade, pedestrian_walkway, or transit_priority_lane over inventing a brand-new feeder route
         CONFIDENCE RULES
         HIGH → one candidate clearly dominates
         MEDIUM → reasonable but not definitive
@@ -351,7 +360,7 @@ planning_agent = LlmAgent(
         "selected_candidate_id": "<candidate_id>",
         "intervention_type": "",
         "decision_summary": "<1-2 sentence explanation>",
-        "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and quantifies the expected social impact for B40/M40 commuters.>",
+        "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and explains the expected public-transport benefit for B40/M40 commuters without inventing unsupported numbers.>",
         "reasons": [
         "<reason 1 grounded in data>",
         "<reason 2 grounded in data>",
@@ -405,6 +414,10 @@ solution_agent = LlmAgent(
         provided problem description
         You MUST NOT invent new roads or geometry.
         You MUST NOT assume unavailable data (e.g., signal timing details).
+        You MUST prioritise solutions that strengthen bus routes, feeder services, station access, interchange quality, or rail-supportive access.
+        If the input indicates official service overlap or existing operator coverage, you MUST frame the intervention as an upgrade, reroute, retime, access treatment, or interchange improvement instead of inventing a new route.
+        You MUST NOT invent exact distances, lane counts, speed changes, time savings, ridership changes, or percentages unless they are explicitly present in the provided input.
+        You MUST prefer grounded qualitative language over fake precision.
         You MUST NOT produce generic planning statements.
 
 
@@ -471,15 +484,14 @@ solution_agent = LlmAgent(
         ],
 
         "expected_effect": [
-
-        "<effect 1>",
-
-        "<effect 2>",
-
-        "<effect 3>"
-
+            "<effect 1>",
+            "<effect 2>",
+            "<effect 3>"
         ],
-
+        "uncertainties": [
+            "<uncertainty 1>",
+            "<uncertainty 2>"
+        ],
         "implementation_complexity": "<low | medium | high>",
         "confidence": "<low | medium | high>",
         "societal_impact": "<A natural, 1-2 sentence paragraph explaining the positive impact on daily commuters, local residents, and the general public (e.g., focus on ridership increases, accessibility radius, transit time savings, or carbon emission reductions).>"
@@ -522,9 +534,9 @@ building_agent = LlmAgent(
 
         These MUST include:
 
-        * POINT → for intervention nodes, kiosks, stations, conflict points
-        * POLYLINE → for corridors, routes, connectors, lane-priority segments
-        * POLYGON → for zones, treatment areas, widened junction footprints
+        * POINT → for intervention nodes, kiosks, stations, bus stops, conflict points
+        * POLYLINE → for corridors, routes, connectors, lane-priority segments, feeder alignments
+        * POLYGON → for zones, treatment areas, station forecourts, widened junction footprints
         * SIMULATION → MANDATORY for transport/road projects. Use this to illustrate traffic flow. Place vehicles (x10 to x20) along the improved corridor or through the redesigned junction to show movement.
         * LABEL → for important annotations when needed
 
@@ -533,7 +545,7 @@ building_agent = LlmAgent(
 
         1. You MUST use only locations, roads, corridors, junctions, and nodes explicitly present in the input.
         2. You MUST NOT invent new roads, new places, or unsupported geometry.
-        3. For every transport intervention (bridge, lane change, junction redesign), you MUST include at least one SIMULATION object to show how vehicles use the new infrastructure.
+        3. For every transport intervention, you MUST include at least one SIMULATION object to show how buses, trains-supporting access traffic, or general traffic use the new infrastructure.
         4. Use SEARCH_LOCATION as a real, geocodable place or road name (e.g. "Jalan Ampang", "Jalan Tun Razak"). NEVER use generic/invented names like "Connector", "New Lane", or "Junction". If referring to an intersection, use the name of the main road explicitly.
         5. STYLE_HINT must be short. For SIMULATION, you can specify speed (e.g., speed:40).
         6. DESCRIPTION must explain what the object means on the map.
@@ -1233,12 +1245,27 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
         # -------- transit_node --------
         elif micro_type == "transit_node":
             station_or_line = clean_value(micro.get("STATION_OR_LINE"))
-
+            road_a_queries = build_query_list(
+                primary_label=micro.get("road_a_label") or micro.get("ROAD_A_LABEL"),
+                aliases=micro.get("road_a_queries") or micro.get("ROAD_A_QUERIES") or [],
+                fallback_label=micro.get("PRIMARY_ROUTE") or micro.get("ROUTING_LABEL_1") or station_or_line,
+            )
+            road_b_queries = build_query_list(
+                primary_label=micro.get("road_b_label") or micro.get("ROAD_B_LABEL"),
+                aliases=micro.get("road_b_queries") or micro.get("ROAD_B_QUERIES") or [],
+                fallback_label=micro.get("SECONDARY_ROUTE") or micro.get("ROUTING_LABEL_2") or clean_value(micro.get("LOCATION_LABEL")),
+            )
+            if not road_b_queries:
+                road_b_queries = [q for q in road_a_queries if q != station_or_line.lower()][:1]
             return {
                 "type": micro_type,
                 "symptom": micro.get("SYMPTOM"),
                 "location_label": micro.get("LOCATION_LABEL"),
                 "station_or_line": station_or_line,
+                "road_a_queries": road_a_queries,
+                "road_b_queries": road_b_queries,
+                "road_a_label": clean_value(micro.get("road_a_label") or micro.get("ROAD_A_LABEL")) or (road_a_queries[0] if road_a_queries else station_or_line),
+                "road_b_label": clean_value(micro.get("road_b_label") or micro.get("ROAD_B_LABEL")) or (road_b_queries[0] if road_b_queries else clean_value(micro.get("LOCATION_LABEL"))),
             }
 
         return None

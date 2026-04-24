@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from contextlib import contextmanager
 import json
 import os
 import sys
@@ -265,13 +266,13 @@ def _mock_challenge_obj() -> dict:
 def _mock_micro_result() -> dict:
     return {
         "PRIMARY_MICRO": {
-            "location_label": "Section 13",
-            "type": "corridor",
+            "location_label": "Section 13 KTM Access Point",
+            "type": "transit_node",
             "symptom": "Workers face long transfers",
-            "road_a_queries": ["Section 13"],
-            "road_b_queries": ["Section 13"],
-            "road_a_label": "Section 13",
-            "road_b_label": "Section 13",
+            "road_a_queries": ["KTM Section 13", "Persiaran Section 13"],
+            "road_b_queries": ["Jalan Kemajuan Section 13"],
+            "road_a_label": "KTM Section 13",
+            "road_b_label": "Jalan Kemajuan Section 13",
             "confidence": "high",
         },
         "SECONDARY_MICRO": {
@@ -293,6 +294,15 @@ def _mock_micro_result() -> dict:
 class AppFlowTests(unittest.TestCase):
     def setUp(self):
         appmod.workflow_state.clear()
+
+    @contextmanager
+    def _growth_flow(self, enabled: bool):
+        old_flag = appmod.GROWTH_FLOW_ENABLED
+        appmod.GROWTH_FLOW_ENABLED = enabled
+        try:
+            yield
+        finally:
+            appmod.GROWTH_FLOW_ENABLED = old_flag
 
     def _start(self):
         return asyncio.run(appmod.start(appmod.StartRequest()))
@@ -414,24 +424,37 @@ class AppFlowTests(unittest.TestCase):
         return patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once)
 
     def test_happy_path_area_selection_to_done(self):
-        with self._patch_common_pipeline(), patch.object(
+        strong_micro = _mock_micro_result()
+        strong_micro["PRIMARY_MICRO"] = {
+            "location_label": "Section 13 KTM Access Point",
+            "type": "transit_node",
+            "symptom": "Workers face long transfers at the station edge",
+            "road_a_queries": ["KTM Section 13", "Persiaran Section 13"],
+            "road_b_queries": ["Jalan Kemajuan Section 13"],
+            "road_a_label": "KTM Section 13",
+            "road_b_label": "Jalan Kemajuan Section 13",
+            "confidence": "high",
+            "lat": 3.07,
+            "lon": 101.52,
+        }
+        with self._growth_flow(True), self._patch_common_pipeline(), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.9, 0.95, {"matched": True})
         ), patch.object(
             appmod, "_run_route_feasibility", return_value={"pass": True, "score": 1.0, "candidate_count": 1}
         ), patch.object(
-            appmod, "run_hotspot_hypothesis_loop", return_value=_mock_micro_result()
+            appmod, "run_hotspot_hypothesis_loop", return_value=strong_micro
         ), patch.object(
             appmod,
             "analyze_selected_micro",
             return_value=[
                 {
                     "selected_micro_source": "PRIMARY_MICRO",
-                    "selected_micro_type": "corridor",
-                    "selected_micro_symptom": "Workers face long transfers",
-                    "selected_micro_location_label": "Section 13",
-                    "mode": "same_road",
+                    "selected_micro_type": "transit_node",
+                    "selected_micro_symptom": "Workers face long transfers at the station edge",
+                    "selected_micro_location_label": "Section 13 KTM Access Point",
+                    "mode": "corridor",
                     "city_query": "Shah Alam, Malaysia",
-                    "candidates": [{"candidate_id": "candidate_1", "via_roads": ["Section 13"]}],
+                    "candidates": [{"candidate_id": "candidate_1", "via_roads": ["Persiaran Section 13", "Jalan Kemajuan Section 13"]}],
                     "route_geometry": [{"lat": 3.07, "lng": 101.52, "height": 0}],
                     "isochrone_geoms": [],
                 }
@@ -462,18 +485,76 @@ class AppFlowTests(unittest.TestCase):
             self.assertEqual(challenge_pick["stage"], "Micro hotspot selection")
 
             micro_pick = self._chat(start["session_id"], "1")
-            self.assertEqual(micro_pick["stage"], "Plan improvements")
-
-            approve_plan = self._chat(start["session_id"], "ok")
-            self.assertEqual(approve_plan["stage"], "Generate solutions")
+            self.assertEqual(micro_pick["stage"], "Generate solutions")
 
             approve_solution = self._chat(start["session_id"], "ok")
             self.assertEqual(approve_solution["stage"], "done")
             self.assertTrue(approve_solution["show_map"])
             self.assertIn("entities", approve_solution)
+            self.assertIn("map_layers", approve_solution)
+            self.assertIn("reliability_band", approve_solution)
+            self.assertIn("warnings", approve_solution)
+            self.assertIn("service_overlap_summary", approve_solution)
+            self.assertIn("evidence_summary", approve_solution)
+            self.assertIn("claim_audit_summary", approve_solution)
+            self.assertIn("proposal", approve_solution["map_layers"])
+            self.assertIn("context", approve_solution["map_layers"])
+
+    def test_weak_hotspot_soft_blocks_back_to_specific_selection(self):
+        weak_micro = _mock_micro_result()
+        weak_micro["PRIMARY_MICRO"] = {
+            "location_label": "Section 13 Growth Pocket",
+            "type": "corridor",
+            "symptom": "Workers face long transfers",
+            "road_a_queries": ["Section 13"],
+            "road_b_queries": ["Section 13"],
+            "road_a_label": "Section 13",
+            "road_b_label": "Section 13",
+            "confidence": "medium",
+            "lat": 3.07,
+            "lon": 101.52,
+        }
+        with self._growth_flow(True), self._patch_common_pipeline(), patch.object(
+            appmod, "audit_osm_transit_gap", return_value=AuditResult(0.9, 0.95, {"matched": True})
+        ), patch.object(
+            appmod, "_run_route_feasibility", return_value={"pass": True, "score": 1.0, "candidate_count": 1}
+        ), patch.object(
+            appmod, "run_hotspot_hypothesis_loop", return_value=weak_micro
+        ), patch.object(
+            appmod,
+            "analyze_selected_micro",
+            return_value=[
+                {
+                    "selected_micro_source": "PRIMARY_MICRO",
+                    "selected_micro_type": "corridor",
+                    "selected_micro_symptom": "Workers face long transfers",
+                    "selected_micro_location_label": "Section 13 Growth Pocket",
+                    "mode": "corridor",
+                    "city_query": "Shah Alam, Malaysia",
+                    "candidates": [{"candidate_id": "candidate_1", "via_roads": []}],
+                    "route_geometry": [{"lat": 3.07, "lng": 101.52, "height": 0}],
+                    "isochrone_geoms": [],
+                }
+            ],
+        ):
+            start = self._start()
+            intake = self._chat(start["session_id"], "Shah Alam")
+            self.assertEqual(intake["stage"], "Area selection")
+
+            area_pick = self._chat(start["session_id"], "1")
+            self.assertEqual(area_pick["stage"], "Find needs")
+
+            challenge_pick = self._chat(start["session_id"], "1")
+            self.assertEqual(challenge_pick["stage"], "Micro hotspot selection")
+
+            micro_pick = self._chat(start["session_id"], "1")
+            self.assertEqual(micro_pick["stage"], "Micro hotspot selection")
+            self.assertTrue(micro_pick["needs_input"])
+            self.assertIn("specific_options", micro_pick)
+            self.assertIn("too weak for a production-ready recommendation", micro_pick["reply"])
 
     def test_gate_fail_low_completeness(self):
-        with self._patch_common_pipeline(), patch.object(
+        with self._growth_flow(True), self._patch_common_pipeline(), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.4, 0.2, {"matched": False})
         ), patch.object(
             appmod, "_run_route_feasibility", return_value={"pass": False, "score": 0.0, "candidate_count": 0}
@@ -488,7 +569,7 @@ class AppFlowTests(unittest.TestCase):
             self.assertIn("Needs verification", area_pick["reply"])
 
     def test_high_report_low_gap_does_not_auto_build(self):
-        with self._patch_common_pipeline(), patch.object(
+        with self._growth_flow(True), self._patch_common_pipeline(), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.05, 1.0, {"matched": True})
         ), patch.object(
             appmod, "_run_route_feasibility", return_value={"pass": True, "score": 1.0, "candidate_count": 1}
@@ -506,7 +587,7 @@ class AppFlowTests(unittest.TestCase):
                 return {"pass": False, "score": 0.0, "candidate_count": 0}
             return {"pass": True, "score": 1.0, "candidate_count": 2}
 
-        with self._patch_common_pipeline(), patch.object(
+        with self._growth_flow(True), self._patch_common_pipeline(), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.85, 0.95, {"matched": True})
         ), patch.object(
             appmod, "_run_route_feasibility", side_effect=feasibility
@@ -570,6 +651,52 @@ class AppFlowTests(unittest.TestCase):
         finally:
             appmod.GROWTH_FLOW_ENABLED = old_flag
 
+    def test_old_flow_quota_retry_falls_back_to_generic_find_needs(self):
+        async def old_flow_run_agent_once(agent, session_id: str, prompt: str) -> str:
+            name = getattr(agent, "name", "")
+            if name == "place_intake_agent":
+                if "conversation is starting" in prompt.lower():
+                    return "VERDICT: RETRY\nPLACES:\nFEEDBACK: Please share city."
+                return "VERDICT: SUCCESS\nPLACES: Shah Alam\nFEEDBACK: ok"
+            if name == "find_needs_agent":
+                return "VERDICT: RETRY\nFEEDBACK: The AI is currently busy (quota exceeded). Please wait a moment and try again."
+            return "VERDICT: PASS\nREASON: ok\n"
+
+        old_flag = appmod.GROWTH_FLOW_ENABLED
+        appmod.GROWTH_FLOW_ENABLED = False
+        try:
+            with patch.object(appmod, "run_agent_once", side_effect=old_flow_run_agent_once):
+                start = self._start()
+                intake = self._chat(start["session_id"], "Shah Alam")
+                self.assertEqual(intake["stage"], "Find needs")
+                self.assertEqual(len(intake.get("find_needs_options", [])), 3)
+                self.assertIn("fallback evidence cards", intake["reply"].lower())
+        finally:
+            appmod.GROWTH_FLOW_ENABLED = old_flag
+
+    def test_old_flow_non_quota_find_needs_failure_does_not_fall_back_to_generic_cards(self):
+        async def old_flow_run_agent_once(agent, session_id: str, prompt: str) -> str:
+            name = getattr(agent, "name", "")
+            if name == "place_intake_agent":
+                if "conversation is starting" in prompt.lower():
+                    return "VERDICT: RETRY\nPLACES:\nFEEDBACK: Please share city."
+                return "VERDICT: SUCCESS\nPLACES: Shah Alam\nFEEDBACK: ok"
+            if name == "find_needs_agent":
+                return "This is not valid challenge JSON."
+            return "VERDICT: PASS\nREASON: ok\n"
+
+        old_flag = appmod.GROWTH_FLOW_ENABLED
+        appmod.GROWTH_FLOW_ENABLED = False
+        try:
+            with patch.object(appmod, "run_agent_once", side_effect=old_flow_run_agent_once):
+                start = self._start()
+                intake = self._chat(start["session_id"], "Shah Alam")
+                self.assertEqual(intake["stage"], "Find needs")
+                self.assertFalse(intake.get("find_needs_options"))
+                self.assertIn("stable set of broad challenge cards", intake["reply"].lower())
+        finally:
+            appmod.GROWTH_FLOW_ENABLED = old_flag
+
     def test_find_needs_validation_helpers(self):
         options, errors = appmod.build_find_needs_options(_mock_challenges())
         self.assertEqual(len(options), 3)
@@ -592,6 +719,92 @@ class AppFlowTests(unittest.TestCase):
         options, errors = appmod.build_find_needs_options(json.dumps(bad_brief))
         self.assertFalse(options)
         self.assertTrue(any("brief_description" in e.lower() for e in errors))
+
+    def test_hotspot_scope_match_allows_concrete_station_area_for_abstract_access_challenge(self):
+        selected_challenge = {
+            "TITLE": "Critical First-Mile/Last-Mile Infrastructure Friction",
+            "BRIEF_DESCRIPTION": (
+                "Physical proximity to rail stations does not translate into practical walking access. "
+                "Pedestrian and transfer friction suppresses ridership near major transit hubs."
+            ),
+        }
+        hypothesis = {
+            "location_label": "Jalan Klang Lama / Jalan Syed Putra",
+            "symptom": "Pedestrian access and transfer friction near station approaches slows rail access.",
+            "road_a_queries": ["Jalan Klang Lama"],
+            "road_b_queries": ["Jalan Syed Putra", "Mid Valley KTM Station"],
+        }
+        self.assertTrue(appmod._candidate_matches_scope(hypothesis, selected_challenge, "Kuala Lumpur"))
+
+    def test_hotspot_loop_recovers_fenced_json_and_preserves_score_pass(self):
+        selected_challenge = {
+            "TITLE": "Critical First-Mile/Last-Mile Infrastructure Friction",
+            "BRIEF_DESCRIPTION": (
+                "Physical proximity to rail stations does not translate into practical walking access. "
+                "Pedestrian and transfer friction suppresses ridership near major transit hubs."
+            ),
+        }
+        hotspot_payload = """Here are the hotspots:
+```json
+[
+  {
+    "location_label": "Sri Rampai LRT Access Point",
+    "type": "transit_node",
+    "symptom": "Pedestrian access to the station is indirect and uncomfortable.",
+    "road_a_queries": ["Sri Rampai LRT Station", "Jalan 1/27E"],
+    "road_b_queries": ["Jalan Rampai Niaga 5", "Wangsa Delima"],
+    "road_a_label": "Sri Rampai LRT Station",
+    "road_b_label": "Jalan Rampai Niaga 5",
+    "lat": 3.199,
+    "lon": 101.745,
+    "confidence": "high",
+    "INTERVENTION_RECOMMENDATION": "BUS",
+    "INTERVENTION_RATIONALE": "Strong station access bottleneck."
+  },
+  {
+    "location_label": "Segambut KTM Connectivity Node",
+    "type": "transit_node",
+    "symptom": "The station edge is isolated from nearby residential access roads.",
+    "road_a_queries": ["KTM Segambut", "Jalan Segambut"],
+    "road_b_queries": ["Jalan 1/66F", "Jalan Kuching"],
+    "road_a_label": "KTM Segambut",
+    "road_b_label": "Jalan Kuching",
+    "lat": 3.184,
+    "lon": 101.669,
+    "confidence": "medium",
+    "INTERVENTION_RECOMMENDATION": "BUS",
+    "INTERVENTION_RATIONALE": "Transfer friction reduces usable rail access."
+  }
+]
+```"""
+
+        async def fake_run_agent_once(agent, session_id: str, prompt: str) -> str:
+            return hotspot_payload
+
+        evidence = {
+            "matched": True,
+            "connectivity_score": 0.45,
+            "density_score": 0.55,
+            "congestion_score": 0.5,
+            "evidence_window": ["osm_spatial"],
+        }
+
+        with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
+            appmod, "get_transit_connectivity_evidence", return_value=evidence
+        ), patch.object(
+            appmod, "_is_hotspot_routable", return_value=(False, "No alternative paths found", None)
+        ), patch.object(appmod, "get_context_infrastructure", return_value=[]):
+            result = asyncio.run(
+                appmod.run_hotspot_hypothesis_loop("session_hotspots", "Kuala Lumpur", selected_challenge)
+            )
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(len(result.get("specific_cards", [])), 2)
+        for option in result.get("specific_cards", []):
+            self.assertIn("score", option)
+            self.assertIn("pass", option)
+            self.assertIn("location_label", option)
+        self.assertEqual(result["specific_cards"][0]["location_label"], "Sri Rampai LRT Access Point")
 
     def test_find_needs_repair_path(self):
         async def fake_run_agent_once(agent, session_id: str, prompt: str) -> str:
@@ -631,7 +844,7 @@ class AppFlowTests(unittest.TestCase):
                 return json.dumps(invalid)
             return "VERDICT: PASS\nREASON: ok\n"
 
-        with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
+        with self._growth_flow(True), patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.9, 0.95, {"matched": True})
         ), patch.object(
             appmod, "_run_route_feasibility", return_value={"pass": True, "score": 1.0, "candidate_count": 1}
@@ -679,7 +892,7 @@ class AppFlowTests(unittest.TestCase):
                 return json.dumps(invalid)
             return "VERDICT: PASS\nREASON: ok\n"
 
-        with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
+        with self._growth_flow(True), patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
             appmod, "audit_osm_transit_gap", return_value=AuditResult(0.9, 0.95, {"matched": True})
         ), patch.object(
             appmod, "_run_route_feasibility", return_value={"pass": True, "score": 1.0, "candidate_count": 1}

@@ -39,11 +39,17 @@ from evidence_pipeline import (
     verify_complaint_against_osm,
     filter_trusted_evidence,
 )
+from reliability import (
+    audit_solution_claims,
+    build_decision_package,
+    validate_geo_consistency,
+)
 
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GROWTH_FLOW_ENABLED = os.getenv("GROWTH_FLOW_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+GROWTH_FLOW_ENABLED = os.getenv("GROWTH_FLOW_ENABLED", "0").strip().lower() not in {"0", "false", "no"}
+ENABLE_SPECULATIVE_FIND_NEEDS = os.getenv("ENABLE_SPECULATIVE_FIND_NEEDS", "0").strip().lower() not in {"0", "false", "no"}
 
 app = FastAPI(title="Infrastructure Planner API")
 app.add_middleware(
@@ -54,11 +60,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from concurrency import llm_semaphore, nominatim_semaphore
+
 APP_NAME = "infrastructure_planner"
-USER_ID = "user_001"
 
 session_service = InMemorySessionService()
 workflow_state: dict[str, dict[str, Any]] = {}
+production_counters: dict[str, int] = {
+    "blocked_geo_inconsistency": 0,
+    "downgraded_claim_audit": 0,
+    "overlap_upgrade_decisions": 0,
+    "context_entities_rendered": 0,
+}
 
 PIPELINE = [
     ("Plan improvements", planning_agent, "planning_result"),
@@ -119,26 +132,81 @@ async def run_agent_with_retry(agent, session_id: str, prompt: str, max_attempts
 
 
 async def run_agent_once(agent, session_id: str, prompt: str) -> str:
-    runner = Runner(agent=agent, app_name=APP_NAME, session_service=session_service)
-    message = types.Content(role="user", parts=[types.Part(text=prompt)])
+    # Use session_id as user_id for better production isolation in ADK
+    user_id = session_id or "default_user"
+    
+    async with llm_semaphore:
+        runner = Runner(agent=agent, app_name=APP_NAME, session_service=session_service)
+        message = types.Content(role="user", parts=[types.Part(text=prompt)])
 
-    response = ""
-    try:
-        async for event in runner.run_async(
-            user_id=USER_ID,
-            session_id=session_id,
-            new_message=message,
-        ):
-            if event.is_final_response() and event.content:
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        response += part.text
-        return response.strip()
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-            return "VERDICT: RETRY\nFEEDBACK: The AI is currently busy (quota exceeded). Please wait a moment and try again."
-        return f"VERDICT: RETRY\nFEEDBACK: An error occurred: {error_msg}"
+        response = ""
+        try:
+            print(f"[LLM] Running agent: {agent.name} (Session: {session_id})")
+            start_time = asyncio.get_event_loop().time()
+            
+            async for event in runner.run_async(
+                user_id=user_id,
+                session_id=session_id,
+                new_message=message,
+            ):
+                if event.is_final_response() and event.content:
+                    for part in event.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            response += part.text
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            print(f"[LLM] Agent {agent.name} finished in {elapsed:.2f}s")
+            return response.strip()
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[LLM ERROR] Agent {agent.name} failed: {error_msg}")
+            if any(code in error_msg for code in ["429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE"]):
+                return "VERDICT: RETRY\nFEEDBACK: The AI is currently experiencing high demand. Please wait a moment and try again."
+            return f"VERDICT: RETRY\nFEEDBACK: An error occurred: {error_msg}"
+
+
+def _extract_ref_coords(entities: list[dict[str, Any]], fallback_coords: dict[str, float]) -> tuple[float, float]:
+    ref_lat = fallback_coords.get("lat", 3.1390)
+    ref_lng = fallback_coords.get("lng", 101.6869)
+    
+    if not entities:
+        return ref_lat, ref_lng
+        
+    for ent in entities:
+        # Check polyline_positions
+        polys = ent.get("polyline_positions")
+        if polys and isinstance(polys, list) and len(polys) > 0:
+            first_seg = polys[0]
+            if first_seg and isinstance(first_seg, list) and len(first_seg) > 0:
+                first_pt = first_seg[0]
+                if isinstance(first_pt, dict) and "lat" in first_pt:
+                    return first_pt["lat"], first_pt["lng"]
+        
+        # Check position
+        pos = ent.get("position")
+        if pos and isinstance(pos, dict) and "lat" in pos:
+            return pos["lat"], pos["lng"]
+            
+        # Check polygon_positions
+        pgons = ent.get("polygon_positions")
+        if pgons and isinstance(pgons, list) and len(pgons) > 0:
+            first_pt = pgons[0]
+            if isinstance(first_pt, dict) and "lat" in first_pt:
+                return first_pt["lat"], first_pt["lng"]
+                
+    return ref_lat, ref_lng
+
+
+def _get_list(data: dict, key: str) -> list:
+    val = data.get(key)
+    if not val:
+        return []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        return [val]
+    return [str(val)]
 
 
 def parse_place_result(text: str) -> dict[str, Any]:
@@ -191,18 +259,14 @@ def extract_challenge_json_blocks(text: str) -> list[dict[str, Any]]:
     cleaned = clean_json_text(text)
     try:
         obj = json.loads(cleaned)
-        # Handle case where agent returns a list of challenges directly
         if isinstance(obj, list):
             return [x for x in obj if isinstance(x, dict)][:3]
         
-        # Handle case where agent returns an object with CHALLENGE_n keys
         if isinstance(obj, dict):
             keys = [k for k in obj if k.startswith("CHALLENGE_") and k[len("CHALLENGE_"):].isdigit()]
             if keys:
-                # Sort numerically by index
                 return [obj[k] for k in sorted(keys, key=lambda x: int(re.search(r"\d+", x).group() or 0))]
             
-            # Fallback: if it's a dict but no CHALLENGE_ keys, check if it's a single challenge
             if "TITLE" in obj or "CHALLENGE_THEME" in obj:
                 return [obj]
                 
@@ -350,11 +414,28 @@ REASON: <short reason>
         return False
     if "VERDICT: PASS" in text:
         return True
-    # If the auditor returns non-standard formatting, treat explicit negative signals as failure.
     if "HALLUCINATION" in text or "UNSUPPORTED" in text:
         return False
     return bool(text.strip())
 
+
+def _default_credible_sources() -> list[dict[str, Any]]:
+    return _validate_sources(
+        [
+            {
+                "publisher": "MOT Malaysia",
+                "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)",
+                "published_at": "2025-01-01",
+                "source_tier": "government",
+            },
+            {
+                "publisher": "DOSM Open Data",
+                "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)",
+                "published_at": "2025-01-01",
+                "source_tier": "government",
+            },
+        ]
+    )
 
 async def _synthesize_area_card_content(
     session_id: str,
@@ -378,9 +459,7 @@ async def _synthesize_area_card_content(
             if len(trusted_sources) >= 3:
                 break
 
-    # Last-resort fallback: for low-confidence options (e.g. when growth_signal_agent
-    # hit a token limit and returned no findings), supplement with default government
-    # sources so the card can still be produced rather than returning None.
+    # Last-resort fallback: for low-confidence options
     if len(trusted_sources) < 2 and option.get("allow_low_confidence"):
         default_srcs = _default_credible_sources()
         used = {_source_domain(str(s.get("url") or "")) for s in trusted_sources}
@@ -395,9 +474,6 @@ async def _synthesize_area_card_content(
 
     description_paragraph, micro_paragraph = _build_area_card_paragraphs(option, trusted_sources, city)
 
-    # For fully-fallback options (template-generated text, no real Google evidence),
-    # skip the hallucination audit: there are no AI-invented statistics to check, and
-    # running the audit would waste an LLM call that might also hit token limits.
     is_pure_fallback = option.get("allow_low_confidence") and not list(option.get("google_evidence") or [])
     if is_pure_fallback:
         option["description_paragraph"] = description_paragraph
@@ -405,7 +481,6 @@ async def _synthesize_area_card_content(
         option["trusted_sources"] = trusted_sources
         return option
 
-    # First audit pass.
     passed = await _hallucination_audit_area_card(
         session_id,
         trusted_sources,
@@ -413,7 +488,6 @@ async def _synthesize_area_card_content(
         micro_paragraph,
     )
     if not passed:
-        # One rewrite attempt using stricter, lower-risk phrasing.
         impacted = _extract_impacted_locations(option, trusted_sources, city)
         impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
         description_paragraph = (
@@ -471,25 +545,6 @@ def _derive_sources_from_selected_area(selected_area: dict[str, Any] | None) -> 
             }
         )
     return _validate_sources(synthetic_sources)
-
-
-def _default_credible_sources() -> list[dict[str, Any]]:
-    return _validate_sources(
-        [
-            {
-                "publisher": "MOT Malaysia",
-                "url": "https://www.mot.gov.my/",
-                "published_at": "2025-01-01",
-                "source_tier": "government",
-            },
-            {
-                "publisher": "DOSM Open Data",
-                "url": "https://open.dosm.gov.my/",
-                "published_at": "2025-01-01",
-                "source_tier": "government",
-            },
-        ]
-    )
 
 
 def _validate_sources(sources: Any) -> list[dict[str, Any]]:
@@ -551,7 +606,6 @@ def _validate_chart_spec(chart_spec: Any, statistics: dict[str, float]) -> tuple
         norm_labels.append(label_text)
         norm_values.append(numeric)
 
-    # Optional consistency check: chart labels should map to provided statistics keys when possible.
     if statistics:
         stats_keys = {k.lower() for k in statistics.keys()}
         if not any(lbl.lower() in stats_keys for lbl in norm_labels):
@@ -563,8 +617,8 @@ def _validate_chart_spec(chart_spec: Any, statistics: dict[str, float]) -> tuple
 def build_find_needs_options(raw_step_output: str) -> tuple[list[dict[str, Any]], list[str]]:
     challenges = extract_challenge_json_blocks(raw_step_output)
     errors: list[str] = []
-    # Relaxed check: if we have more than 3, we'll take top 3. 
-    # If we have 0, we fail. If 1 or 2, we'll try to use them but warn.
+    hard_fail = False
+
     if len(challenges) == 0:
         errors.append("No challenge options found in output.")
         return [], errors
@@ -580,6 +634,7 @@ def build_find_needs_options(raw_step_output: str) -> tuple[list[dict[str, Any]]
         brief_sentences = _sentence_count(brief)
         if not brief or brief_sentences < 1 or brief_sentences > 3:
             errors.append(f"CHALLENGE_{idx}: BRIEF_DESCRIPTION must be 1-3 sentences.")
+            hard_fail = True
             continue
 
         statistics = _coerce_statistics(challenge.get("STATISTICS"))
@@ -595,6 +650,7 @@ def build_find_needs_options(raw_step_output: str) -> tuple[list[dict[str, Any]]
         chart_ok, normalized_chart = _validate_chart_spec(challenge.get("CHART_SPEC"), statistics)
         if not chart_ok or not normalized_chart:
             errors.append(f"CHALLENGE_{idx}: invalid CHART_SPEC.")
+            hard_fail = True
             continue
 
         options.append(
@@ -608,7 +664,9 @@ def build_find_needs_options(raw_step_output: str) -> tuple[list[dict[str, Any]]
             }
         )
 
-    # Return at most 3
+    if hard_fail:
+        return [], errors
+
     final_options = options[:3]
     if len(final_options) < 1:
         errors.append("Failed to validate any valid challenge options.")
@@ -639,7 +697,6 @@ def build_find_needs_options_legacy_fallback(
         brief = str(challenge.get("BRIEF_DESCRIPTION") or challenge.get("WHY_IT_MATTERS") or "").strip()
         if not brief:
             brief = "This challenge shows measurable transport pressure and warrants intervention planning."
-        # Ensure 1-3 sentence shape.
         sent = [s.strip() for s in re.split(r"[.!?]+", brief) if s.strip()]
         brief = ". ".join(sent[:3]).strip()
         if brief and not brief.endswith("."):
@@ -775,16 +832,7 @@ async def prepare_find_needs_output(
     options, errors = build_find_needs_options(raw_step_output)
     working_raw = raw_step_output
 
-    if not options:
-        legacy = build_find_needs_options_legacy_fallback(
-            working_raw,
-            selected_area=selected_area,
-            merged_evidence=merged_evidence,
-        )
-        if legacy:
-            options = legacy
-
-    if not options:
+    if len(options) != 3:
         repair_prompt = _build_find_needs_repair_prompt(
             target_places=target_places,
             previous_output=working_raw,
@@ -794,7 +842,7 @@ async def prepare_find_needs_output(
         )
         repaired = await run_agent_once(find_needs_agent, session_id, repair_prompt)
         repaired_options, repaired_errors = build_find_needs_options(repaired)
-        if not repaired_options:
+        if len(repaired_options) != 3:
             repaired_options = build_find_needs_options_legacy_fallback(
                 repaired,
                 selected_area=selected_area,
@@ -807,7 +855,16 @@ async def prepare_find_needs_output(
         else:
             print(f"Find-needs repair failed; falling back to plain formatting. Errors: {repaired_errors}")
 
-    if not options:
+    if len(options) != 3:
+        legacy = build_find_needs_options_legacy_fallback(
+            working_raw,
+            selected_area=selected_area,
+            merged_evidence=merged_evidence,
+        )
+        if legacy:
+            options = legacy
+
+    if len(options) != 3:
         options = build_generic_find_needs_options(
             target_places=target_places,
             selected_area=selected_area,
@@ -848,6 +905,58 @@ def format_find_needs_reply(raw_step_output: str, find_needs_options: list[dict[
     if challenges:
         return format_challenges(challenges)
     return raw_step_output
+
+
+def _has_complete_find_needs_options(options: list[dict[str, Any]] | None) -> bool:
+    return isinstance(options, list) and len(options) == 3
+
+
+def _build_find_needs_fallback_response(
+    session_id: str,
+    target_places: list[str],
+    *,
+    selected_area: dict[str, Any] | None = None,
+    merged_evidence: dict[str, Any] | None = None,
+    existing_state: dict[str, Any] | None = None,
+    retry_feedback: str | None = None,
+) -> dict[str, Any]:
+    options = build_generic_find_needs_options(
+        target_places=target_places,
+        selected_area=selected_area,
+        merged_evidence=merged_evidence,
+    )
+    display_reply = format_find_needs_reply("", options)
+    if retry_feedback:
+        display_reply = (
+            "The live planning model is temporarily busy, so I loaded fallback evidence cards to keep the workflow moving.\n\n"
+            + display_reply
+        )
+
+    next_state = dict(existing_state or {})
+    next_state.update(
+        {
+            "phase": "challenge_selection",
+            "last_step_output": json.dumps(options, ensure_ascii=False),
+            "last_display_reply": display_reply,
+            "find_needs_options": options,
+            "target_places": target_places,
+            "step_index": 0,
+        }
+    )
+    if selected_area is not None:
+        next_state["selected_area_option"] = selected_area
+    if merged_evidence is not None:
+        next_state["evidence_summary"] = merged_evidence
+    workflow_state[session_id] = next_state
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "stage": "Find needs",
+        "reply": display_reply,
+        "needs_input": True,
+        "find_needs_options": options,
+    }
 
 
 
@@ -933,8 +1042,6 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
     async def _search(query: str) -> list[dict[str, Any]]:
         return await _growth_search_fn(session_id, city, query)
 
-    # Reduced to 3 queries (down from 5) to stay within model output token limits.
-    # Population, industrial, and complaint signals cover the highest-value categories.
     queries = [
         f"{city} population growth new township Malaysia",
         f"{city} industrial park jobs factory expansion Malaysia",
@@ -944,13 +1051,11 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
     for q in queries:
         findings.extend(await _search(q))
 
-    # Keep this call for consistent scoring/shape contract.
     if not findings:
         findings = collect_google_growth_signals(city, search_fn=lambda _q: [], iterations=3)
 
     options = cluster_findings_to_area_options(findings, city=city)
     if not options:
-        # Guaranteed fallback so area-selection flow remains available even during search/model outages.
         options = [
             {
                 "id": "area_1",
@@ -961,20 +1066,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "Ministry of Transport Malaysia",
-                        "url": "https://www.mot.gov.my/",
+                        "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                     {
                         "title": "DOSM Open Data",
-                        "url": "https://open.dosm.gov.my/",
+                        "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "MOT Malaysia", "url": "https://www.mot.gov.my/"},
-                    {"publisher": "DOSM", "url": "https://open.dosm.gov.my/"},
+                    {"publisher": "MOT Malaysia", "url": "[https://www.mot.gov.my/](https://www.mot.gov.my/)"},
+                    {"publisher": "DOSM", "url": "[https://open.dosm.gov.my/](https://open.dosm.gov.my/)"},
                 ],
                 "growth_signals": {"population": 1, "industrial": 0, "trip_generator": 1},
                 "equity_flag": False,
@@ -992,20 +1097,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "InvestKL News",
-                        "url": "https://investkl.gov.my/news-and-events",
+                        "url": "[https://investkl.gov.my/news-and-events](https://investkl.gov.my/news-and-events)",
                         "published_at": "2025-01-01",
                         "source_tier": "operator",
                     },
                     {
                         "title": "MIDA Insights",
-                        "url": "https://www.mida.gov.my/",
+                        "url": "[https://www.mida.gov.my/](https://www.mida.gov.my/)",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "InvestKL", "url": "https://investkl.gov.my/news-and-events"},
-                    {"publisher": "MIDA", "url": "https://www.mida.gov.my/"},
+                    {"publisher": "InvestKL", "url": "[https://investkl.gov.my/news-and-events](https://investkl.gov.my/news-and-events)"},
+                    {"publisher": "MIDA", "url": "[https://www.mida.gov.my/](https://www.mida.gov.my/)"},
                 ],
                 "growth_signals": {"population": 0, "industrial": 1, "trip_generator": 0},
                 "equity_flag": False,
@@ -1023,20 +1128,20 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
                 "google_evidence": [
                     {
                         "title": "Prasarana Updates",
-                        "url": "https://www.prasarana.com.my/",
+                        "url": "[https://www.prasarana.com.my/](https://www.prasarana.com.my/)",
                         "published_at": "2025-01-01",
                         "source_tier": "operator",
                     },
                     {
                         "title": "DBKL Official Portal",
-                        "url": "https://www.dbkl.gov.my/",
+                        "url": "[https://www.dbkl.gov.my/](https://www.dbkl.gov.my/)",
                         "published_at": "2025-01-01",
                         "source_tier": "government",
                     },
                 ],
                 "sources": [
-                    {"publisher": "Prasarana", "url": "https://www.prasarana.com.my/"},
-                    {"publisher": "DBKL", "url": "https://www.dbkl.gov.my/"},
+                    {"publisher": "Prasarana", "url": "[https://www.prasarana.com.my/](https://www.prasarana.com.my/)"},
+                    {"publisher": "DBKL", "url": "[https://www.dbkl.gov.my/](https://www.dbkl.gov.my/)"},
                 ],
                 "growth_signals": {"population": 1, "industrial": 0, "trip_generator": 0},
                 "equity_flag": True,
@@ -1093,23 +1198,24 @@ def _run_route_feasibility(city: str, selected_area: dict[str, Any]) -> dict[str
             routing_mode="drive",
         )
         candidates = result.get("candidates", [])
+        route_valid = bool(result.get("route_valid", bool(candidates)))
         return {
-            "pass": bool(candidates),
-            "score": 1.0 if candidates else 0.0,
+            "pass": route_valid and bool(candidates),
+            "score": 1.0 if route_valid and candidates else 0.0,
             "candidate_count": len(candidates),
+            "route_status": result.get("route_status"),
+            "route_error": result.get("route_error"),
         }
     except Exception as exc:
         return {"pass": False, "score": 0.0, "candidate_count": 0, "error": str(exc)}
 
 
 def _build_strategic_narrative(selected_option: dict[str, Any], osm_audit: Any) -> str:
-    # Google growth signals
     signals = selected_option.get("growth_signals", {})
     pop = float(signals.get("population", 0))
     ind = float(signals.get("industrial", 0))
     hub = float(signals.get("trip_generator", 0))
     
-    # OSM gap analysis
     transit_gap = float(osm_audit.gap_score)
     
     growth_drivers = []
@@ -1138,22 +1244,14 @@ def _build_strategic_narrative(selected_option: dict[str, Any], osm_audit: Any) 
 
 
 def _apply_signal_guardrails(signals: dict[str, Any]) -> dict[str, Any]:
-    """
-    Prevents hallucinated exaggeration of growth signals.
-    Ensures that scores stay within realistic bounds based on snippet counts.
-    """
     bounded = signals.copy()
-    # If we only have 1 snippet, don't allow a score of 1.0 (which would mean 5+ snippets in some logic)
     for k in ["population", "industrial", "trip_generator"]:
         val = float(bounded.get(k, 0))
-        if val > 5.0: bounded[k] = 5.0 # Cap at 5.0 raw count for normalized scaling
+        if val > 5.0: bounded[k] = 5.0 
     return bounded
 
 
-
-
 def _soft_area_gate(report_score: float, gap_score: float, completeness_score: float, equity_flag: bool) -> dict[str, Any]:
-    """Lightweight screening gate used before the user selects an area."""
     base = (
         0.60 * max(0.0, min(1.0, float(report_score)))
         + 0.30 * max(0.0, min(1.0, float(gap_score)))
@@ -1169,9 +1267,9 @@ def _soft_area_gate(report_score: float, gap_score: float, completeness_score: f
 
 
 async def _screen_single_area(selected_city: str, opt: dict[str, Any]) -> dict[str, Any] | None:
-    """Cheap pre-selection screen: use evidence + OSM gap only."""
     try:
-        osm_audit = await asyncio.to_thread(audit_osm_transit_gap, selected_city, str(opt.get("area_label") or selected_city))
+        async with nominatim_semaphore:
+            osm_audit = await asyncio.to_thread(audit_osm_transit_gap, selected_city, str(opt.get("area_label") or selected_city))
         complaint_verified = await asyncio.to_thread(verify_complaint_against_osm, osm_audit, opt)
         merged = _soft_area_gate(
             report_score=float(opt.get("report_score", 0.0)),
@@ -1195,11 +1293,11 @@ async def _screen_single_area(selected_city: str, opt: dict[str, Any]) -> dict[s
 
 
 async def _verify_single_area(selected_city: str, opt: dict[str, Any]) -> dict[str, Any] | None:
-    """Full verification used only after the user selects an area."""
     try:
-        osm_audit_task = asyncio.to_thread(audit_osm_transit_gap, selected_city, str(opt.get("area_label") or selected_city))
-        feasibility_task = asyncio.to_thread(_run_route_feasibility, selected_city, opt)
-        osm_audit, feasibility = await asyncio.gather(osm_audit_task, feasibility_task)
+        async with nominatim_semaphore:
+            osm_audit = await asyncio.to_thread(audit_osm_transit_gap, selected_city, str(opt.get("area_label") or selected_city))
+        
+        feasibility = await asyncio.to_thread(_run_route_feasibility, selected_city, opt)
         complaint_verified = await asyncio.to_thread(verify_complaint_against_osm, osm_audit, opt)
         merged = compute_merged_confidence(
             report_score=float(opt.get("report_score", 0.0)),
@@ -1224,11 +1322,6 @@ async def _verify_single_area(selected_city: str, opt: dict[str, Any]) -> dict[s
 
 
 async def _speculative_find_needs_task(session_id: str, city: str, top_candidate: dict[str, Any]):
-    """
-    Background task to pre-calculate Find Needs for the highest-confidence area.
-    Only caches the result when the agent actually returns valid challenge JSON;
-    a token-limit RETRY string is discarded so it can never poison the pipeline.
-    """
     try:
         dummy_evidence = {
             "selected_area": top_candidate.get("area_label"),
@@ -1245,9 +1338,6 @@ async def _speculative_find_needs_task(session_id: str, city: str, top_candidate
         )
         raw_output = await run_agent_once(find_needs_agent, session_id, prompt)
 
-        # Only cache if the output actually contains challenge JSON.
-        # A VERDICT:RETRY / token-limit error string must NOT be stored —
-        # it would later pass the speculative HIT check and corrupt the pipeline.
         has_challenge_json = (
             "CHALLENGE_1" in raw_output
             or '"CHALLENGE_' in raw_output
@@ -1346,7 +1436,36 @@ async def start_area_option_phase(session_id: str, current_session, background_t
 
     candidates = sorted(candidates, key=lambda x: x.get("report_score", 0.0), reverse=True)
     prescreen_pool = candidates[:5]
-    screened_results = await asyncio.gather(*[_screen_single_area(selected_city, opt) for opt in prescreen_pool])
+    
+    # NEW: BATCH AUDIT AGENT CALL
+    print(f"[AUDIT] Starting batch audit for {len(prescreen_pool)} candidates...")
+    audit_prompt = f"""
+RAW EVIDENCE JSON:
+{json.dumps(candidates, ensure_ascii=False, indent=2)}
+
+PROPOSED AREA OPTIONS:
+{json.dumps([{ "area_label": opt.get("area_label"), "rationale": opt.get("rationale") } for opt in prescreen_pool], ensure_ascii=False, indent=2)}
+""".strip()
+    
+    audit_raw = await run_agent_once(hallucination_audit_agent, session_id, audit_prompt)
+    try:
+        audit_res = safe_json_loads(audit_raw)
+        audit_results = audit_res.get("results", [True] * len(prescreen_pool))
+        audit_reasons = audit_res.get("reasons", ["No reason provided"] * len(prescreen_pool))
+    except Exception:
+        print("[AUDIT ERROR] Failed to parse batch audit JSON. Defaulting to PASS.")
+        audit_results = [True] * len(prescreen_pool)
+        audit_reasons = ["Parse failure"] * len(prescreen_pool)
+
+    # Now process each one with the audit result
+    tasks = []
+    for i, opt in enumerate(prescreen_pool):
+        if i < len(audit_results) and not audit_results[i]:
+            print(f"[AUDIT REJECT] Skipping {opt.get('area_label')}: {audit_reasons[i]}")
+            continue
+        tasks.append(_screen_single_area(selected_city, opt))
+
+    screened_results = await asyncio.gather(*tasks)
     screened = [r for r in screened_results if r is not None]
     screened.sort(key=lambda x: x.get("merged_confidence", {}).get("confidence", x.get("report_score", 0.0)), reverse=True)
 
@@ -1381,7 +1500,7 @@ async def start_area_option_phase(session_id: str, current_session, background_t
         "area_options": area_options,
         "step_index": 0,
     }
-    if area_options and background_tasks:
+    if area_options and background_tasks and ENABLE_SPECULATIVE_FIND_NEEDS:
         top_opt = area_options[0]
         background_tasks.add_task(_speculative_find_needs_task, session_id, selected_city, top_opt)
 
@@ -1401,22 +1520,30 @@ async def start_planning_phase(session_id: str, current_session) -> dict[str, An
     if not target_places:
         raise HTTPException(status_code=400, detail="No target places found in session state.")
 
-
     prompt = build_find_needs_prompt(target_places)
     initial_raw = await run_agent_with_retry(find_needs_agent, session_id, prompt)
     if is_retry_response(initial_raw):
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "stage": "Find needs",
-            "reply": extract_retry_feedback(initial_raw),
-            "needs_input": True,
-        }
+        return _build_find_needs_fallback_response(
+            session_id,
+            target_places,
+            retry_feedback=extract_retry_feedback(initial_raw),
+        )
     raw_step_output, display_reply, find_needs_options = await prepare_find_needs_output(
         session_id=session_id,
         target_places=target_places,
         raw_step_output=initial_raw,
     )
+    if not _has_complete_find_needs_options(find_needs_options):
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "stage": "Find needs",
+            "reply": (
+                "I couldn't generate a stable set of broad challenge cards right now. "
+                "Please try again in a moment."
+            ),
+            "needs_input": True,
+        }
 
     workflow_state[session_id] = {
         "phase": "challenge_selection",
@@ -1438,44 +1565,457 @@ async def start_planning_phase(session_id: str, current_session) -> dict[str, An
 
 
 def build_hotspot_hypothesis_prompt(city: str, selected_challenge: dict[str, Any], feedback: str = "") -> str:
+    challenge_title = selected_challenge.get("TITLE") or selected_challenge.get("CHALLENGE_THEME") or "selected challenge"
+    challenge_brief = selected_challenge.get("BRIEF_DESCRIPTION") or selected_challenge.get("WHY_IT_MATTERS") or ""
     return f"""
-        You are generating THREE distinct transport connectivity link hypotheses for the selected challenge.
+        Generate 2 specific transport hotspots for the selected challenge.
 
-        CITY:
-        {city}
-
+        CITY: {city}
+        SELECTED_CHALLENGE_TITLE: {challenge_title}
+        SELECTED_CHALLENGE_BRIEF: {challenge_brief}
         SELECTED_CHALLENGE_JSON:
         {json.dumps(selected_challenge, ensure_ascii=False, indent=2)}
 
-        Previous feedback:
+        PREVIOUS_FEEDBACK:
         {feedback or 'None'}
 
         Rules:
-        - Propose exactly THREE micro-level connectivity gaps or transit links.
-        - Ensure they are spatially distinct from each other.
-        - It must be graph-routable (origin and destination reachable via road/pedestrian network).
-        - Do not invent vague roads.
-        - Prefer corridor, junction, freight_route, or transit_node.
-        Return a LIST of 3 JSON objects:
+        - Return JSON only.
+        - Return a JSON LIST with exactly 2 hotspot objects.
+        - Make both hotspots narrower and more concrete than the broad challenge.
+        - Use specific neighborhood names, station areas, junctions, or corridor segments inside {city}.
+        - Do not use city-wide labels like "{city}", "Greater {city}", or the broad challenge title as location_label.
+        - Each hotspot must include real-looking anchor roads, stations, or route aliases.
+        - Prefer `corridor`, `junction`, `freight_route`, or `transit_node`.
+        - For `transit_node`, use two distinct anchor sets: one station-side anchor and one nearby neighborhood/access-road anchor.
+        - Do not repeat the same area twice.
+
+        Output schema:
         [
           {{
-            "location_label": "...",
+            "location_label": "specific hotspot name",
             "type": "corridor | junction | freight_route | transit_node",
-            "symptom": "...",
-            "road_a_queries": ["..."],
-            "road_b_queries": ["..."],
-            "road_a_label": "...",
-            "road_b_label": "...",
+            "symptom": "specific local failure",
+            "road_a_queries": ["alias 1", "alias 2"],
+            "road_b_queries": ["alias 1", "alias 2"],
+            "road_a_label": "display label A",
+            "road_b_label": "display label B",
             "lat": 3.1234,
             "lon": 101.5678,
             "confidence": "low | medium | high",
             "INTERVENTION_RECOMMENDATION": "BUS | TRAIN | BOTH",
-            "INTERVENTION_RATIONALE": "...",
-            "LINKED_FEEDER": {{ "needed": true, "type": "BUS", "lat": 3.1234, "lon": 101.5678, "label": "...", "rationale": "..." }}
+            "INTERVENTION_RATIONALE": "1-2 sentence rationale grounded in this specific hotspot",
+            "LINKED_FEEDER": {{ "needed": true, "type": "BUS", "lat": 3.1234, "lon": 101.5678, "label": "specific feeder node", "rationale": "..." }}
           }},
           ...
         ]
     """.strip()
+
+
+def _normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _is_broad_location_label(label: str, city: str) -> bool:
+    txt = _normalize_text(label).lower()
+    city_txt = _normalize_text(city).lower()
+    if not txt:
+        return True
+    broad_labels = {
+        city_txt,
+        f"greater {city_txt}",
+        f"central {city_txt}",
+        "strategic corridor",
+        "workforce corridor",
+        "first-mile integration flow",
+        "residential to industrial corridor",
+        "residential to central corridor",
+    }
+    if txt in broad_labels:
+        return True
+    generic_terms = ["corridor", "integration flow", "strategic", "workforce", "citywide", "greater "]
+    has_specific_anchor = any(token in txt for token in ["jalan", "mrt", "lrt", "ktm", "station", "interchange", "jaya", "baru", "dalam", "menjalara", "kepong", "cheras", "ampang", "segambut", "sentral"])
+    if any(term in txt for term in generic_terms) and not has_specific_anchor:
+        return True
+    return False
+
+
+def _normalize_hotspot_candidate(hypothesis: dict[str, Any], city: str, selected_challenge: dict[str, Any]) -> dict[str, Any]:
+    hyp = dict(hypothesis or {})
+    label = _normalize_text(hyp.get("location_label") or hyp.get("LOCATION_LABEL"))
+    road_a = hyp.get("road_a_queries") or []
+    road_b = hyp.get("road_b_queries") or []
+    road_a = [ _normalize_text(x) for x in road_a if _normalize_text(x) ]
+    road_b = [ _normalize_text(x) for x in road_b if _normalize_text(x) ]
+    if not label:
+        fallback_parts = []
+        if hyp.get("road_a_label"):
+            fallback_parts.append(_normalize_text(hyp.get("road_a_label")))
+        elif road_a:
+            fallback_parts.append(road_a[0])
+        if hyp.get("road_b_label"):
+            fallback_parts.append(_normalize_text(hyp.get("road_b_label")))
+        elif road_b:
+            fallback_parts.append(road_b[0])
+        label = " → ".join(fallback_parts[:2]) or city
+    if _is_broad_location_label(label, city):
+        specific_tokens = []
+        if hyp.get("road_a_label"):
+            specific_tokens.append(_normalize_text(hyp.get("road_a_label")))
+        if hyp.get("road_b_label"):
+            specific_tokens.append(_normalize_text(hyp.get("road_b_label")))
+        if not specific_tokens:
+            if road_a: specific_tokens.append(road_a[0])
+            if road_b: specific_tokens.append(road_b[0])
+        if specific_tokens:
+            label = " / ".join(specific_tokens[:2])
+
+    symptom = _normalize_text(hyp.get("symptom") or hyp.get("RATIONALE") or hyp.get("INTERVENTION_RATIONALE"))
+    if not symptom:
+        symptom = f"Localized connectivity gap around {label}."
+    broad_title = _normalize_text(selected_challenge.get("TITLE") or selected_challenge.get("CHALLENGE_THEME")).lower()
+    if broad_title and symptom.lower() == broad_title:
+        symptom = f"Localized access failure around {label}, affecting movement between nearby origins and destinations."
+
+    hyp["location_label"] = label
+    hyp["symptom"] = symptom
+    hyp["road_a_queries"] = road_a
+    hyp["road_b_queries"] = road_b
+    if road_a and not hyp.get("road_a_label"):
+        hyp["road_a_label"] = road_a[0]
+    if road_b and not hyp.get("road_b_label"):
+        hyp["road_b_label"] = road_b[0]
+    return hyp
+
+
+def _meaningful_anchor_tokens(values: list[str]) -> set[str]:
+    generic = {"jalan", "jln", "road", "rd", "street", "st", "lebuhraya", "highway", "route", "lorong", "persiaran", "ft", "e", "station", "stesen", "interchange", "junction", "access", "gap", "area", "precinct", "hub", "kuala", "lumpur", "malaysia"}
+    tokens: set[str] = set()
+    for value in values or []:
+        parts = re.split(r"[^a-z0-9]+", _normalize_text(value).lower())
+        for part in parts:
+            if part and len(part) >= 2 and part not in generic:
+                tokens.add(part)
+    return tokens
+
+
+def _anchors_are_distinct(hypothesis: dict[str, Any]) -> bool:
+    a = _meaningful_anchor_tokens(list(hypothesis.get("road_a_queries") or []))
+    b = _meaningful_anchor_tokens(list(hypothesis.get("road_b_queries") or []))
+    if not a or not b:
+        return False
+    if a == b:
+        return False
+    overlap = a & b
+    if not overlap:
+        return True
+    overlap_ratio = max(len(overlap) / max(len(a), 1), len(overlap) / max(len(b), 1))
+    return overlap_ratio < 0.8
+
+
+def _hotspot_scope_key(selected_challenge: dict[str, Any], city: str) -> str:
+    title = _normalize_text(selected_challenge.get("TITLE") or selected_challenge.get("CHALLENGE_THEME") or "")
+    return f"{city.lower()}::{title.lower()}"
+
+
+def _intent_tags(text: str) -> set[str]:
+    txt = _normalize_text(text).lower()
+    tags: set[str] = set()
+    tag_rules = {
+        "bus_ops": ["bus", "feeder", "headway", "reliability", "frequency", "operational", "operations", "service", "network"],
+        "access": ["first-mile", "last-mile", "first mile", "last mile", "walk", "walking", "pedestrian", "access", "interchange", "transfer", "hub", "station", "friction", "connectivity"],
+        "rail": ["mrt", "lrt", "ktm", "rail", "station", "transit hub", "boarding"],
+        "congestion": ["private vehicle", "private vehicles", "car", "cars", "traffic", "congestion", "saturation", "modal", "imbalance", "driving"],
+        "equity": ["underserved", "equity", "affordable", "inclusion", "workers", "commuters"],
+    }
+    for tag, keywords in tag_rules.items():
+        if any(keyword in txt for keyword in keywords):
+            tags.add(tag)
+    return tags
+
+
+def _candidate_matches_scope(hypothesis: dict[str, Any], selected_challenge: dict[str, Any], city: str) -> bool:
+    scope_text = " ".join([
+        _normalize_text(city),
+        _normalize_text(selected_challenge.get("TITLE") or selected_challenge.get("CHALLENGE_THEME")),
+        _normalize_text(selected_challenge.get("BRIEF_DESCRIPTION") or selected_challenge.get("WHY_IT_MATTERS")),
+    ]).lower()
+    cand_text = " ".join([
+        _normalize_text(hypothesis.get("location_label")),
+        _normalize_text(hypothesis.get("symptom")),
+        " ".join(hypothesis.get("road_a_queries") or []),
+        " ".join(hypothesis.get("road_b_queries") or []),
+    ]).lower()
+    broad_city_tokens = {"kuala", "lumpur", "johor", "bahru", "george", "town", "ipoh", "putrajaya", "cyberjaya", "shah", "alam", "kl"}
+    scope_tokens = {t for t in re.split(r"[^a-z0-9]+", scope_text) if t and len(t) >= 4 and t not in broad_city_tokens}
+    cand_tokens = {t for t in re.split(r"[^a-z0-9]+", cand_text) if t and len(t) >= 4 and t not in broad_city_tokens}
+    if not scope_tokens or not cand_tokens:
+        return True
+    if scope_tokens & cand_tokens:
+        return True
+
+    scope_tags = _intent_tags(scope_text)
+    cand_tags = _intent_tags(cand_text)
+    if scope_tags & cand_tags:
+        return True
+
+    candidate_anchor_text = " ".join([
+        _normalize_text(hypothesis.get("location_label")),
+        " ".join(hypothesis.get("road_a_queries") or []),
+        " ".join(hypothesis.get("road_b_queries") or []),
+    ]).lower()
+    has_transit_anchor = any(token in candidate_anchor_text for token in ["mrt", "lrt", "ktm", "station", "stesen", "interchange", "terminal", "jalan"])
+    if has_transit_anchor and bool(scope_tags & {"bus_ops", "access", "rail", "congestion"}):
+        return True
+
+    return False
+
+
+def _preflight_hotspot_candidate(hypothesis: dict[str, Any], selected_challenge: dict[str, Any], city: str) -> tuple[bool, str]:
+    road_a = list(hypothesis.get("road_a_queries") or [])
+    road_b = list(hypothesis.get("road_b_queries") or [])
+    if not road_a or not road_b:
+        return False, "missing anchor query arrays"
+    if not _anchors_are_distinct(hypothesis):
+        return False, "anchor road sets are too similar"
+    if not _candidate_matches_scope(hypothesis, selected_challenge, city):
+        return False, "candidate drifted outside the selected challenge scope"
+    return True, "ok"
+
+
+def _hotspot_signature(hypothesis: dict[str, Any]) -> str:
+    label = _normalize_text(hypothesis.get("location_label") or hypothesis.get("LOCATION_LABEL")).lower()
+    hotspot_type = _normalize_text(hypothesis.get("type") or hypothesis.get("TYPE")).lower()
+    road_a = sorted(_normalize_text(x).lower() for x in (hypothesis.get("road_a_queries") or hypothesis.get("ROAD_A_QUERIES") or []) if _normalize_text(x))
+    road_b = sorted(_normalize_text(x).lower() for x in (hypothesis.get("road_b_queries") or hypothesis.get("ROAD_B_QUERIES") or []) if _normalize_text(x))
+    anchors = sorted(["|".join(road_a), "|".join(road_b)])
+    return " :: ".join([hotspot_type, label, *anchors])
+
+
+def _extract_hotspot_signatures_from_result(hotspot_result: dict[str, Any]) -> list[str]:
+    signatures: list[str] = []
+    for att in hotspot_result.get("attempts", []) or []:
+        hyp = att.get("hypothesis") or {}
+        sig = _hotspot_signature(hyp)
+        if sig and sig not in signatures:
+            signatures.append(sig)
+    return signatures
+
+
+def _extract_hotspot_labels_from_result(hotspot_result: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+    for att in hotspot_result.get("attempts", []) or []:
+        hyp = att.get("hypothesis") or {}
+        label = _normalize_text(hyp.get("location_label") or hyp.get("LOCATION_LABEL"))
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _is_retryable_hotspot_route_error(err: str) -> bool:
+    txt = str(err or "").lower()
+    return any(
+        phrase in txt
+        for phrase in [
+            "same road or corridor",
+            "same graph node",
+            "same junction",
+            "anchors collapse to the same graph node or junction",
+            "no alternative paths found for point-to-point fallback",
+            "no path found between road a",
+        ]
+    )
+
+
+def _specificity_bonus(hypothesis: dict[str, Any], city: str) -> float:
+    label = _normalize_text(hypothesis.get("location_label"))
+    score = 0.0
+    if label and not _is_broad_location_label(label, city):
+        score += 0.18
+    if any(hypothesis.get(k) for k in ["road_a_label", "road_b_label"]):
+        score += 0.08
+    if len(hypothesis.get("road_a_queries") or []) > 0 and len(hypothesis.get("road_b_queries") or []) > 0:
+        score += 0.08
+    anchors = f"{label} {' '.join(hypothesis.get('road_a_queries') or [])} {' '.join(hypothesis.get('road_b_queries') or [])}".lower()
+    if any(token in anchors for token in ["jalan", "mrt", "lrt", "ktm", "station", "interchange"]):
+        score += 0.08
+    return round(score, 3)
+
+
+def _parse_hotspot_hypotheses_from_raw(raw: Any) -> list[dict[str, Any]] | None:
+    text = str(raw or "").strip()
+    if not text or is_retry_response(text):
+        return None
+
+    candidates: list[Any] = [text]
+    cleaned = clean_json_text(text)
+    if cleaned != text:
+        candidates.append(cleaned)
+
+    for source_text in list(candidates):
+        for opener, closer in (("[", "]"), ("{", "}")):
+            start = source_text.find(opener)
+            end = source_text.rfind(closer)
+            if start != -1 and end > start:
+                fragment = source_text[start:end + 1]
+                if fragment not in candidates:
+                    candidates.append(fragment)
+
+    for candidate in candidates:
+        try:
+            parsed = safe_json_loads(candidate)
+        except Exception:
+            continue
+        if isinstance(parsed, list):
+            items = [item for item in parsed if isinstance(item, dict)]
+            if items:
+                return items
+        if isinstance(parsed, dict):
+            return [parsed]
+    return None
+
+
+def _routing_mode_for_micro(micro: dict[str, Any]) -> str:
+    micro_type = str(micro.get("type") or micro.get("TYPE") or "").strip().lower()
+    if micro_type in ["feeder_route", "brt_corridor"]:
+        return "transit"
+    if micro_type in ["pedestrian_link", "transit_node"]:
+        return "walk"
+    return "drive"
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _anchor_looks_station_like(values: list[str], label: str = "") -> bool:
+    text = " ".join([label, *list(values or [])]).lower()
+    return any(token in text for token in ["mrt", "lrt", "ktm", "station", "stesen", "interchange", "sentral", "terminal"])
+
+
+def _build_anchor_point_hints(selected_micro: dict[str, Any]) -> dict[str, dict[str, float]]:
+    lat = _coerce_float(selected_micro.get("lat") or selected_micro.get("LAT"))
+    lon = _coerce_float(selected_micro.get("lon") or selected_micro.get("LON"))
+    linked_feeder = selected_micro.get("LINKED_FEEDER") if isinstance(selected_micro.get("LINKED_FEEDER"), dict) else {}
+    feeder_lat = _coerce_float(linked_feeder.get("lat"))
+    feeder_lon = _coerce_float(linked_feeder.get("lon"))
+
+    road_a_queries = list(selected_micro.get("road_a_queries") or selected_micro.get("ROAD_A_QUERIES") or [])
+    road_b_queries = list(selected_micro.get("road_b_queries") or selected_micro.get("ROAD_B_QUERIES") or [])
+    road_a_label = _normalize_text(selected_micro.get("road_a_label") or selected_micro.get("ROAD_A_LABEL"))
+    road_b_label = _normalize_text(selected_micro.get("road_b_label") or selected_micro.get("ROAD_B_LABEL"))
+
+    micro_point = {"lat": lat, "lng": lon} if lat is not None and lon is not None else None
+    feeder_point = {"lat": feeder_lat, "lng": feeder_lon} if feeder_lat is not None and feeder_lon is not None else None
+    if not micro_point and not feeder_point:
+        return {}
+
+    a_station_like = _anchor_looks_station_like(road_a_queries, road_a_label)
+    b_station_like = _anchor_looks_station_like(road_b_queries, road_b_label)
+
+    hints: dict[str, dict[str, float]] = {}
+    if micro_point and feeder_point:
+        if a_station_like and not b_station_like:
+            hints["a"] = micro_point
+            hints["b"] = feeder_point
+        elif b_station_like and not a_station_like:
+            hints["a"] = feeder_point
+            hints["b"] = micro_point
+        else:
+            hints["a"] = micro_point
+            hints["b"] = feeder_point
+        return hints
+
+    if micro_point:
+        if a_station_like and not b_station_like:
+            hints["a"] = micro_point
+        elif b_station_like and not a_station_like:
+            hints["b"] = micro_point
+        else:
+            hints["a"] = micro_point
+    if feeder_point:
+        if "a" not in hints:
+            hints["a"] = feeder_point
+        elif "b" not in hints:
+            hints["b"] = feeder_point
+    return hints
+
+
+def _run_micro_analysis_direct(selected_micro: dict[str, Any], selected_city: str) -> list[dict[str, Any]]:
+    routing_mode = _routing_mode_for_micro(selected_micro)
+    road_a_queries = list(selected_micro.get("road_a_queries") or selected_micro.get("ROAD_A_QUERIES") or [])
+    road_b_queries = list(selected_micro.get("road_b_queries") or selected_micro.get("ROAD_B_QUERIES") or [])
+    if not road_a_queries or not road_b_queries:
+        raise ValueError("Selected micro-symptom is missing anchor query arrays.")
+
+    result = run_city_road_connection_analysis(
+        user_city=selected_city,
+        road_a_queries=road_a_queries,
+        road_b_queries=road_b_queries,
+        regions_path="regions.json",
+        city_buffer_m=1000,
+        routing_mode=routing_mode,
+        anchor_point_hints=_build_anchor_point_hints(selected_micro),
+    )
+    result["selected_micro_source"] = "PRIMARY_MICRO"
+    result["selected_micro_type"] = selected_micro.get("type") or selected_micro.get("TYPE")
+    result["selected_micro_symptom"] = selected_micro.get("symptom") or selected_micro.get("SYMPTOM")
+    result["selected_micro_location_label"] = selected_micro.get("location_label") or selected_micro.get("LOCATION_LABEL")
+    return [result]
+
+
+def _route_error_from_results(raw_results: list[dict[str, Any]] | None) -> str:
+    for item in raw_results or []:
+        route_error = str(item.get("route_error") or "").strip()
+        if route_error:
+            return route_error
+    return "No reliable transit-routing candidates were found for this hotspot. Please choose another hotspot with clearer anchor roads or station-access links."
+
+
+def _is_hotspot_routable(hypothesis: dict[str, Any], city: str) -> tuple[bool, str, list[dict[str, Any]] | None]:
+    try:
+        raw = _run_micro_analysis_direct(hypothesis, city)
+        if not raw:
+            return False, "no reliable routing candidates", None
+        for item in raw:
+            if not bool(item.get("route_valid", True)):
+                return False, str(item.get("route_error") or "no reliable routing candidates"), raw
+            if not item.get("candidates") or not item.get("route_geometry"):
+                return False, str(item.get("route_error") or "no reliable routing candidates"), raw
+        return True, "ok", raw
+    except Exception as exc:
+        return False, str(exc), None
+
+
+def _build_specific_card_ui(attempt: dict[str, Any]) -> dict[str, Any]:
+    hyp = attempt.get("hypothesis") or {}
+    road_a = hyp.get("road_a_label") or (hyp.get("road_a_queries") or [""])[0]
+    road_b = hyp.get("road_b_label") or (hyp.get("road_b_queries") or [""])[0]
+    micro_detail_parts = []
+    if road_a:
+        micro_detail_parts.append(f"From: {road_a}")
+    if road_b:
+        micro_detail_parts.append(f"To: {road_b}")
+    confidence = str(hyp.get("confidence") or "medium").title()
+    return {
+        "id": f"specific_{attempt.get('iteration', 0)}",
+        "location_label": hyp.get("location_label") or "Specific hotspot",
+        "title": hyp.get("location_label") or "Specific hotspot",
+        "brief_description": hyp.get("symptom") or "Localized transport hotspot.",
+        "micro_detail": " • ".join(micro_detail_parts),
+        "confidence": confidence,
+        "hotspot_type": hyp.get("type") or "corridor",
+        "score": attempt.get("score", 0.0),
+        "pass": attempt.get("pass", False),
+        "route_checked": attempt.get("routing_ok", False),
+        "route_status": attempt.get("route_status") or ("valid" if attempt.get("routing_ok") else "needs_route_check"),
+        "reselection_only": False,
+        "hypothesis": hyp,
+        "evidence": attempt.get("evidence", {}),
+    }
 
 
 def _evidence_fallback(city: str, location_label: str, reason: str) -> dict[str, Any]:
@@ -1493,34 +2033,25 @@ def _evidence_fallback(city: str, location_label: str, reason: str) -> dict[str,
     }
 
 
-
-
 def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> dict[str, Any]:
-    """
-    Checks for existing transit infrastructure (stations, bus stops) near the hypothesized location
-    to validate if it's a plausible transit gap or hub opportunity.
-    """
     location_label = hypothesis.get("location_label", "unknown")
     road_queries = list(hypothesis.get("road_a_queries") or [])
     
-    # 1. Geocode the hypothesized location
     lat, lon = None, None
     last_error = None
     
-    # Try location label and then all road queries until we find a match
     search_terms = []
-    if location_label and len(location_label.split()) < 5: # Only try location_label if it's short
+    if location_label and len(location_label.split()) < 5:
         search_terms.append(location_label)
     
     search_terms.extend(road_queries)
     
     for q_base in search_terms:
-        if not q_base or len(str(q_base).split()) > 6: continue # Skip overly long descriptions
+        if not q_base or len(str(q_base).split()) > 6: continue
         for q in [f"{q_base}, {city}, Malaysia", f"{q_base}, Malaysia"]:
             try:
-                # Add a tiny delay to be nice to Nominatim if needed, but for 2-3 calls it's okay
                 items = requests.get(
-                    "https://nominatim.openstreetmap.org/search",
+                    "[https://nominatim.openstreetmap.org/search](https://nominatim.openstreetmap.org/search)",
                     params={"q": q, "format": "json", "limit": 1},
                     headers={"User-Agent": "city_planner_transit_validator_v2"},
                     timeout=5
@@ -1536,18 +2067,15 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
     if lat is None or lon is None:
         return _evidence_fallback(city, location_label, f"Geocode failed: {last_error or 'no match'}")
 
-    # 2. Query Overpass for nearby transit assets AND land-use density
-    overpass_url = "https://overpass-api.de/api/interpreter"
+    overpass_url = "[https://overpass-api.de/api/interpreter](https://overpass-api.de/api/interpreter)"
     overpass_query = f"""
     [out:json][timeout:25];
     (
-      // Transit Assets
       node["railway"="station"](around:800,{lat},{lon});
       way["railway"="station"](around:800,{lat},{lon});
       node["highway"="bus_stop"](around:800,{lat},{lon});
       node["amenity"="bus_station"](around:800,{lat},{lon});
       
-      // Density Indicators (Trip Generators)
       node["building"](around:800,{lat},{lon});
       way["building"](around:800,{lat},{lon});
       node["amenity"~"school|university|hospital|mall|clinic|office"](around:800,{lat},{lon});
@@ -1576,7 +2104,6 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
             if "building" in tags or "amenity" in tags:
                 density_count += 1
         
-        # Scoring
         connectivity_relevance = 1.0 if transit_count == 0 else max(0.1, 1.0 - (transit_count / 10.0))
         density_relevance = min(1.0, density_count / 50.0)
 
@@ -1600,12 +2127,7 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
 
 
 def get_context_infrastructure(lat: float, lon: float, intervention_type: str = "general") -> list[dict[str, Any]]:
-    """
-    Queries Overpass for existing railway tracks, bus routes, transit stops,
-    and industrial/workplace zones to visualize as strategic context for transit planning.
-    """
-    overpass_url = "https://overpass-api.de/api/interpreter"
-    # Larger radius for transit routes; standard for land-use
+    overpass_url = "[https://overpass-api.de/api/interpreter](https://overpass-api.de/api/interpreter)"
     transit_radius = 3000
     context_radius = 2500
     query = f"""
@@ -1634,7 +2156,6 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             name = tags.get("name", "")
             el_type = el.get("type")
 
-            # 1. Existing Railway Tracks (way)
             if "railway" in tags and el_type == "way":
                 positions = [{"lat": p["lat"], "lng": p["lon"]} for p in el.get("geometry", [])]
                 if len(positions) >= 2:
@@ -1646,7 +2167,6 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                         "style": {"color": "#CCCCCC", "width": 6, "dashed": True}
                     })
 
-            # 2. Bus / Tram / Transit Route Relations
             elif el_type == "relation" and tags.get("route") in ["bus", "tram", "light_rail", "monorail", "subway", "train"]:
                 if el["id"] in transit_route_ids_seen:
                     continue
@@ -1672,7 +2192,6 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                         "style": {"color": route_color, "width": 5, "alpha": 0.7, "dashed": False}
                     })
 
-            # 3. Transit Stations
             elif el_type == "node" and tags.get("railway") == "station":
                 entities.append({
                     "id": f"station_{el['id']}",
@@ -1683,7 +2202,6 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                     "style": {"color": "#A78BFA", "pixelSize": 12}
                 })
 
-            # 4. Bus Stops
             elif el_type == "node" and tags.get("highway") == "bus_stop":
                 entities.append({
                     "id": f"bus_stop_{el['id']}",
@@ -1694,7 +2212,6 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                     "style": {"color": "#3B82F6", "pixelSize": 8}
                 })
 
-            # 5. Industrial/Workplace Zones (Polygons)
             elif ("landuse" in tags or tags.get("man_made") == "factory") and el_type == "way" and el.get("geometry"):
                 positions = [{"lat": p["lat"], "lng": p["lon"]} for p in el.get("geometry", [])]
                 is_industrial = tags.get("landuse") == "industrial" or tags.get("man_made") == "factory"
@@ -1717,110 +2234,153 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
 
 
 def score_hypothesis_alignment(hypothesis: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
-    """
-    Scores how well the hypothesized transit link aligns with physical spatial reality.
-    Formula: (Traffic Congestion + Land-Use Density) * Transit Gap
-    """
     route_match_score = 1.0 if evidence.get("matched") else 0.0
     if not route_match_score:
         return {"alignment_score": 0.0, "pass": False}
 
-    connectivity_need = float(evidence.get("connectivity_score", 0.0)) # 1.0 = No transit
-    density_demand = float(evidence.get("density_score", 0.0))        # 1.0 = High density
-    traffic_pain = float(evidence.get("congestion_score", 0.0))       # 1.0 = High congestion
+    connectivity_need = float(evidence.get("connectivity_score", 0.0))
+    density_demand = float(evidence.get("density_score", 0.0))
+    traffic_pain = float(evidence.get("congestion_score", 0.0))
     
     confidence_bonus = 0.05 if str(hypothesis.get("confidence", "")).lower() == "high" else 0.0
     
-    # We want locations where (Traffic is high OR Density is high).
-    # If the intervention is at a transit hub, connectivity_need might be low (because there are many buses), 
-    # so we shouldn't strictly penalize it.
     demand_signal = (0.6 * traffic_pain) + (0.4 * density_demand)
     
-    # Give less penalty to existing transit hubs
     alignment_score = (0.7 * demand_signal) + (0.3 * connectivity_need) + confidence_bonus
     
     return {"alignment_score": round(alignment_score, 3), "pass": alignment_score >= 0.35}
 
 
 
-async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_challenge: dict[str, Any], feedback: str = "") -> dict[str, Any]:
+async def run_hotspot_hypothesis_loop(
+    session_id: str,
+    city: str,
+    selected_challenge: dict[str, Any],
+    feedback: str = "",
+    *,
+    excluded_signatures: list[str] | None = None,
+    excluded_labels: list[str] | None = None,
+) -> dict[str, Any] | str:
     attempts: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    rejected_reasons: list[str] = []
+    scope_key = _hotspot_scope_key(selected_challenge, city)
+    excluded_signature_set = {str(x).strip().lower() for x in (excluded_signatures or []) if str(x).strip()}
+    excluded_label_set = {_normalize_text(x).lower() for x in (excluded_labels or []) if _normalize_text(x)}
 
-    prompt = build_hotspot_hypothesis_prompt(city, selected_challenge, feedback)
-    raw = await run_agent_once(find_hotspot_agent, session_id, prompt)
-    
-    try:
-        hypotheses = safe_json_loads(raw)
-        if not isinstance(hypotheses, list):
-            hypotheses = [hypotheses]
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Hotspot agent failed to return valid JSON list: {exc}")
+    extra_feedback = feedback or ""
+    for wave in range(3):
+        prompt = build_hotspot_hypothesis_prompt(city, selected_challenge, extra_feedback)
+        raw = await run_agent_once(find_hotspot_agent, session_id, prompt)
+        if is_retry_response(raw):
+            return raw
+        hypotheses = _parse_hotspot_hypotheses_from_raw(raw)
+        if not hypotheses:
+            rejected_reasons.append("the hotspot generator returned unusable output")
+            feedback_bits = [
+                "Return JSON only as a list of 2 hotspot objects.",
+                "Do not include prose before or after the JSON.",
+            ]
+            if feedback:
+                feedback_bits.append("Original feedback: " + feedback)
+            extra_feedback = " ".join(feedback_bits)
+            continue
 
-    for i, hypothesis in enumerate(hypotheses[:3]):
-        # Ensure coordinates are floats. The find_hotspot_agent sometimes omits lat/lon
-        # (its system instruction doesn't require them). Rather than hard-skipping the
-        # candidate and ending up with an empty list → HTTPException(500), we recover
-        # the coordinates from the geocoding already performed inside
-        # get_transit_connectivity_evidence(), with Malaysia's geographic centre as a
-        # last resort.
-        h_lat = hypothesis.get("lat")
-        h_lon = hypothesis.get("lon")
-        has_valid_coords = False
-        try:
-            hypothesis["lat"] = float(h_lat)
-            hypothesis["lon"] = float(h_lon)
-            has_valid_coords = True
-        except Exception:
-            print(f"Warning: Invalid coordinates for candidate {i+1}, will recover from geocoding")
+        for hypothesis in hypotheses[:4]:
+            hypothesis = _normalize_hotspot_candidate(hypothesis if isinstance(hypothesis, dict) else {}, city, selected_challenge)
+            label_key = _normalize_text(hypothesis.get("location_label")).lower()
+            signature = _hotspot_signature(hypothesis).lower()
+            if not label_key or label_key in seen_labels:
+                continue
+            if label_key in excluded_label_set or signature in excluded_signature_set:
+                rejected_reasons.append(f"{hypothesis.get('location_label') or 'candidate'}: repeated a hotspot that was already shown")
+                continue
 
-        evidence = get_transit_connectivity_evidence(city, hypothesis)
+            ok, reason = _preflight_hotspot_candidate(hypothesis, selected_challenge, city)
+            if not ok:
+                rejected_reasons.append(f"{hypothesis.get('location_label') or 'candidate'}: {reason}")
+                continue
 
-        # Recover coordinates from the geocoding done inside get_transit_connectivity_evidence.
-        if not has_valid_coords:
-            recovered_lat = evidence.get("lat")
-            recovered_lon = evidence.get("lon")
-            if recovered_lat and recovered_lon:
-                hypothesis["lat"] = float(recovered_lat)
-                hypothesis["lon"] = float(recovered_lon)
+            seen_labels.add(label_key)
+            h_lat = hypothesis.get("lat")
+            h_lon = hypothesis.get("lon")
+            has_valid_coords = False
+            try:
+                hypothesis["lat"] = float(h_lat)
+                hypothesis["lon"] = float(h_lon)
                 has_valid_coords = True
-            else:
-                # Last resort: use Malaysia's geographic centre so downstream map code
-                # doesn't crash, while printing a clear warning.
-                print(f"Warning: Could not geocode candidate {i+1} ({hypothesis.get('location_label')}), using Malaysia centre")
-                hypothesis["lat"] = 3.1390
-                hypothesis["lon"] = 101.6869
+            except Exception:
+                pass
 
-        score = score_hypothesis_alignment(hypothesis, evidence)
-        attempts.append({
-            "iteration": i + 1,
-            "hypothesis": hypothesis,
-            "evidence": evidence,
-            "score": score["alignment_score"],
-            "pass": score["pass"],
-        })
-        print(f"Candidate {i+1} Score: {score['alignment_score']} at {hypothesis['lat']},{hypothesis['lon']}")
+            evidence = get_transit_connectivity_evidence(city, hypothesis)
+            if not has_valid_coords:
+                recovered_lat = evidence.get("lat")
+                recovered_lon = evidence.get("lon")
+                if recovered_lat and recovered_lon:
+                    hypothesis["lat"] = float(recovered_lat)
+                    hypothesis["lon"] = float(recovered_lon)
+                else:
+                    hypothesis["lat"] = 3.1390
+                    hypothesis["lon"] = 101.6869
+
+            score = score_hypothesis_alignment(hypothesis, evidence)
+            specificity_bonus = _specificity_bonus(hypothesis, city)
+            final_score = round(float(score["alignment_score"]) + specificity_bonus, 3)
+            routable_ok, routable_reason, routed_preview = _is_hotspot_routable(hypothesis, city)
+            if not routable_ok:
+                rejected_reasons.append(f"{hypothesis.get('location_label') or 'candidate'}: {routable_reason}")
+                continue
+            attempts.append({
+                "iteration": len(attempts) + 1,
+                "hypothesis": hypothesis,
+                "evidence": evidence,
+                "score": round(final_score + 0.05, 3),
+                "pass": bool(score.get("pass")) and routable_ok,
+                "scope_key": scope_key,
+                "routed_preview": routed_preview,
+                "routing_ok": routable_ok,
+                "routing_reason": routable_reason,
+                "route_status": "valid" if routable_ok else "needs_route_check",
+            })
+            if len(attempts) >= 2:
+                break
+
+        if len(attempts) >= 2:
+            break
+
+        feedback_bits = [
+            "Return exactly 2 hotspots that stay inside the same selected challenge scope.",
+            "Do not drift to a different district or a different transport story.",
+            "Each hotspot must use two distinct anchor road sets that are not aliases of the same corridor.",
+        ]
+        if rejected_reasons:
+            feedback_bits.append("Rejected candidates: " + "; ".join(rejected_reasons[-4:]))
+        if feedback:
+            feedback_bits.append("Original feedback: " + feedback)
+        if excluded_labels:
+            feedback_bits.append("Do not repeat any of these previously shown hotspot labels: " + "; ".join(excluded_labels[:4]))
+        extra_feedback = " ".join(feedback_bits)
 
     valid_attempts = [a for a in attempts if a.get("hypothesis")]
-    if not valid_attempts:
-        raise HTTPException(status_code=500, detail="Hotspot hypothesis loop failed to produce valid JSON.")
+    if len(valid_attempts) < 2:
+        detail = "Could not generate two stable hotspot options for this broad challenge."
+        if rejected_reasons:
+            detail += " Please try another broad challenge or regenerate the hotspots."
+        raise RuntimeError(detail)
 
-    attempts_sorted = sorted(valid_attempts, key=lambda x: x["score"], reverse=True)
+    attempts_sorted = sorted(valid_attempts, key=lambda x: x["score"], reverse=True)[:2]
     primary = attempts_sorted[0]
-    secondary = attempts_sorted[1] if len(attempts_sorted) > 1 else attempts_sorted[0]
+    secondary = attempts_sorted[1]
 
-    # Expert Solution: Multi-Cluster Implementation Discovery
     clusters: list[dict[str, Any]] = []
-    for att in attempts_sorted[:3]:
+    for att in attempts_sorted:
         hyp = att["hypothesis"]
         lat = hyp.get("lat")
         lon = hyp.get("lon")
-        
         context_nodes = []
         if lat and lon:
             context_raw = get_context_infrastructure(lat, lon, intervention_type="general")
-            # Limit to 5 most important satellites
             context_nodes = context_raw[:5]
-            
         linked_feeder = None
         feeder_context = []
         if hyp.get("LINKED_FEEDER", {}).get("needed") in ["true", True]:
@@ -1832,21 +2392,20 @@ async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_chall
                 linked_feeder["lon"] = f_lon
                 feeder_context_raw = get_context_infrastructure(f_lat, f_lon, intervention_type="general")
                 feeder_context = feeder_context_raw[:3]
-            except Exception as e:
-                print(f"Failed to process linked feeder: {e}")
+            except Exception:
                 linked_feeder = None
-
         clusters.append({
             "center": hyp,
             "context": context_nodes,
             "score": att["score"],
-            "label": hyp.get("LOCATION_LABEL", "Candidate Node"),
+            "label": hyp.get("LOCATION_LABEL", hyp.get("location_label", "Candidate Node")),
             "intervention_type": hyp.get("INTERVENTION_RECOMMENDATION", "BUS"),
             "intervention_rationale": hyp.get("INTERVENTION_RATIONALE", "Optimal for local connectivity."),
             "linked_feeder": linked_feeder,
             "feeder_context": feeder_context
         })
 
+    specific_cards = [_build_specific_card_ui(att) for att in attempts_sorted]
     return {
         "IMPLEMENTATION_CLUSTERS": clusters,
         "PRIMARY_MICRO": primary["hypothesis"],
@@ -1855,8 +2414,10 @@ async def run_hotspot_hypothesis_loop(session_id: str, city: str, selected_chall
         "CONFIDENCE": primary["hypothesis"].get("confidence", "medium"),
         "EVIDENCE_WINDOW": primary["evidence"].get("evidence_window", []),
         "attempts": attempts_sorted,
+        "specific_cards": specific_cards,
+        "displayed_signatures": _extract_hotspot_signatures_from_result({"attempts": attempts_sorted}),
+        "displayed_labels": _extract_hotspot_labels_from_result({"attempts": attempts_sorted}),
     }
-
 
 def extract_routing_labels_from_micro(micro: dict[str, Any]) -> list[str]:
     labels: list[str] = []
@@ -1887,59 +2448,61 @@ def format_micro_options(strict_json: dict[str, Any]) -> str:
     )
 
 def format_step_reply(step_name: str, raw_output: str) -> str:
-    """Formats JSON output into readable text based on the active pipeline step."""
     if step_name == "Generate solutions":
         try:
             data = safe_json_loads(raw_output)
         except Exception:
-            # Fallback: if the agent messes up and doesn't return JSON, just show the raw text
             return raw_output
-        # Extract core details
         title = data.get("solution_title", "Proposed Solution")
         sol_type = str(data.get("solution_type", "Intervention")).replace("_", " ").title()
         complexity = str(data.get("implementation_complexity", "unknown")).title()
         confidence = str(data.get("confidence", "unknown")).title()
-        
-        # Extract geometry details safely
+        primary_family = str(data.get("primary_intervention_family", "")).replace("_", " ").title()
         target = data.get("target_geometry", {})
         location = target.get("location", "the target area")
         roads = target.get("primary_roads", [])
-        
-        # Extract lists
-        actions = data.get("proposed_actions", [])
-        effects = data.get("expected_effect", [])
-        
-        # Build the natural paragraph structure
+        problem = data.get("what_problem") or data.get("detailed_description") or "Targeted access and connectivity gap."
+        why_chosen = data.get("why_chosen") or data.get("evidence_basis") or "Best aligned with the routed corridor and current service evidence."
+        service_connection = data.get("existing_service_connection") or "No explicit operator connection was provided."
+        uncertainties = _get_list(data, "uncertainties")
+        actions = _get_list(data, "proposed_actions")
+        effects = _get_list(data, "expected_effect")
         blocks = []
-        blocks.append(f"### 🛠️ {title}")
-        blocks.append(f"**Intervention Type:** {sol_type} | **Complexity:** {complexity} | **Confidence:** {confidence}\n")
-        
-        # Format the location sentence naturally
+        blocks.append(f"### {title}")
+        header_parts = [f"**Intervention Type:** {sol_type}", f"**Complexity:** {complexity}", f"**Confidence:** {confidence}"]
+        if primary_family:
+            header_parts.insert(1, f"**Primary Family:** {primary_family}")
+        blocks.append(" | ".join(header_parts) + "\n")
         road_context = f" involving {', '.join(roads)}" if roads else ""
         blocks.append(f"**Target Location:** {location}{road_context}.\n")
-        
+        blocks.append(f"**What problem is being solved:** {problem}\n")
+        blocks.append(f"**Why this intervention was chosen:** {why_chosen}\n")
+        blocks.append(f"**What existing service it connects to:** {service_connection}\n")
+
         if actions:
             blocks.append("**Proposed Actions:**")
             for action in actions:
                 blocks.append(f"* {action}")
-            blocks.append("")  # Spacing
-            
+            blocks.append("")
+
         if effects:
             blocks.append("**Expected Effects:**")
             for effect in effects:
                 blocks.append(f"* {effect}")
             blocks.append("")
 
+        if uncertainties:
+            blocks.append("**What is still uncertain:**")
+            for item in uncertainties:
+                blocks.append(f"* {item}")
+            blocks.append("")
+
         impact = data.get("societal_impact")
         if impact:
-            blocks.append(f"**🌍 Societal Impact:**\n{impact}")
-                
-        # Optional: Add a small transition message for the user
-        blocks.append("\n*This is a summary of what we're gonna build!!")
-                
+            blocks.append(f"**Societal Impact:**\n{impact}")
+
         return "\n".join(blocks).strip()
 
-    # Default for Building simulations or unrecognized steps
     return raw_output
 
 
@@ -1960,26 +2523,38 @@ def make_analysis_result_for_prompt(raw_results: list[dict[str, Any]]) -> list[d
     return cleaned
 
 
+def _get_city_center(city_name: str) -> dict[str, float] | None:
+    from building_agent_helper import get_malaysia_coords
+
+    coords = get_malaysia_coords(city_name)
+    if not coords:
+        return None
+    return {"lat": float(coords["lat"]), "lng": float(coords["lng"])}
+
+
 def build_planning_prompt(
     selected_challenge: dict[str, Any],
     selected_micro: dict[str, Any],
-    analysis_result: list[dict[str, Any]],
+    decision_package: dict[str, Any],
 ) -> str:
     return f"""
-You are given the selected transport challenge, the selected micro-symptom, and the graph-routing analysis results.
+You are given the selected transport challenge plus a normalized decision package prepared by the planning system.
 
 SELECTED_CHALLENGE_JSON:
 {json.dumps(selected_challenge, ensure_ascii=False, indent=2)}
 
-SELECTED_MICRO_JSON:
-{json.dumps(selected_micro, ensure_ascii=False, indent=2)}
-
-GRAPH_ROUTING_ANALYSIS_JSON:
-{json.dumps(analysis_result, ensure_ascii=False, indent=2)}
+DECISION_PACKAGE_JSON:
+{json.dumps(decision_package, ensure_ascii=False, indent=2)}
 
 Task:
 - Compare the available routing candidates carefully.
-- Select the single best candidate for intervention.
+- Use the official service match, geo consistency, and reliability warnings when deciding the intervention.
+- Respect `solution_eligibility`; if it is weak, select a narrower, more conservative intervention instead of a polished multi-part scheme.
+- Respect `intervention_support.primary_intervention_family` and choose ONE primary intervention family for this run.
+- If official service overlap is high or partial, prefer upgrading existing service, rerouting, stop-access treatment, or schedule/transfer fixes instead of proposing a brand-new feeder loop.
+- Use ONLY the provided JSON.
+- Do NOT invent exact distances, lane counts, percentages, travel-time savings, or economic values unless they already appear in the provided input.
+- If a value is missing, stay qualitative rather than fabricating precision.
 - Return STRICT JSON ONLY using your required planning output schema.
 """.strip()
 
@@ -1987,14 +2562,14 @@ Task:
 def build_solution_prompt(
     selected_challenge: dict[str, Any],
     selected_micro: dict[str, Any],
-    analysis_result: list[dict[str, Any]],
     planning_result: dict[str, Any],
+    decision_package: dict[str, Any],
 ) -> str:
     return f"""
 You are given:
 1. the selected transport challenge
 2. the selected micro-symptom
-3. the graph-routing analysis results
+3. a normalized decision package
 4. the planning decision
 
 SELECTED_CHALLENGE_JSON:
@@ -2003,14 +2578,28 @@ SELECTED_CHALLENGE_JSON:
 SELECTED_MICRO_JSON:
 {json.dumps(selected_micro, ensure_ascii=False, indent=2)}
 
-GRAPH_ROUTING_ANALYSIS_JSON:
-{json.dumps(analysis_result, ensure_ascii=False, indent=2)}
+DECISION_PACKAGE_JSON:
+{json.dumps(decision_package, ensure_ascii=False, indent=2)}
 
 PLANNING_RESULT_JSON:
 {json.dumps(planning_result, ensure_ascii=False, indent=2)}
 
 Task:
-- Design a realistic intervention grounded only in the provided problem and selected candidate.
+- Design a realistic public-transport intervention grounded only in the provided problem and selected candidate.
+- Respect `solution_eligibility`; if it is weak, keep the solution narrow and conservative.
+- Use exactly ONE primary intervention family from `intervention_support.primary_intervention_family`. Do not bundle pedestrian, bus, and civil works into one polished package unless you clearly mark one as phase 1 and the others as future considerations.
+- If the decision package indicates duplication risk or official overlap, describe an upgrade/access-improvement/rerouting solution instead of a new greenfield service.
+- Prefer solutions that improve bus routes, train station access, feeder integration, interchange access, platform access, or transit priority.
+- Do NOT invent exact distances, lane counts, percentages, travel-time savings, ridership changes, or any other unsupported metrics.
+- You may reference only numeric facts that appear in `allowed_numeric_facts`.
+- If a value is missing, describe it qualitatively.
+- Include these fields in the JSON output:
+  - `what_problem`
+  - `why_chosen`
+  - `existing_service_connection`
+  - `evidence_basis`
+  - `uncertainties`
+  - plus the existing required solution fields
 - Return STRICT JSON ONLY using your required solution output schema.
 """.strip()
 
@@ -2018,9 +2607,9 @@ Task:
 def build_building_prompt(
     selected_challenge: dict[str, Any],
     selected_micro: dict[str, Any],
-    analysis_result: list[dict[str, Any]],
     planning_result: dict[str, Any],
     solution_result: dict[str, Any],
+    decision_package: dict[str, Any],
     route_roads: list[str] | None = None,
 ) -> str:
     grounding_block = ""
@@ -2039,7 +2628,7 @@ co-located on this corridor.
 You are given:
 1. the selected transport challenge
 2. the selected micro-symptom
-3. the graph-routing analysis results
+3. the decision package
 4. the planning decision
 5. the final solution design
 {grounding_block}
@@ -2049,8 +2638,8 @@ SELECTED_CHALLENGE_JSON:
 SELECTED_MICRO_JSON:
 {json.dumps(selected_micro, ensure_ascii=False, indent=2)}
 
-GRAPH_ROUTING_ANALYSIS_JSON:
-{json.dumps(analysis_result, ensure_ascii=False, indent=2)}
+DECISION_PACKAGE_JSON:
+{json.dumps(decision_package, ensure_ascii=False, indent=2)}
 
 PLANNING_RESULT_JSON:
 {json.dumps(planning_result, ensure_ascii=False, indent=2)}
@@ -2060,24 +2649,359 @@ SOLUTION_RESULT_JSON:
 
 Task:
 - Convert the solution into Cesium-ready map instruction lines.
+- Focus on transit-supportive map assets such as bus-priority corridors, feeder movements, station access points, pedestrian links to stations, and treatment zones around interchanges.
 - Return ONLY lines in this exact format:
 [GEOMETRY_TYPE | COUNT | LABEL | SEARCH_LOCATION | STYLE_HINT | DESCRIPTION]
 """.strip()
 
 
+def _increment_counter(key: str, amount: int = 1) -> None:
+    production_counters[key] = int(production_counters.get(key, 0)) + amount
+
+
+def _emit_run_diagnostics(event: str, payload: dict[str, Any]) -> None:
+    diagnostic = {"event": event, **payload, "counters": dict(production_counters)}
+    print("RUN_DIAGNOSTIC " + json.dumps(diagnostic, ensure_ascii=False))
+
+
+def _entity_center(entity: dict[str, Any]) -> tuple[float, float] | None:
+    position = entity.get("position")
+    if isinstance(position, dict) and {"lat", "lng"} <= set(position.keys()):
+        return float(position["lat"]), float(position["lng"])
+    polyline = entity.get("polyline_positions")
+    if isinstance(polyline, list) and polyline:
+        segment = polyline[0] if isinstance(polyline[0], list) else polyline
+        if segment:
+            mid = segment[len(segment) // 2]
+            if isinstance(mid, dict) and {"lat", "lng"} <= set(mid.keys()):
+                return float(mid["lat"]), float(mid["lng"])
+    polygon = entity.get("polygon_positions")
+    if isinstance(polygon, list) and polygon:
+        mid = polygon[len(polygon) // 2]
+        if isinstance(mid, dict) and {"lat", "lng"} <= set(mid.keys()):
+            return float(mid["lat"]), float(mid["lng"])
+    return None
+
+
+def _distance_score(center: tuple[float, float] | None, ref_lat: float, ref_lng: float) -> float:
+    if center is None:
+        return float("inf")
+    lat, lng = center
+    return ((lat - ref_lat) ** 2) + ((lng - ref_lng) ** 2)
+
+
+def _limit_context_entities(
+    entities: list[dict[str, Any]],
+    ref_lat: float,
+    ref_lng: float,
+    *,
+    max_points: int = 14,
+    max_lines: int = 5,
+    max_polygons: int = 3,
+) -> list[dict[str, Any]]:
+    ranked = sorted(
+        list(entities or []),
+        key=lambda ent: _distance_score(_entity_center(ent), ref_lat, ref_lng),
+    )
+    points: list[dict[str, Any]] = []
+    lines: list[dict[str, Any]] = []
+    polygons: list[dict[str, Any]] = []
+    for entity in ranked:
+        entity_type = str(entity.get("entity_type") or "").lower()
+        if entity_type == "point" and len(points) < max_points:
+            points.append(entity)
+        elif entity_type in {"polyline_existing", "polyline"} and len(lines) < max_lines:
+            lines.append(entity)
+        elif entity_type == "polygon" and len(polygons) < max_polygons:
+            polygons.append(entity)
+    return points + lines + polygons
+
+
+def _decorate_layer_entity(
+    entity: dict[str, Any],
+    *,
+    layer: str,
+    priority: int,
+    label_mode: str,
+    muted: bool = False,
+) -> dict[str, Any]:
+    decorated = dict(entity or {})
+    decorated["layer"] = layer
+    decorated["priority"] = priority
+    decorated["label_mode"] = label_mode
+    style = dict(decorated.get("style") or {})
+    if muted:
+        style.setdefault("alpha", 0.3)
+        style.setdefault("opacity", 0.25)
+        if decorated.get("entity_type") == "point":
+            style["pixelSize"] = min(int(style.get("pixelSize", 8)), 8)
+    else:
+        if layer == "proposal":
+            style.setdefault("alpha", 0.9)
+            style.setdefault("opacity", 0.85)
+            if decorated.get("entity_type") == "point":
+                style["pixelSize"] = max(int(style.get("pixelSize", 14)), 14)
+    decorated["style"] = style
+    return decorated
+
+
+def _build_anchor_entities(
+    selected_micro: dict[str, Any],
+    analysis_raw: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    anchors: list[dict[str, Any]] = []
+    lat = selected_micro.get("lat")
+    lon = selected_micro.get("lon")
+    if lat is not None and lon is not None:
+        anchors.append(
+            {
+                "id": "selected_hotspot_anchor",
+                "entity_type": "point",
+                "name": selected_micro.get("location_label") or selected_micro.get("LOCATION_LABEL") or "Selected hotspot",
+                "blurb": selected_micro.get("symptom") or "Selected hotspot anchor",
+                "position": {"lat": float(lat), "lng": float(lon), "height": 0},
+                "style": {"color": "#F97316", "pixelSize": 14, "alpha": 0.9},
+            }
+        )
+    if analysis_raw and analysis_raw[0].get("route_geometry"):
+        geometry = analysis_raw[0]["route_geometry"]
+        if geometry:
+            start = geometry[0]
+            anchors.append(
+                {
+                    "id": "route_entry_anchor",
+                    "entity_type": "point",
+                    "name": "Route entry anchor",
+                    "blurb": "Representative anchor on the routed corridor.",
+                    "position": {"lat": float(start["lat"]), "lng": float(start["lng"]), "height": 0},
+                    "style": {"color": "#10B981", "pixelSize": 10, "alpha": 0.8},
+                }
+            )
+    return anchors[:3]
+
+
+def _build_analysis_entities(analysis_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    analysis_entities: list[dict[str, Any]] = []
+    if analysis_raw:
+        primary_result = analysis_raw[0]
+        if primary_result.get("route_geometry"):
+            analysis_entities.append({
+                "id": "main_route_primary",
+                "entity_type": "polyline",
+                "name": "Proposed Optimal Route (Calculated)",
+                "polyline_positions": [primary_result["route_geometry"]],
+                "style": {"color": "#3B82F6", "width": 10, "opacity": 0.8, "flow": "normal"},
+            })
+        for idx, cand_res in enumerate(analysis_raw):
+            if "isochrone_geoms" in cand_res:
+                for j, iso_poly in enumerate(cand_res["isochrone_geoms"]):
+                    iso_coords = list(iso_poly.exterior.coords)
+                    positions = [{"lat": lat, "lng": lng, "height": 0} for lng, lat in iso_coords]
+                    analysis_entities.append({
+                        "id": f"isochrone_auto_{idx}_{j}",
+                        "entity_type": "polygon",
+                        "name": "5-Minute Walking Catchment (400m)",
+                        "polygon_positions": positions,
+                        "style": {"color": "#10B981", "alpha": 0.14, "height": 0, "outline": True, "outlineColor": "#059669"},
+                    })
+    return analysis_entities
+
+
+def _flatten_map_layers(map_layers: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    flat: list[dict[str, Any]] = []
+    for key in ("proposal", "anchors", "context", "analysis"):
+        flat.extend(list(map_layers.get(key) or []))
+    return flat
+
+
+def _compose_solution_display(solution: dict[str, Any], decision_package: dict[str, Any], reliability_band: str) -> dict[str, Any]:
+    service_match = dict(decision_package.get("official_service_match") or {})
+    evidence_basis = str(solution.get("evidence_basis") or decision_package.get("evidence_basis") or "").strip()
+    uncertainties = _get_list(solution, "uncertainties")
+    if reliability_band != "high" and not uncertainties:
+        uncertainties = ["This recommendation still needs field verification before implementation."]
+    connection_text = (
+        ", ".join(service_match.get("matched_services") or []) if service_match.get("matched_services") else "No strong official-service overlap was found."
+    )
+    detail_lines = [
+        f"What problem is being solved: {solution.get('what_problem') or solution.get('solution_title') or 'Targeted access and connectivity gap.'}",
+        f"Why this intervention was chosen: {solution.get('why_chosen') or evidence_basis or 'It best matched the routed corridor and available official-service evidence.'}",
+        f"What existing service it connects to: {solution.get('existing_service_connection') or connection_text}",
+        f"What is still uncertain: {'; '.join(uncertainties) if uncertainties else 'No major uncertainty flags were recorded.'}",
+    ]
+    enriched = dict(solution)
+    enriched.setdefault("evidence_basis", evidence_basis)
+    enriched.setdefault("existing_service_connection", connection_text)
+    enriched.setdefault("uncertainties", uncertainties)
+    enriched["detailed_description"] = "\n".join(detail_lines)
+    return enriched
+
+
+def _specific_options_from_state(state: dict[str, Any]) -> list[dict[str, Any]]:
+    strict_json = dict(state.get("strict_json") or {})
+    options: list[dict[str, Any]] = []
+    for idx, key in enumerate(("PRIMARY_MICRO", "SECONDARY_MICRO"), start=1):
+        micro = strict_json.get(key)
+        if not isinstance(micro, dict):
+            continue
+        options.append(
+            {
+                "id": f"specific_reselect_{idx}",
+                "location_label": micro.get("location_label") or "Specific hotspot",
+                "title": micro.get("location_label") or "Specific hotspot",
+                "brief_description": micro.get("symptom") or "Localized transport hotspot.",
+                "micro_detail": " | ".join(
+                    part for part in [
+                        "Saved hotspot option",
+                        f"Type: {micro.get('type')}" if micro.get("type") else "",
+                        f"Confidence: {micro.get('confidence')}" if micro.get("confidence") else "",
+                    ] if part
+                ),
+                "confidence": str(micro.get("confidence") or "medium").title(),
+                "hotspot_type": micro.get("type") or "corridor",
+                "score": None,
+                "pass": None,
+                "route_checked": False,
+                "route_status": "saved_option",
+                "reselection_only": True,
+                "hypothesis": micro,
+                "evidence": {},
+            }
+        )
+    return options
+
+
+def _build_done_response(
+    state: dict[str, Any],
+    final_reply: str,
+    entities: list[dict[str, Any]],
+) -> dict[str, Any]:
+    city_name = (state.get("target_places") or ["Kuala Lumpur"])[0]
+    from building_agent_helper import get_malaysia_coords
+    coords = get_malaysia_coords(city_name)
+    ref_lat, ref_lng = (coords["lat"], coords["lng"]) if coords else (3.1390, 101.6869)
+
+    ref_lat, ref_lng = _extract_ref_coords(entities, coords if coords else {"lat": 3.1390, "lng": 101.6869})
+    analysis_raw = state.get("analysis_result_raw", [])
+    solution = state.get("solution_result", {})
+    decision_package = dict(state.get("decision_package") or {})
+    claim_audit = dict(state.get("claim_audit") or {})
+    solution = _compose_solution_display(solution, decision_package, str(decision_package.get("reliability_band") or "medium").lower())
+    state["solution_result"] = solution
+    city_center = _get_city_center(city_name)
+    proposal_entities = list(entities or [])
+    context_entities = _limit_context_entities(get_context_infrastructure(ref_lat, ref_lng), ref_lat, ref_lng)
+    analysis_entities = _build_analysis_entities(analysis_raw)
+    anchor_entities = _build_anchor_entities(state.get("selected_micro", {}), analysis_raw)
+    map_layers = {
+        "proposal": [_decorate_layer_entity(ent, layer="proposal", priority=100, label_mode="always") for ent in proposal_entities],
+        "anchors": [_decorate_layer_entity(ent, layer="anchors", priority=80, label_mode="zoom") for ent in anchor_entities],
+        "context": [_decorate_layer_entity(ent, layer="context", priority=20, label_mode="hidden", muted=True) for ent in context_entities],
+        "analysis": [_decorate_layer_entity(ent, layer="analysis", priority=10, label_mode="hidden", muted=True) for ent in analysis_entities],
+    }
+    merged_entities = _flatten_map_layers(map_layers)
+    final_geo = validate_geo_consistency(
+        city_center,
+        state.get("selected_micro", {}),
+        state.get("analysis_result_raw", []),
+        entities=merged_entities,
+    )
+
+    warnings: list[str] = []
+    warnings.extend(list(decision_package.get("warnings") or []))
+    warnings.extend(list(final_geo.warnings or []))
+    warnings.extend(list(claim_audit.get("warnings") or []))
+
+    reliability_band = str(decision_package.get("reliability_band") or "medium").lower()
+    if not final_geo.pass_check:
+        reliability_band = "low"
+    elif reliability_band == "high" and claim_audit.get("removed_claims"):
+        reliability_band = "medium"
+        _increment_counter("downgraded_claim_audit")
+
+    service_match = dict(decision_package.get("official_service_match") or {})
+    if service_match.get("recommendation_mode") == "upgrade_existing_service":
+        _increment_counter("overlap_upgrade_decisions")
+    claim_audit_summary = {
+        "pass": bool(claim_audit.get("pass_check", True)),
+        "removed_claims": list(claim_audit.get("removed_claims") or []),
+    }
+    impact_metrics = {
+        "societal_impact": solution.get("societal_impact", "No societal impact data available."),
+        "expected_effects": solution.get("expected_effect", []),
+        "complexity": solution.get("implementation_complexity", "Unknown"),
+        "solution_title": solution.get("solution_title", "Proposed Solution"),
+        "detailed_description": solution.get("detailed_description", "No detailed implementation narrative available."),
+        "evidence_basis": solution.get("evidence_basis", ""),
+        "uncertainties": solution.get("uncertainties", []),
+        "recommendation_mode": service_match.get("recommendation_mode", "new_service_candidate"),
+        "reliability_band": reliability_band,
+        "warnings": warnings,
+        "service_overlap_summary": {
+            "matched_services": list(service_match.get("matched_services") or []),
+            "overlap_level": service_match.get("overlap_level", "none"),
+        },
+    }
+
+    eligibility = dict(decision_package.get("solution_eligibility") or {})
+    blocked = (
+        bool(claim_audit.get("hard_fail"))
+        or not bool(final_geo.city_match_pass)
+        or not bool(eligibility.get("eligible", True))
+    )
+    reply_text = final_reply
+    if blocked:
+        _increment_counter("blocked_geo_inconsistency")
+        reasons = list(eligibility.get("reasons") or [])
+        reply_text = (
+            "Planning output was blocked because the evidence is not strong enough for a production-ready recommendation. "
+            + ("Reason: " + " ".join(reasons[:2]) if reasons else "Please choose another hotspot or refine the selection.")
+        )
+
+    _increment_counter("context_entities_rendered", len(map_layers["context"]))
+    _emit_run_diagnostics(
+        "done_response",
+        {
+            "selected_challenge": (state.get("selected_challenge") or {}).get("TITLE") or (state.get("selected_challenge") or {}).get("CHALLENGE_THEME"),
+            "selected_hotspot": (state.get("selected_micro") or {}).get("location_label"),
+            "matched_services": service_match.get("matched_services") or [],
+            "reliability_band": reliability_band,
+            "geo_warnings": final_geo.warnings,
+            "claim_audit_removed": claim_audit_summary["removed_claims"],
+            "proposal_entity_count": len(map_layers["proposal"]),
+            "anchor_entity_count": len(map_layers["anchors"]),
+            "context_entity_count": len(map_layers["context"]),
+            "analysis_entity_count": len(map_layers["analysis"]),
+        },
+    )
+
+    return {
+        "ok": True,
+        "session_id": state.get("session_id"),
+        "stage": "done",
+        "reply": reply_text,
+        "show_map": not blocked,
+        "entities": [] if blocked else merged_entities,
+        "map_layers": {} if blocked else map_layers,
+        "needs_input": False,
+        "city_name": city_name,
+        "target_lat": ref_lat,
+        "target_lng": ref_lng,
+        "impact_metrics": impact_metrics,
+        "reliability_band": reliability_band,
+        "warnings": warnings,
+        "service_overlap_summary": impact_metrics["service_overlap_summary"],
+        "evidence_summary": {
+            "official_data_used": bool(service_match.get("official_data_used")),
+            "route_match_pass": bool(final_geo.route_match_pass),
+            "geo_consistency_pass": bool(final_geo.pass_check),
+        },
+        "claim_audit_summary": claim_audit_summary,
+    }
+
+
 def analyze_selected_micro(selected_micro: dict[str, Any], selected_city: str) -> list[dict[str, Any]]:
-    helper = InfrastructurePlannerOrchestrator(
-        name="helper",
-        description="helper",
-        pipeline=[],
-        reviewer=review_agent,
-        app_name=APP_NAME,
-        session_svc=session_service,
-    )
-    return helper.run_analysis_from_agent_output(
-        {"PRIMARY_MICRO": selected_micro},
-        selected_city,
-    )
+    return _run_micro_analysis_direct(selected_micro, selected_city)
 
 
 @app.post("/api/start")
@@ -2085,7 +3009,7 @@ async def start(req: StartRequest):
     session_id = str(uuid.uuid4())
     session = await session_service.create_session(
         app_name=APP_NAME,
-        user_id=USER_ID,
+        user_id=session_id,
         session_id=session_id,
         state={"feedback": "", "valid_places_text": "", "target_places": []},
     )
@@ -2125,7 +3049,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
 
     current_session = await session_service.get_session(
         app_name=APP_NAME,
-        user_id=USER_ID,
+        user_id=session_id,
         session_id=session_id,
     )
     state = workflow_state[session_id]
@@ -2152,12 +3076,7 @@ Remember:
             current_session.state["target_places"] = parsed["places"]
             planning_response: dict[str, Any]
             if GROWTH_FLOW_ENABLED:
-                try:
-                    # Pass BackgroundTasks to the phase starter
-                    planning_response = await start_area_option_phase(session_id, current_session, background_tasks=background_tasks)
-                except Exception as exc:
-                    print(f"Growth-led area selection fallback triggered: {exc}")
-                    planning_response = await start_planning_phase(session_id, current_session)
+                planning_response = await start_area_option_phase(session_id, current_session, background_tasks)
             else:
                 planning_response = await start_planning_phase(session_id, current_session)
             planning_response["reply"] = (
@@ -2220,7 +3139,6 @@ Remember:
         merged = selected_option.get("merged_confidence") or {"confidence": 0.0, "band": "low", "pass_gate": False}
         complaint_verified = bool(selected_option.get("complaint_verified", False))
 
-        # Build strategic rationale
         impact_drivers = []
         if float(selected_option.get("growth_signals", {}).get("population", 0)) > 0: impact_drivers.append("Population Growth")
         if float(selected_option.get("growth_signals", {}).get("industrial", 0)) > 0: impact_drivers.append("Industrial Cluster")
@@ -2245,8 +3163,12 @@ Remember:
             float(selected_option.get("report_score", 0.0)) >= 0.72
             and osm_gap_score >= 0.35
             and osm_completeness_score < 0.35
+            and bool(feasibility.get("pass"))
         )
-        fallback_override = bool(selected_option.get("allow_low_confidence", False))
+        fallback_override = bool(
+            selected_option.get("allow_low_confidence", False)
+            and selected_option.get("is_fallback_option", False)
+        )
 
         if not gate_pass and not fallback_override and not soft_pass:
             missing: list[str] = []
@@ -2292,14 +3214,13 @@ Remember:
                 "reason": "Selected option came from fallback area set; proceeding to Find Needs with caution.",
             }
 
-        # Gate pass -> continue with challenge synthesis for the selected area.
         target_places = state.get("target_places", [])
         prompt = build_find_needs_prompt(
             target_places,
             selected_area=selected_option,
             merged_evidence=evidence_summary,
         )
-        # Check for Speculative Warm-up hit
+        
         speculative = state.get("speculative_find_needs")
         initial_raw = None
         if speculative and speculative.get("area_id") == selected_option.get("id"):
@@ -2309,13 +3230,14 @@ Remember:
         if not initial_raw:
             initial_raw = await run_agent_with_retry(find_needs_agent, session_id, prompt)
         if is_retry_response(initial_raw):
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Find needs",
-                "reply": extract_retry_feedback(initial_raw),
-                "needs_input": True,
-            }
+            return _build_find_needs_fallback_response(
+                session_id,
+                target_places,
+                selected_area=selected_option,
+                merged_evidence=evidence_summary,
+                existing_state=state,
+                retry_feedback=extract_retry_feedback(initial_raw),
+            )
 
         audit_passed, audit_raw = await audit_generated_challenges(session_id, selected_option, initial_raw)
         state["last_find_needs_audit"] = audit_raw
@@ -2331,6 +3253,28 @@ Remember:
             selected_area=selected_option,
             merged_evidence=evidence_summary,
         )
+        if not _has_complete_find_needs_options(find_needs_options):
+            if selected_option.get("is_fallback_option"):
+                return _build_find_needs_fallback_response(
+                    session_id,
+                    target_places,
+                    selected_area=selected_option,
+                    merged_evidence=evidence_summary,
+                    existing_state=state,
+                )
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Area selection",
+                "reply": (
+                    f"I couldn't generate stable broad challenge cards for {selected_option.get('area_label') or 'this area'} yet. "
+                    "Please choose another area or type 'regenerate' for new options."
+                ),
+                "needs_input": True,
+                "needs_selection": True,
+                "area_options": area_options,
+                "evidence_summary": evidence_summary,
+            }
         state.update(
             {
                 "phase": "challenge_selection",
@@ -2353,21 +3297,34 @@ Remember:
 
     if phase == "challenge_selection":
         raw_step_output = state["last_step_output"]
-        review_prompt = (
-            "STEP NAME: Find needs\n\n"
-            f"STEP OUTPUT:\n{raw_step_output}\n\n"
-            f"USER RESPONSE: {user_message}"
-        )
-        review_text = await run_agent_with_retry(review_agent, session_id, review_prompt)
-        if is_retry_response(review_text):
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Find needs",
-                "reply": extract_retry_feedback(review_text),
-                "needs_input": True,
+        
+        # --- FAST PATH: Bypass the LLM for digit selection to save quota ---
+        clean_msg = user_message.strip()
+        find_needs_options = state.get("find_needs_options", [])
+        
+        if clean_msg.isdigit() and 1 <= int(clean_msg) <= len(find_needs_options):
+            selected_challenge = find_needs_options[int(clean_msg) - 1]
+            review_result = {
+                "verdict": "PASS",
+                "detail": "",
+                "final_output": json.dumps(selected_challenge, ensure_ascii=False)
             }
-        review_result = parse_review(review_text)
+        else:
+            review_prompt = (
+                "STEP NAME: Find needs\n\n"
+                f"STEP OUTPUT:\n{raw_step_output}\n\n"
+                f"USER RESPONSE: {user_message}"
+            )
+            review_text = await run_agent_with_retry(review_agent, session_id, review_prompt)
+            if is_retry_response(review_text):
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Find needs",
+                    "reply": extract_retry_feedback(review_text),
+                    "needs_input": True,
+                }
+            review_result = parse_review(review_text)
 
         if review_result["verdict"] == "REVISE":
             return {
@@ -2379,7 +3336,6 @@ Remember:
             }
 
         if review_result["verdict"] == "REVISE_TOTAL":
-            # User wants to regenerate challenges
             feedback = review_result["detail"] or "Regenerate challenges"
             target_places = state.get("target_places", [])
             rerun_prompt = (
@@ -2404,6 +3360,18 @@ Remember:
                 selected_area=state.get("selected_area_option"),
                 merged_evidence=state.get("evidence_summary"),
             )
+            if not _has_complete_find_needs_options(find_needs_options):
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Find needs",
+                    "reply": (
+                        "I couldn't generate a fresh stable set of broad challenge cards yet. "
+                        "Please choose from the current cards or try regenerating again."
+                    ),
+                    "needs_input": True,
+                    "find_needs_options": state.get("find_needs_options", []),
+                }
             state["last_step_output"] = new_challenges_raw
             state["last_display_reply"] = display_reply
             state["find_needs_options"] = find_needs_options
@@ -2416,14 +3384,10 @@ Remember:
                 "find_needs_options": find_needs_options,
             }
 
-        # Ensure we have a single object
         selected_output = review_result["final_output"]
         if not selected_output:
-            # If the agent didn't extract it but passed, we might be in trouble
-            # Try to see if raw_step_output is already a single challenge (unlikely)
             selected_challenge = safe_json_loads(raw_step_output)
             if "CHALLENGE_1" in selected_challenge:
-                # Still the multi-choice one, the review agent failed to extract
                 return {
                     "ok": True,
                     "session_id": session_id,
@@ -2444,8 +3408,22 @@ Remember:
                 }
 
         state["selected_challenge"] = selected_challenge
+        state["selected_broad_card"] = selected_challenge
         selected_city = (state.get("target_places") or [])[0]
-        hotspot_result = await run_hotspot_hypothesis_loop(session_id, selected_city, selected_challenge)
+        try:
+            hotspot_result = await run_hotspot_hypothesis_loop(session_id, selected_city, selected_challenge)
+        except Exception as exc:
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Find needs",
+                "reply": (
+                    "I couldn't turn that broad challenge into two stable hotspot cards yet. "
+                    "Please choose another broad challenge or try again."
+                ),
+                "needs_input": True,
+                "find_needs_options": state.get("find_needs_options", []),
+            }
         if is_retry_response(hotspot_result):
             return {
                 "ok": True,
@@ -2472,10 +3450,13 @@ Remember:
 
         state.update(
             {
-                "phase": "micro_selection",
+                "phase": "specific_card_selection",
                 "strict_json": strict_json,
                 "last_step_output": json.dumps(strict_json, ensure_ascii=False, indent=2),
                 "last_display_reply": format_micro_options(strict_json),
+                "current_specific_signatures": hotspot_result.get("displayed_signatures", []),
+                "current_specific_labels": hotspot_result.get("displayed_labels", []),
+                "specific_regen_count": 0,
             }
         )
         return {
@@ -2484,10 +3465,10 @@ Remember:
             "stage": "Micro hotspot selection",
             "reply": state["last_display_reply"],
             "needs_input": True,
-            "implementation_clusters": hotspot_result.get("IMPLEMENTATION_CLUSTERS", [])
+            "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
         }
 
-    if phase == "micro_selection":
+    if phase == "specific_card_selection":
         raw_step_output = state["last_step_output"]
         review_prompt = (
             "STEP NAME: Select micro-symptom\n\n"
@@ -2518,8 +3499,29 @@ Remember:
             feedback = review_result["detail"] or "Regenerate hotspots"
             selected_challenge = state.get("selected_challenge", {})
             selected_city = (state.get("target_places") or [])[0]
-            # Rerun the hypothesis loop with feedback
-            hotspot_result = await run_hotspot_hypothesis_loop(session_id, selected_city, selected_challenge, feedback=feedback)
+            previous_signatures = list(state.get("current_specific_signatures") or [])
+            previous_labels = list(state.get("current_specific_labels") or [])
+            try:
+                hotspot_result = await run_hotspot_hypothesis_loop(
+                    session_id,
+                    selected_city,
+                    selected_challenge,
+                    feedback=feedback,
+                    excluded_signatures=previous_signatures,
+                    excluded_labels=previous_labels,
+                )
+            except Exception as exc:
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Micro hotspot selection",
+                    "reply": (
+                        "I could not regenerate stable hotspot cards yet. "
+                        "Please try regenerate again or choose another broad challenge."
+                    ),
+                    "needs_input": True,
+                    "specific_options": _specific_options_from_state(state),
+                }
             if is_retry_response(hotspot_result):
                 return {
                     "ok": True,
@@ -2544,6 +3546,9 @@ Remember:
             new_raw_output = json.dumps(strict_json)
             state["last_step_output"] = new_raw_output
             state["last_display_reply"] = format_micro_options(strict_json)
+            state["current_specific_signatures"] = hotspot_result.get("displayed_signatures", [])
+            state["current_specific_labels"] = hotspot_result.get("displayed_labels", [])
+            state["specific_regen_count"] = 0
             
             return {
                 "ok": True,
@@ -2551,15 +3556,87 @@ Remember:
                 "stage": "Micro hotspot selection",
                 "reply": state["last_display_reply"],
                 "needs_input": True,
-                "implementation_clusters": hotspot_result.get("IMPLEMENTATION_CLUSTERS", [])
+                "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
             }
 
         selected_micro = safe_json_loads(review_result["final_output"])
+        state["selected_specific_card"] = selected_micro
         selected_city = (state.get("target_places") or [])[0]
         try:
             analysis_result_raw = analyze_selected_micro(selected_micro, selected_city)
             analysis_result = make_analysis_result_for_prompt(analysis_result_raw)
+            if not analysis_result_raw or not any(item.get("candidates") for item in analysis_result_raw):
+                raise ValueError("No reliable transit-routing candidates were found for this hotspot. Please choose another hotspot with clearer anchor roads or station-access links.")
         except Exception as exc:
+            err = str(exc)
+            if "same road or corridor" in err.lower():
+                selected_challenge = state.get("selected_challenge", {})
+                regen_count = int(state.get("specific_regen_count") or 0)
+                if regen_count >= 1:
+                    return {
+                        "ok": True,
+                        "session_id": session_id,
+                        "stage": "Micro hotspot selection",
+                        "reply": "I could not produce a stable routable hotspot from this selection. Please go back and choose the other hotspot or pick a different broad challenge.",
+                        "needs_input": True,
+                    }
+                failed_label = selected_micro.get("location_label") or selected_micro.get("LOCATION_LABEL") or "the previous hotspot"
+                previously_shown_signatures = list(state.get("current_specific_signatures") or [])
+                previously_shown_labels = list(state.get("current_specific_labels") or [])
+                failed_signature = _hotspot_signature(selected_micro)
+                if failed_signature and failed_signature not in previously_shown_signatures:
+                    previously_shown_signatures.append(failed_signature)
+                if failed_label and failed_label not in previously_shown_labels:
+                    previously_shown_labels.append(failed_label)
+                feedback = (
+                    f"The previous hotspot '{failed_label}' used anchors that resolved to the same road or corridor. "
+                    "Regenerate exactly 2 replacement hotspots with two distinct physical anchors. "
+                    "Stay within the SAME selected challenge scope and avoid drifting to unrelated districts. "
+                    "For transit-node cases, use one station-approach anchor and one nearby neighborhood access road. "
+                    "Do not reuse any hotspot that was already shown to the user."
+                )
+                try:
+                    hotspot_result = await run_hotspot_hypothesis_loop(
+                        session_id,
+                        selected_city,
+                        selected_challenge,
+                        feedback=feedback,
+                        excluded_signatures=previously_shown_signatures,
+                        excluded_labels=previously_shown_labels,
+                    )
+                except Exception as regen_exc:
+                    return {
+                        "ok": True,
+                        "session_id": session_id,
+                        "stage": "Micro hotspot selection",
+                        "reply": f"I could not produce a replacement routable hotspot from this selection: {regen_exc}. Please choose the other hotspot or pick a different broad challenge.",
+                        "needs_input": True,
+                    }
+                strict_json = {
+                    "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+                    "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
+                    "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
+                    "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
+                    "PRIMARY_MICRO": hotspot_result["PRIMARY_MICRO"],
+                    "SECONDARY_MICRO": hotspot_result["SECONDARY_MICRO"],
+                    "ROUTING_LABELS": {
+                        "PRIMARY_MICRO": extract_routing_labels_from_micro(hotspot_result["PRIMARY_MICRO"]),
+                        "SECONDARY_MICRO": extract_routing_labels_from_micro(hotspot_result["SECONDARY_MICRO"]),
+                    },
+                }
+                state["last_step_output"] = json.dumps(strict_json, ensure_ascii=False, indent=2)
+                state["last_display_reply"] = format_micro_options(strict_json)
+                state["current_specific_signatures"] = hotspot_result.get("displayed_signatures", [])
+                state["current_specific_labels"] = hotspot_result.get("displayed_labels", [])
+                state["specific_regen_count"] = regen_count + 1
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Micro hotspot selection",
+                    "reply": "The selected hotspot was not stably routable, so I replaced it with two pre-checked hotspot options inside the same challenge.",
+                    "needs_input": True,
+                    "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", [])),
+                }
             return {
                 "ok": True,
                 "session_id": session_id,
@@ -2578,33 +3655,77 @@ Remember:
             }
         )
 
-        next_prompt = build_planning_prompt(
-            selected_challenge=state["selected_challenge"],
-            selected_micro=selected_micro,
-            analysis_result=analysis_result,
-        )
-
-        next_raw_step_output = await run_agent_once(planning_agent, session_id, next_prompt)
-
-        display_reply = format_step_reply("Plan improvements", next_raw_step_output)
-
-        
-        state.update(
-            {
-                "last_step_output": next_raw_step_output,
-                "last_display_reply": next_raw_step_output,
-                "last_agent_name": planning_agent.name,
-                "output_key": "planning_result",
+        try:
+            decision_package = build_decision_package(
+                selected_city=selected_city,
+                selected_micro=selected_micro,
+                analysis_result=analysis_result,
+                analysis_result_raw=analysis_result_raw,
+                city_center=_get_city_center(selected_city),
+            )
+            eligibility = dict(decision_package.get("solution_eligibility") or {})
+            if not bool(eligibility.get("eligible", True)):
+                state["phase"] = "specific_card_selection"
+                state["decision_package"] = decision_package
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Micro hotspot selection",
+                    "reply": (
+                        "This hotspot is still too weak for a production-ready recommendation. "
+                        + " ".join(list(eligibility.get("reasons") or [])[:2])
+                    ),
+                    "needs_input": True,
+                    "specific_options": _specific_options_from_state(state),
+                }
+            planning_prompt = build_planning_prompt(
+                selected_challenge=state["selected_challenge"],
+                selected_micro=selected_micro,
+                decision_package=decision_package,
+            )
+            planning_raw = await run_agent_once(planning_agent, session_id, planning_prompt)
+            state["decision_package"] = decision_package
+            state["planning_result"] = safe_json_loads(planning_raw)
+            solution_prompt = build_solution_prompt(
+                selected_challenge=state["selected_challenge"],
+                selected_micro=selected_micro,
+                planning_result=state["planning_result"],
+                decision_package=decision_package,
+            )
+            solution_raw = await run_agent_once(solution_agent, session_id, solution_prompt)
+            sanitized_solution = safe_json_loads(solution_raw)
+            claim_audit = audit_solution_claims(sanitized_solution, decision_package)
+            state["claim_audit"] = {
+                "pass_check": claim_audit.pass_check,
+                "hard_fail": claim_audit.hard_fail,
+                "removed_claims": claim_audit.removed_claims,
+                "rewritten_fields": claim_audit.rewritten_fields,
+                "warnings": claim_audit.warnings,
             }
-        )
-
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "stage": "Plan improvements",
-            "reply": display_reply,
-            "needs_input": True,
-        }
+            state["solution_result"] = claim_audit.sanitized_solution
+            state["step_index"] = 1
+            sanitized_solution_raw = json.dumps(claim_audit.sanitized_solution, ensure_ascii=False, indent=2)
+            display_reply = format_step_reply("Generate solutions", sanitized_solution_raw)
+            state["last_step_output"] = sanitized_solution_raw
+            state["last_display_reply"] = display_reply
+            state["last_agent_name"] = solution_agent.name
+            state["output_key"] = "solution_result"
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Generate solutions",
+                "reply": display_reply,
+                "needs_input": True,
+            }
+        except Exception as exc:
+            state["phase"] = "specific_card_selection"
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "stage": "Micro hotspot selection",
+                "reply": f"I could identify the hotspot, but the downstream planning pipeline failed: {exc}. Please choose another hotspot or refine your selection.",
+                "needs_input": True,
+            }
 
     if phase != "planning":
         raise HTTPException(status_code=400, detail=f"Unsupported phase: {phase}")
@@ -2647,28 +3768,14 @@ Remember:
             enriched_assets = process_agent_assets(new_raw_step_output, city_name=city_name)
             entities = format_entities(enriched_assets)
             
-            # Get city coords for camera
             from building_agent_helper import get_malaysia_coords
             coords = get_malaysia_coords(city_name)
             
-            # INJECT EXISTING INFRASTRUCTURE
-            ref_lat, ref_lng = (coords["lat"], coords["lng"]) if coords else (3.1390, 101.6869)
-            if entities:
-                # Find a more specific central point from entities if possible
-                for ent in entities:
-                    if ent.get("polyline_positions"):
-                        ref_lat = ent["polyline_positions"][0][0]["lat"]
-                        ref_lng = ent["polyline_positions"][0][0]["lng"]
-                        break
-                    elif ent.get("position"):
-                        ref_lat = ent["position"]["lat"]
-                        ref_lng = ent["position"]["lng"]
-                        break
+            ref_lat, ref_lng = _extract_ref_coords(entities, coords if coords else {"lat": 3.1390, "lng": 101.6869})
                 
             existing_context = get_context_infrastructure(ref_lat, ref_lng)
             entities = existing_context + entities
 
-            # INJECT TRUE ROUTE GEOMETRY FROM OSMNX — PRIMARY only
             analysis_raw = state.get("analysis_result_raw", [])
             if analysis_raw:
                 primary_result = analysis_raw[0]
@@ -2686,7 +3793,6 @@ Remember:
                         }
                     })
 
-            # INJECT ISOCHRONES
             analysis_raw = state.get("analysis_result_raw", [])
             for cand_res in analysis_raw:
                 if "isochrone_geoms" in cand_res:
@@ -2707,18 +3813,8 @@ Remember:
                             }
                         })
 
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "done",
-                "reply": display_reply,
-                "show_map": True,
-                "entities": entities,
-                "needs_input": False,
-                "city_name": city_name,
-                "target_lat": ref_lat,
-                "target_lng": ref_lng,
-            }
+            state["session_id"] = session_id
+            return _build_done_response(state, display_reply, entities)
 
         return {
             "ok": True,
@@ -2734,7 +3830,23 @@ Remember:
     if step_name == "Plan improvements":
         state["planning_result"] = parsed_selected_output
     elif step_name == "Generate solutions":
-        state["solution_result"] = parsed_selected_output
+        decision_package = state.get("decision_package") or build_decision_package(
+            selected_city=(state.get("target_places") or ["Kuala Lumpur"])[0],
+            selected_micro=state.get("selected_micro", {}),
+            analysis_result=state.get("analysis_result", []),
+            analysis_result_raw=state.get("analysis_result_raw", []),
+            city_center=_get_city_center((state.get("target_places") or ["Kuala Lumpur"])[0]),
+        )
+        state["decision_package"] = decision_package
+        claim_audit = audit_solution_claims(parsed_selected_output, decision_package)
+        state["claim_audit"] = {
+            "pass_check": claim_audit.pass_check,
+            "hard_fail": claim_audit.hard_fail,
+            "removed_claims": claim_audit.removed_claims,
+            "rewritten_fields": claim_audit.rewritten_fields,
+            "warnings": claim_audit.warnings,
+        }
+        state["solution_result"] = claim_audit.sanitized_solution
     
     next_index = step_index + 1
     if next_index >= len(PIPELINE):
@@ -2747,14 +3859,31 @@ Remember:
         }
 
     next_step_name, next_step_agent, next_output_key = PIPELINE[next_index]
+    decision_package = state.get("decision_package")
+    if not decision_package:
+        decision_package = build_decision_package(
+            selected_city=(state.get("target_places") or ["Kuala Lumpur"])[0],
+            selected_micro=state.get("selected_micro", {}),
+            analysis_result=state.get("analysis_result", []),
+            analysis_result_raw=state.get("analysis_result_raw", []),
+            city_center=_get_city_center((state.get("target_places") or ["Kuala Lumpur"])[0]),
+        )
+        state["decision_package"] = decision_package
     if next_step_name == "Generate solutions":
         next_prompt = build_solution_prompt(
             selected_challenge=state["selected_challenge"],
             selected_micro=state["selected_micro"],
-            analysis_result=state["analysis_result"],
             planning_result=state["planning_result"],
+            decision_package=decision_package,
         )
     elif next_step_name == "Building simulations":
+        if bool((state.get("claim_audit") or {}).get("hard_fail")):
+            state["session_id"] = session_id
+            return _build_done_response(
+                state,
+                "Planning output was blocked because the generated claims did not stay geographically consistent.",
+                [],
+            )
         # Extract route road names to ground the AI building agent to the real corridor
         analysis_raw_for_prompt = state.get("analysis_result_raw", [])
         route_roads: list[str] = []
@@ -2768,9 +3897,9 @@ Remember:
         next_prompt = build_building_prompt(
             selected_challenge=state["selected_challenge"],
             selected_micro=state["selected_micro"],
-            analysis_result=state["analysis_result"],
             planning_result=state["planning_result"],
             solution_result=state["solution_result"],
+            decision_package=decision_package,
             route_roads=route_roads or None,
         )
     else:
@@ -2786,18 +3915,8 @@ Remember:
         # Get city coords for camera
         from building_agent_helper import get_malaysia_coords
         coords = get_malaysia_coords(city_name)
-        ref_lat, ref_lng = (coords["lat"], coords["lng"]) if coords else (3.1390, 101.6869)
-        
-        if entities:
-            for ent in entities:
-                if ent.get("polyline_positions"):
-                    ref_lat = ent["polyline_positions"][0][0]["lat"]
-                    ref_lng = ent["polyline_positions"][0][0]["lng"]
-                    break
-                elif ent.get("position"):
-                    ref_lat = ent["position"]["lat"]
-                    ref_lng = ent["position"]["lng"]
-                    break
+        fallback = coords if coords else {"lat": 3.1390, "lng": 101.6869}
+        ref_lat, ref_lng = _extract_ref_coords(entities, fallback)
                     
         existing_context = get_context_infrastructure(ref_lat, ref_lng)
         entities = existing_context + entities
@@ -2841,28 +3960,8 @@ Remember:
                         }
                     })
 
-        # Extract Impact Metrics from the solution state
-        solution = state.get("solution_result", {})
-        impact_metrics = {
-            "societal_impact": solution.get("societal_impact", "No societal impact data available."),
-            "expected_effects": solution.get("expected_effect", []),
-            "complexity": solution.get("implementation_complexity", "Unknown"),
-            "solution_title": solution.get("solution_title", "Proposed Solution")
-        }
-
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "stage": "done",
-            "reply": "Planning complete. Switching to map view.",
-            "show_map": True,
-            "entities": entities,
-            "needs_input": False,
-            "city_name": city_name,
-            "target_lat": coords["lat"] if coords else 3.1390,
-            "target_lng": coords["lng"] if coords else 101.6869,
-            "impact_metrics": impact_metrics
-        }
+        state["session_id"] = session_id
+        return _build_done_response(state, "Planning complete. Switching to map view.", entities)
     elif next_step_name == "Plan improvements":
         return {
             "ok": True,
