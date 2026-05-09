@@ -2542,38 +2542,39 @@ def format_step_reply(step_name: str, raw_output: str) -> str:
         actions = _get_list(data, "proposed_actions")
         effects = _get_list(data, "expected_effect")
         blocks = []
-        blocks.append(f"### {title}")
-        header_parts = [f"**Intervention Type:** {sol_type}", f"**Complexity:** {complexity}", f"**Confidence:** {confidence}"]
+        blocks.append(f"{title}\n")
+        blocks.append(f"Intervention Type: {sol_type}")
         if primary_family:
-            header_parts.insert(1, f"**Primary Family:** {primary_family}")
-        blocks.append(" | ".join(header_parts) + "\n")
+            blocks.append(f"Primary Family: {primary_family}")
+        blocks.append(f"Complexity: {complexity}")
+        blocks.append(f"Confidence: {confidence}\n")
         road_context = f" involving {', '.join(roads)}" if roads else ""
-        blocks.append(f"**Target Location:** {location}{road_context}.\n")
-        blocks.append(f"**What problem is being solved:** {problem}\n")
-        blocks.append(f"**Why this intervention was chosen:** {why_chosen}\n")
-        blocks.append(f"**What existing service it connects to:** {service_connection}\n")
+        blocks.append(f"Target Location: {location}{road_context}.\n")
+        blocks.append(f"What problem is being solved: {problem}\n")
+        blocks.append(f"Why this intervention was chosen:{why_chosen}\n")
+        blocks.append(f"What existing service it connects to: {service_connection}\n")
 
         if actions:
-            blocks.append("**Proposed Actions:**")
+            blocks.append("Proposed Actions:")
             for action in actions:
                 blocks.append(f"* {action}")
             blocks.append("")
 
         if effects:
-            blocks.append("**Expected Effects:**")
+            blocks.append("Expected Effects:")
             for effect in effects:
                 blocks.append(f"* {effect}")
             blocks.append("")
 
         if uncertainties:
-            blocks.append("**What is still uncertain:**")
+            blocks.append("What is still uncertain:")
             for item in uncertainties:
                 blocks.append(f"* {item}")
             blocks.append("")
 
         impact = data.get("societal_impact")
         if impact:
-            blocks.append(f"**Societal Impact:**\n{impact}")
+            blocks.append(f"Societal Impact:\n{impact}")
 
         return "\n".join(blocks).strip()
 

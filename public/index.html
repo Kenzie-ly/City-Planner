@@ -1708,7 +1708,7 @@
                     </button>
 
                     <div id="mapLayerControls"
-                        style="display: none; position: fixed; top: 110px; right: 20px; z-index: 1000; background: rgba(6, 12, 24, 0.82); backdrop-filter: blur(10px); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); color: #e5efff; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
+                        style="display: none; position: fixed; top: 110px; right: 400px; z-index: 1000; background: rgba(6, 12, 24, 0.82); backdrop-filter: blur(10px); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); color: #e5efff; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
                         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
                             <input id="toggleContextNetwork" type="checkbox" checked style="accent-color: #60A5FA;">
                             Show surrounding network
@@ -1776,7 +1776,7 @@
                 </div>
 
                 <div id="simControls"
-                    style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 1000; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3); gap: 10px; align-items: center;">
+                    style="display: none; position: fixed; bottom: 20px; right: 400px; z-index: 1000; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3); gap: 10px; align-items: center;">
                     <button id="btnPlaySim" onclick="playSimulation()"
                         style="display: flex; align-items: center; gap: 5px; background: #10B981; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
                         <span class="material-icons" style="font-size: 16px;">play_arrow</span> Play Sim
@@ -3207,9 +3207,17 @@
                             controls.style.display = "none";
                         }
 
-                        if (data.target_lat && data.target_lng) {
-                            flyToCity(data.city_name || "Target Area", data.target_lat, data.target_lng);
-                        }
+                        if (data.camera) {
+                        flyToCamera(data.camera);
+                    } else if (data.target_lat && data.target_lng) {
+                        flyToCity(data.city_name || "Target Area", data.target_lat, data.target_lng);
+                    } else if (Array.isArray(data.center) && data.center.length >= 2) {
+                        viewer.camera.flyTo({
+                            destination: Cesium.Cartesian3.fromDegrees(data.center[1], data.center[0], 900),
+                            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+                            duration: 2.5
+                    });
+                    }
 
                         // Populate and show Impact Dashboard if metrics exist
                         if (data.impact_metrics) {
