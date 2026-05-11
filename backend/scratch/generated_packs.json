@@ -1,0 +1,253 @@
+[
+  {
+    "evidence_pack_id": "ev_pack_47fc684a",
+    "area_id": "Sungai Besi",
+    "generated_at": "2026-05-11T09:59:08.347500Z",
+    "structured_indicators": {
+      "verified_stops": "Dynamic (Mocked)",
+      "active_routes": "Dynamic (Mocked)",
+      "congestion_level": "Analyzed on the fly"
+    },
+    "rag_support": [
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "MRT Putrajaya Line Service Disruption (Taman Naga Emas)",
+        "source_type": "complaint",
+        "source_url": "https://paultan.org/2024/02/14/mrt-putrajaya-line-service-disrupted-this-morning-by-trespasser-between-tmn-naga-emas-sg-besi-stations/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-02-14",
+        "chunk_text": "MRT Putrajaya Line service was disrupted in February 2024 between Taman Naga Emas and Sungai Besi stations due to a trespasser incident, affecting thousands of early morning commuters.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Severe Gridlock at Sungai Besi Toll (July 2024)",
+        "source_type": "complaint",
+        "source_url": "https://www.facebook.com/groups/mysgroadtrip/posts/3755486514704815/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-07-29",
+        "chunk_text": "Massive traffic jams were reported at the Sungai Besi toll plaza on July 29, 2024, due to unannounced police roadblocks, causing significant delays for commuters entering Kuala Lumpur.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "DBKL: Jalan Sungai Besi Upgrade (Sept 2023 - Sept 2024)",
+        "source_type": "report",
+        "source_url": "https://www.malaymail.com/news/malaysia/2023/10/02/dbkl-jalan-sungai-besi-upgrade-to-start-september-30-closure-in-stages-until-september-2024/93933",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2023-10-02",
+        "chunk_text": "Kuala Lumpur City Hall (DBKL) is executing a major infrastructure upgrade for Jalan Sungai Besi. The project involves phased road closures and bridge construction, scheduled to continue through September 2024.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Scheduled Road Works on Sungai Besi Highway (2024)",
+        "source_type": "news_discovery",
+        "source_url": "https://malaysia.news.yahoo.com/scheduled-road-works-sungai-besi-083651019.html",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-08-01",
+        "chunk_text": "Besraya and LLM are conducting scheduled road maintenance on the Sungai Besi Highway from August 1 to December 31, 2024. Phased nightly lane closures (10PM-6AM) are expected to cause periodic disruptions.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      }
+    ],
+    "rules": [
+      "Structured data (SQL) is the PRIMARY evidence and must be trusted over RAG news.",
+      "You must cite at least one specific RAG source by title in your summary.",
+      "If RAG evidence contradicts SQL data, prioritize the SQL data.",
+      "Focus heavily on issues specific to Sungai Besi."
+    ],
+    "blocked_claims": [
+      "Do not invent exact percentage growth numbers unless explicitly stated in the evidence.",
+      "Do not claim a service is 'excellent' if there are active complaints in the pack.",
+      "Do not mention other cities besides Sungai Besi."
+    ]
+  },
+  {
+    "evidence_pack_id": "ev_pack_e947a317",
+    "area_id": "Sungai Besi",
+    "generated_at": "2026-05-11T10:05:31.145628Z",
+    "structured_indicators": {
+      "verified_stops": "Dynamic (Mocked)",
+      "active_routes": "Dynamic (Mocked)",
+      "congestion_level": "Analyzed on the fly"
+    },
+    "rag_support": [
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "MRT Putrajaya Line Service Disruption (Taman Naga Emas)",
+        "source_type": "complaint",
+        "source_url": "https://paultan.org/2024/02/14/mrt-putrajaya-line-service-disrupted-this-morning-by-trespasser-between-tmn-naga-emas-sg-besi-stations/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-02-14",
+        "chunk_text": "MRT Putrajaya Line service was disrupted in February 2024 between Taman Naga Emas and Sungai Besi stations due to a trespasser incident, affecting thousands of early morning commuters.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Severe Gridlock at Sungai Besi Toll (July 2024)",
+        "source_type": "complaint",
+        "source_url": "https://www.facebook.com/groups/mysgroadtrip/posts/3755486514704815/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-07-29",
+        "chunk_text": "Massive traffic jams were reported at the Sungai Besi toll plaza on July 29, 2024, due to unannounced police roadblocks, causing significant delays for commuters entering Kuala Lumpur.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "DBKL: Jalan Sungai Besi Upgrade (Sept 2023 - Sept 2024)",
+        "source_type": "report",
+        "source_url": "https://www.malaymail.com/news/malaysia/2023/10/02/dbkl-jalan-sungai-besi-upgrade-to-start-september-30-closure-in-stages-until-september-2024/93933",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2023-10-02",
+        "chunk_text": "Kuala Lumpur City Hall (DBKL) is executing a major infrastructure upgrade for Jalan Sungai Besi. The project involves phased road closures and bridge construction, scheduled to continue through September 2024.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Scheduled Road Works on Sungai Besi Highway (2024)",
+        "source_type": "news_discovery",
+        "source_url": "https://malaysia.news.yahoo.com/scheduled-road-works-sungai-besi-083651019.html",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-08-01",
+        "chunk_text": "Besraya and LLM are conducting scheduled road maintenance on the Sungai Besi Highway from August 1 to December 31, 2024. Phased nightly lane closures (10PM-6AM) are expected to cause periodic disruptions.",
+        "area_tags": [
+          "Sungai Besi"
+        ],
+        "challenge_type_tags": []
+      }
+    ],
+    "rules": [
+      "Structured data (SQL) is the PRIMARY evidence and must be trusted over RAG news.",
+      "You must cite at least one specific RAG source by title in your summary.",
+      "If RAG evidence contradicts SQL data, prioritize the SQL data.",
+      "Focus heavily on issues specific to Sungai Besi."
+    ],
+    "blocked_claims": [
+      "Do not invent exact percentage growth numbers unless explicitly stated in the evidence.",
+      "Do not claim a service is 'excellent' if there are active complaints in the pack.",
+      "Do not mention other cities besides Sungai Besi."
+    ]
+  },
+  {
+    "evidence_pack_id": "ev_pack_28d26c79",
+    "area_id": "Bukit Jalil",
+    "generated_at": "2026-05-11T10:05:58.299772Z",
+    "structured_indicators": {
+      "verified_stops": "Dynamic (Mocked)",
+      "active_routes": "Dynamic (Mocked)",
+      "congestion_level": "Analyzed on the fly"
+    },
+    "rag_support": [
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Official Route: Stesen LRT Awan Besar ~ Pavilion Bukit Jalil (PAVILION BUKIT JALIL (PAVBJ))",
+        "source_type": "report",
+        "source_url": "",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-01-01",
+        "chunk_text": "This is an official Bus route in the transport network. Route ID: PAVILION BUKIT JALIL (PAVBJ). Long Name: Stesen LRT Awan Besar ~ Pavilion Bukit Jalil.",
+        "area_tags": [
+          "Bukit Jalil"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Area: Bukit Jalil (suburb)",
+        "source_type": "report",
+        "source_url": "",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-05-11",
+        "chunk_text": "Identified district/neighborhood 'Bukit Jalil' in Kuala Lumpur. Type: suburb. This area is used for geographical boundary validation and localized infrastructure analysis.",
+        "area_tags": [
+          "Bukit Jalil"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Bukit Jalil's Growth Momentum 2024",
+        "source_type": "news_discovery",
+        "source_url": "https://www.yaomurealty.com/latestnews/nid/170340/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-10-17",
+        "chunk_text": "Bukit Jalil continues to solidify its position as one of the Klang Valley's most dynamic growth corridors, supported by modern infrastructure and Pavilion Bukit Jalil transformation into a fully integrated hub.",
+        "area_tags": [
+          "Bukit Jalil"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "Official Route: Stesen LRT Alam Sutera ~ PPR Pinggiran Bukit Jalil (T581)",
+        "source_type": "report",
+        "source_url": "",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2024-01-01",
+        "chunk_text": "This is an official Bus route in the transport network. Route ID: T581. Long Name: Stesen LRT Alam Sutera ~ PPR Pinggiran Bukit Jalil.",
+        "area_tags": [
+          "Bukit Jalil"
+        ],
+        "challenge_type_tags": []
+      },
+      {
+        "chunk_id": "local_chunk",
+        "doc_id": "local_doc",
+        "title": "KL roads flooded - Bukit Jalil affected",
+        "source_type": "complaint",
+        "source_url": "https://paultan.org/2023/10/18/kl-roads-flooded-jln-cheras-peel-road-bukit-jalil-tar-and-hang-tuah-affected-smart-tunnel-now-closed/",
+        "publisher": "Local Knowledge Base",
+        "published_date": "2023-10-18",
+        "chunk_text": "Heavy rainfall in October 2023 led to significant flash floods across Kuala Lumpur, severely affecting major routes including the Bukit Jalil area. These disruptions highlight infrastructure vulnerabilities.",
+        "area_tags": [
+          "Bukit Jalil"
+        ],
+        "challenge_type_tags": []
+      }
+    ],
+    "rules": [
+      "Structured data (SQL) is the PRIMARY evidence and must be trusted over RAG news.",
+      "You must cite at least one specific RAG source by title in your summary.",
+      "If RAG evidence contradicts SQL data, prioritize the SQL data.",
+      "Focus heavily on issues specific to Bukit Jalil."
+    ],
+    "blocked_claims": [
+      "Do not invent exact percentage growth numbers unless explicitly stated in the evidence.",
+      "Do not claim a service is 'excellent' if there are active complaints in the pack.",
+      "Do not mention other cities besides Bukit Jalil."
+    ]
+  }
+]

@@ -28,6 +28,7 @@ from agent import (
     InfrastructurePlannerOrchestrator,
     find_hotspot_agent,
     hallucination_audit_agent,
+    rag,
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
@@ -1075,6 +1076,22 @@ async def _growth_search_fn(session_id: str, city: str, query: str) -> list[dict
     """.strip()
     raw = await run_agent_once(growth_signal_agent, session_id, prompt)
     findings = _extract_growth_findings(raw)
+    
+    # NEW: Add findings to RAG memory
+    if findings:
+        rag_docs = []
+        for f in findings:
+            text = f.get("data_narrative") or f.get("snippet") or f.get("title")
+            if text:
+                rag_docs.append({
+                    "text": text,
+                    "source": f.get("url") or "google_search",
+                    "type": "news_discovery",
+                    "metadata": f
+                })
+        if rag_docs:
+            rag.add_documents(rag_docs)
+            
     for f in findings:
         if not f.get("area_label"):
             f["area_label"] = city

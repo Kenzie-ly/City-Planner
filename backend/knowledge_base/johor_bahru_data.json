@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Johor Bahru RTS Link on track for 2026 completion",
+    "snippet": "The Rapid Transit System (RTS) Link between Johor Bahru and Singapore is currently over 80% complete. This project is expected to carry 10,000 passengers per hour, significantly easing congestion at the CIQ.",
+    "published_at": "2024-11-15",
+    "type": "news_discovery",
+    "url": "https://www.straitstimes.com/asia/se-asia/johor-bahru-singapore-rts-link-to-be-fully-operational-by-end-of-2026"
+  },
+  {
+    "title": "Iskandar Rapid Transit (IRT) Phase 1 nearing operations",
+    "snippet": "The Iskandar Rapid Transit (IRT) system is undergoing final trials. It will connect key areas of Johor Bahru including Horizon Hills and Mount Austin to the city center, providing a BRT alternative to private vehicles.",
+    "published_at": "2024-05-10",
+    "type": "report",
+    "url": "https://www.thestar.com.my/news/nation/2024/05/10/iskandar-rapid-transit-phase-1-nearing-operations"
+  },
+  {
+    "title": "Severe CIQ traffic bottlenecks remain as JB population hits 1.5m",
+    "snippet": "Despite infrastructure upgrades, Johor Bahru's rapid population growth to over 1.5 million in 2024 has led to daily gridlock at the CIQ. Commuters report wait times exceeding 3 hours during peak holiday periods.",
+    "published_at": "2024-12-01",
+    "type": "complaint",
+    "url": "https://www.malaymail.com/news/malaysia/2024/12/01/no-end-in-sight-for-jb-ciq-congestion/"
+  },
+  {
+    "title": "Indonesian tourist vows not to visit JB again due to poor bus experience",
+    "snippet": "An Indonesian tourist shared her bad experience at a Johor Bahru bus terminal, citing long delays, poor service, and rude staff. The incident highlights ongoing issues with terminal management and service quality in the city's transport hub.",
+    "published_at": "2024-12-03",
+    "type": "complaint",
+    "url": "https://www.therakyatpost.com/news/malaysia/2024/12/03/no-more-indonesian-woman-says-she-wont-visit-jb-again-after-poor-bus-experience/"
+  }
+]

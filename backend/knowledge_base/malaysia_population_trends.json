@@ -1,0 +1,39 @@
+[
+  {
+    "title": "Putrajaya Population Surge 2024",
+    "snippet": "Putrajaya has recorded a significant 5.2% year-on-year population growth in 2024, driven by the relocation of civil service hubs and new residential developments in Presint 18 and 19.",
+    "published_at": "2024-03-15",
+    "type": "news_discovery",
+    "url": "https://example-news.com.my/putrajaya-growth-2024"
+  },
+  {
+    "title": "Malaysia Demographic Report 2023",
+    "snippet": "Urbanization trends in Malaysia show a massive shift towards administrative centers. Putrajaya and Cyberjaya have become the fastest-growing townships.",
+    "published_at": "2023-11-20",
+    "type": "report",
+    "url": "https://stats.gov.my/demographics-2023"
+  },
+  {
+    "title": "Transit Demand in Putrajaya Outpaces Infrastructure",
+    "snippet": "As Putrajaya's population hits record highs in 2024, commuters are reporting increased waiting times for feeder buses in Presint 11.",
+    "published_at": "2024-01-10",
+    "type": "complaint",
+    "url": "https://transport-watch.my/putrajaya-bus-issues"
+  },
+  {
+    "title": "NEWLY LEARNED: Cyberjaya-Putrajaya Workforce Flow",
+    "snippet": "New data from 2024 shows 15,000 workers commute daily between Cyberjaya and Putrajaya. Current shuttle services are at 110% capacity during peak hours.",
+    "published_at": "2024-04-02",
+    "type": "news_discovery",
+    "url": "https://tech-news.my/cyberjaya-commute-2024",
+    "learned_from": "User Search: 'Putrajaya commute patterns'"
+  },
+  {
+    "title": "NEWLY LEARNED: MRT Putrajaya Line Feedback",
+    "snippet": "Residents of Presint 9 complain about the 'Last-Mile Gap' to the MRT Putrajaya station. Walking distance exceeds 1.5km with poor shaded walkway coverage.",
+    "published_at": "2024-05-01",
+    "type": "complaint",
+    "url": "https://community-voice.my/putrajaya-mrt-feedback",
+    "learned_from": "User Search: 'Putrajaya MRT issues'"
+  }
+]

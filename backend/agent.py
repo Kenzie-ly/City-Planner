@@ -14,6 +14,99 @@ import re
 from FindRoads import run_city_road_connection_analysis
 from building_agent_helper import process_agent_assets, format_entities
 import json
+from rag_service import RagService
+
+# Initialize RAG Service
+rag = RagService(kb_dir=os.path.join(os.path.dirname(__file__), "knowledge_base"))
+rag.ingest_directory()
+
+class LocalKnowledgeTool:
+    # ... (existing code)
+    def __call__(self, query: str) -> str:
+        # Pass the query as a location filter so the RAG can boost matches for city names found in the query
+        results = rag.query(query, top_k=5, location_filter=query)
+        if not results:
+            return "No relevant local information found."
+        
+        output = "Relevant information from Local Knowledge Base:\n"
+        for i, res in enumerate(results, 1):
+            year_str = f"Year: {res['year']}" if res.get('year') else "Year: Unknown"
+            output += f"--- Result {i} (Source: {res['source']}, Type: {res['type']}, {year_str}) ---\n"
+            output += f"{res['text']}\n\n"
+        
+        # Add a Completeness Report to help the agent decide if it needs to supplement with web search
+        types_found = [res['type'].lower() for res in results]
+        news_count = sum(1 for t in types_found if "news" in t or "report" in t)
+        complaint_count = sum(1 for t in types_found if "complaint" in t)
+        
+        output += f"COMPLETENESS REPORT: Found {news_count} Statistics/News and {complaint_count} Complaints.\n"
+        if news_count < 2 or complaint_count < 2:
+            output += "ADVISORY: Local knowledge is THIN. You should use GoogleSearchTool to supplement the missing categories.\n"
+            
+        return output
+
+class CloudSqlTool:
+    """Tool for querying the live Google Cloud SQL database for raw transit data (GTFS)."""
+    def __call__(self, sql_query: str) -> str:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return "ERROR: DATABASE_URL not configured. Cannot access Cloud SQL."
+        
+        # Security: Only allow SELECT queries
+        if not sql_query.strip().lower().startswith("select"):
+            return "ERROR: Only SELECT queries are allowed for security reasons."
+            
+        try:
+            from sqlalchemy import create_engine, text
+            engine = create_engine(db_url)
+            with engine.connect() as conn:
+                result = conn.execute(text(sql_query))
+                rows = result.fetchall()
+                
+                if not rows:
+                    return "Database returned 0 results for this query."
+                
+                output = f"Direct SQL Results ({len(rows)} rows):\n"
+                for row in rows[:20]: # Limit output to prevent context overflow
+                    output += str(row) + "\n"
+                if len(rows) > 20:
+                    output += "... (truncated for brevity)"
+                return output
+        except Exception as e:
+            return f"SQL ERROR: {str(e)}"
+
+class SaveResearchTool:
+    """Permanently saves web research data for a city into the local knowledge base JSON files."""
+    def __call__(self, city: str, research_data: str) -> str:
+        """Saves research data (JSON string or list) to a JSON file."""
+        import json
+        import os
+        
+        # Clean city name for filename
+        safe_city = city.lower().replace(' ', '_').strip()
+        filename = os.path.join(os.path.dirname(__file__), "knowledge_base", f"{safe_city}_data.json")
+        
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
+            # The agent might pass a JSON string or a Python list.
+            if isinstance(research_data, str):
+                # Clean markdown code blocks if present
+                clean_json = research_data.replace('```json', '').replace('```', '').strip()
+                data = json.loads(clean_json)
+            else:
+                data = research_data
+                
+            with open(filename, "w") as f:
+                json.dump(data, f, indent=2)
+            
+            # Re-ingest the directory so the RAG knows about the new file immediately
+            rag.ingest_directory()
+            
+            return f"[SUCCESS] Research for {city} permanently saved to {filename}. The Knowledge Base has been re-indexed."
+        except Exception as e:
+            return f"[ERROR] Failed to save research: {str(e)}"
 
 # Load API key from .env file
 load_dotenv()
@@ -81,14 +174,34 @@ find_needs_agent = LlmAgent(
         You are the Lead Transport Systems Analysis Supervisor for Malaysia.
 
         You will be given one or two Malaysian target places and optional geospatial evidence.
-                Your task is to identify 1 to 3 critical BROAD transport-related infrastructure challenges that are DIRECTLY supported by the evidence.
+        Your task is to identify 1 to 3 critical BROAD transport-related infrastructure challenges that are DIRECTLY supported by the evidence.
 
-        EVIDENCE-FIRST POLICY:
-        - Do NOT invent statistics. Only use numbers found in the provided evidence snippets.
-        - Do NOT hallucinate sources. Only cite provided URLs.
-        - If the evidence only supports 1 or 2 challenges, return ONLY those. Do NOT fill the quota of 3 if the data is thin.
-        - Prioritize "Verified Complaints" (where human reports match infrastructure gaps).
+        HYBRID DATA POLICY:
+        1. NARRATIVE DATA: Use LocalKnowledgeTool first to find planning docs, news, and complaints.
+        2. RAW DATA: Use CloudSqlTool to verify the actual transport network (list of stops, routes, service types).
+        3. REAL-TIME GAP: If local data is THIN or missing evidence types, use GoogleSearchTool to supplement.
 
+        EVIDENCE-FIRST & SYNTHESIS POLICY:
+        - CHECK MEMORY FIRST: You MUST use the LocalKnowledgeTool first.
+        - VERIFY WITH SQL: Use CloudSqlTool to get the exact count of stops or names of routes in the area to ground your analysis in reality.
+        - MULTI-FILE SYNTHESIS: You MUST cross-reference all files found in the LocalKnowledgeTool. Do not just summarize one file. Look for patterns across news, reports, and complaints.
+        - 2+2 BALANCE RULE (MINIMUM 4 REFERENCES): You MUST retrieve and cite at least 4 UNIQUE sources in total:
+            1. At least 2 Official Information sources (Reports/News) for "Statistics/Growth".
+            2. At least 2 User/Citizen sources (Complaints/Feedback) for "Human Impact/Bottlenecks".
+        
+        MANDATORY SEARCH & PERSISTENCE RULE:
+        - You ARE FORBIDDEN from finishing your task if the Completeness Report from LocalKnowledgeTool shows less than 4 references or is missing a category (0 News or 0 Complaints).
+        - If the deficit exists, you MUST:
+            1. Use GoogleSearchTool to find the missing evidence.
+            2. Use SaveResearchTool to permanently archive these results for the city.
+            3. Only then proceed to generate your final analysis.
+        
+        - 5-YEAR FRESHNESS: Prioritize data from the last 5 years.
+
+        STRICT TRANSPORT FOCUS:
+        - ONLY identify challenges related to public transport infrastructure (LRT, MRT, KTM, Bus routes, Feeder services).
+        - AVOID general lifestyle issues, profit-driven development, or natural disasters unless they directly impact transport reliability (e.g., "floods blocking bus corridors").
+        - Focus on 'Transit Deserts' and 'First/Last Mile' connectivity gaps for the B40/M40 workforce.
 
         SCOPE:
         - first-mile/last-mile connectivity gaps for B40/M40 commuters
@@ -98,77 +211,32 @@ find_needs_agent = LlmAgent(
         - poor pedestrian accessibility to transit hubs
         - transit bottleneck detection near workplaces
         - bus reliability issues
-        - micromobility integration for industrial zones
-        - BRT (Bus Rapid Transit) corridor opportunities for workforce commuting
-
-        HARD RULES:
-        - ONLY discuss the target place(s)
-        - ONLY transport-related problems
-        - NO solutions
-        - NO PRIMARY_MICRO or SECONDARY_MICRO yet
-        - NO routing labels yet
-        - stay at challenge-category level
         
         CORRIDOR FUSION POLICY (EXPERT):
-        - Do NOT treat residential and industrial needs as isolated.
-        - Prioritize identifying STRATEGIC CORRIDORS that connect O-D (Origin-Destination) pairs (e.g. 'Cheras-Shah Alam Workforce Corridor').
-        - Every challenge should explain how it links residential hubs to workforce destinations.
-
-        TOOL USAGE:
-        - You MUST use the Google Search tool before answering.
-        - Prefer official transport authorities, government reports, credible transport news, and transport studies from the last 5 years.
-
-        FEEDBACK LOOP:
-        - If you are provided with feedback or a rejection reason from a previous attempt, you MUST address that feedback explicitly by generating DIFFERENT challenges or focusing on the requested aspects.
-        - If SELECTED_AREA_OPTION_JSON / MERGED_EVIDENCE_JSON is provided, anchor challenge ranking to that selected area and evidence.
-        - If you are asked to repair invalid output, strictly fix the schema and source validity requirements.
+        - Every challenge should explain how it links residential hubs to workforce destinations via a 'Strategic Corridor'.
 
         OUTPUT FORMAT (STRICT JSON ONLY):
-        Return exactly one JSON object and nothing else.
+        Return exactly one JSON object. Ensure descriptions are detailed paragraphs.
 
         {
           "CHALLENGE_1": {
-            "CHALLENGE_THEME": "<broad challenge>",
-            "MACRO_ROOT_CAUSE": "<root cause>",
-            "WHY_IT_MATTERS": "<why it matters>",
-            "EVIDENCE_SUMMARY": "<Strong evidence-based justification with quantitative points>",
+            "CHALLENGE_THEME": "<broad challenge name>",
+            "MACRO_ROOT_CAUSE": "<root cause explaining why infrastructure hasn't matched growth>",
+            "WHY_IT_MATTERS": "<A detailed paragraph (3-4 sentences) explaining the 'Strategic Problem Narrative'—why this matters for the city's mobility ecosystem and B40/M40 commuters.>",
+            "EVIDENCE_SUMMARY": "<A comprehensive bulleted list or detailed paragraph synthesizing evidence from ALL provided sources. Explain how different files (e.g. news vs complaints) correlate.>",
             "TITLE": "<user-friendly challenge title>",
             "STATISTICS": {
               "metric_label_1": 123.0,
               "metric_label_2": 45.0
             },
-            "BRIEF_DESCRIPTION": "<1-3 sentences explaining the statistics and why they matter>",
+            "BRIEF_DESCRIPTION": "<Summary of the quantitative data found.>",
             "SOURCES": [
-              {
-                "publisher": "<publisher name>",
-                "url": "https://...",
-                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
-                "source_tier": "government | operator | study | major_media | local_media"
-              },
-              {
-                "publisher": "<publisher name>",
-                "url": "https://...",
-                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
-                "source_tier": "government | operator | study | major_media | local_media"
-              }
-            ],
-            "CHART_SPEC": {
-              "chart_type": "bar",
-              "labels": ["metric_label_1", "metric_label_2"],
-              "values": [123.0, 45.0]
-            }
-          },
-          "CHALLENGE_2": {
-            "..." : "..."
-          },
-          "CHALLENGE_3": {
-            "..." : "..."
+              { "publisher": "...", "url": "...", "published_at": "...", "source_tier": "..." }
+            ]
           }
         }
-        
-        Return ONLY strict JSON with keys: CHALLENGE_1, CHALLENGE_2, CHALLENGE_3 (if available).
         """,
-    tools=[GoogleSearchTool()],
+    tools=[GoogleSearchTool(), LocalKnowledgeTool(), CloudSqlTool(), SaveResearchTool()],
     output_key="top_challenges",
 )
 
@@ -209,11 +277,14 @@ growth_signal_agent = LlmAgent(
     instruction="""
         You are a growth-signal extraction agent for Malaysian urban mobility planning.
 
-        You MUST use Google Search tool to find recent evidence for:
-        - population or township growth (search for specific districts like Cheras, Kepong, Segambut, etc.)
-        - industrial / job cluster growth (search for specific industrial parks/zones)
-        - major trip generators (specific hospitals, universities, or commercial malls)
-        - first-mile barriers (search for 'feeder bus complaints', 'transit desert', or 'station accessibility issues' in specific districts)
+        HYBRID DATA POLICY:
+        1. NARRATIVE DATA: Use LocalKnowledgeTool first.
+        2. RAW DATA: Use CloudSqlTool to fetch precise network statistics (stop counts, route names).
+        3. REAL-TIME GAP: If local data is missing, use GoogleSearchTool to supplement.
+
+        REUSE & SUPPLEMENT POLICY:
+        - You MUST use the LocalKnowledgeTool first. If relevant growth signals for this area are found, reuse them.
+        - Aim for a BALANCED information weight: 2 sources for "Demand/Growth" (Population/Industrial) and 2 sources for "Failure/Strain" (Complaints/Barriers).
         
         SPATIAL GRANULARITY POLICY:
         - You MUST identify specific neighborhoods, sections, or townships (e.g. 'Bandar Sunway', 'Taman Tun Dr Ismail', 'Seksyen 13').
@@ -235,12 +306,13 @@ growth_signal_agent = LlmAgent(
           }
         ]
 
-        Rules:
-        - Prefer authoritative Malaysian sources where possible.
-        - Keep area labels geocodable and concise.
         - If uncertain about date or source tier, provide best estimate.
+        
+        MANDATORY SEARCH & PERSISTENCE RULE:
+        - If LocalKnowledgeTool returns fewer than 4 sources or is missing either Growth or Complaints, you MUST use GoogleSearchTool and then SaveResearchTool to permanently archive the results before finalizing. 
+        - DO NOT HALLUCINATE. If web search also fails, report the data gap clearly.
     """,
-    tools=[GoogleSearchTool()],
+    tools=[GoogleSearchTool(), LocalKnowledgeTool(), CloudSqlTool(), SaveResearchTool()],
     output_key="growth_findings",
 )
 

@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Scheduled Road Works on Sungai Besi Highway (2024)",
+    "snippet": "Besraya and LLM are conducting scheduled road maintenance on the Sungai Besi Highway from August 1 to December 31, 2024. Phased nightly lane closures (10PM-6AM) are expected to cause periodic disruptions.",
+    "published_at": "2024-08-01",
+    "type": "news_discovery",
+    "url": "https://malaysia.news.yahoo.com/scheduled-road-works-sungai-besi-083651019.html"
+  },
+  {
+    "title": "MRT Putrajaya Line Service Disruption (Taman Naga Emas)",
+    "snippet": "MRT Putrajaya Line service was disrupted in February 2024 between Taman Naga Emas and Sungai Besi stations due to a trespasser incident, affecting thousands of early morning commuters.",
+    "published_at": "2024-02-14",
+    "type": "complaint",
+    "url": "https://paultan.org/2024/02/14/mrt-putrajaya-line-service-disrupted-this-morning-by-trespasser-between-tmn-naga-emas-sg-besi-stations/"
+  },
+  {
+    "title": "Severe Gridlock at Sungai Besi Toll (July 2024)",
+    "snippet": "Massive traffic jams were reported at the Sungai Besi toll plaza on July 29, 2024, due to unannounced police roadblocks, causing significant delays for commuters entering Kuala Lumpur.",
+    "published_at": "2024-07-29",
+    "type": "complaint",
+    "url": "https://www.facebook.com/groups/mysgroadtrip/posts/3755486514704815/"
+  },
+  {
+    "title": "DBKL: Jalan Sungai Besi Upgrade (Sept 2023 - Sept 2024)",
+    "snippet": "Kuala Lumpur City Hall (DBKL) is executing a major infrastructure upgrade for Jalan Sungai Besi. The project involves phased road closures and bridge construction, scheduled to continue through September 2024.",
+    "published_at": "2023-10-02",
+    "type": "report",
+    "url": "https://www.malaymail.com/news/malaysia/2023/10/02/dbkl-jalan-sungai-besi-upgrade-to-start-september-30-closure-in-stages-until-september-2024/93933"
+  }
+]

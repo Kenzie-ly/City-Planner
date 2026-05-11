@@ -1,0 +1,23 @@
+[
+  {
+    "title": "POI: Pavilion KL (Mall)",
+    "snippet": "High-demand Point of Interest 'Pavilion KL' in Kuala Lumpur. Category: Mall. Demand Score: 95. This location is a major trip generator and anchor for transport planning.",
+    "published_at": "2024-05-11",
+    "type": "report",
+    "url": ""
+  },
+  {
+    "title": "Area: Kiaramas (Neighborhood)",
+    "snippet": "Identified district/neighborhood 'Kiaramas' in Kuala Lumpur. Type: Neighborhood. This area is used for geographical boundary validation and localized infrastructure analysis.",
+    "published_at": "2024-05-11",
+    "type": "report",
+    "url": ""
+  },
+  {
+    "title": "POI: Mid Valley Megamall (Mall)",
+    "snippet": "High-demand Point of Interest 'Mid Valley Megamall' in Kuala Lumpur. Category: Mall. Demand Score: 92. This location is a major trip generator.",
+    "published_at": "2024-05-11",
+    "type": "report",
+    "url": ""
+  }
+]
