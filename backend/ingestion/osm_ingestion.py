@@ -1,34 +1,61 @@
 import requests
 import json
-import firebase_admin
-from firebase_admin import credentials, firestore
 import os
+import datetime
+from sqlalchemy import create_engine, Column, String, Float, Integer, BigInteger, DateTime, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
 
-# Initialize Firebase/Firestore
-# Note: In a local environment, you may need to set GOOGLE_APPLICATION_CREDENTIALS environment variable
-# to the path of your service account key file.
-try:
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app()
-except Exception as e:
-    print(f"Firebase initialization info: {e}")
+from dotenv import load_dotenv
 
-db = firestore.client()
+# Load environment variables from .env file
+load_dotenv()
 
+# ---------------------------------------------------------
+# DATABASE CONFIGURATION (CLOUD SQL)
+# ---------------------------------------------------------
+DB_URL = os.getenv("DATABASE_URL")
+
+if not DB_URL:
+    # Fallback jika .env tidak terbaca
+    DB_URL = "postgresql+psycopg2://postgres:password@localhost:5432/city_planner_db"
+
+Base = declarative_base()
+
+# Definisi Tabel untuk menyimpan data daerah
+class CityArea(Base):
+    __tablename__ = 'city_areas'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    osm_id = Column(BigInteger, unique=True)
+    name = Column(String(255), nullable=False)
+    type = Column(String(50)) # city, town, suburb, neighbourhood
+    lat = Column(Float, nullable=False)
+    lon = Column(Float, nullable=False)
+    region = Column(String(100), nullable=False) # Johor, Selangor, etc.
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+# Inisialisasi Database
+engine = create_engine(DB_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db():
+    """Membuat tabel jika belum ada."""
+    Base.metadata.create_all(bind=engine)
+
+# ---------------------------------------------------------
+# OSM DATA FETCHING
+# ---------------------------------------------------------
 REGIONS = ["Johor", "Selangor", "Kuala Lumpur", "Putrajaya"]
 
 def fetch_areas_from_osm(region_name: str) -> List[Dict]:
     """
-    Fetches area/city/town data from OpenStreetMap using the Overpass API.
+    Mengambil data daerah/kota dari OpenStreetMap menggunakan Overpass API.
     """
-    print(f"--- Fetching data for {region_name} from OSM ---")
+    print(f"\n--- Fetching data for {region_name} from OSM ---")
     overpass_url = "https://overpass-api.de/api/interpreter"
     
-    # Overpass query:
-    # - Searches for areas named region_name
-    # - Within those areas, find nodes/ways/relations with place tags
-    # - We include city, town, suburb, and neighbourhood for "nama-nama daerah"
     query = f"""
     [out:json][timeout:60];
     area["name"="{region_name}"]["admin_level"~"2|4|8"]->.searchArea;
@@ -40,121 +67,100 @@ def fetch_areas_from_osm(region_name: str) -> List[Dict]:
     out center;
     """
     
+    headers = {
+        "User-Agent": "CityPlannerIngestionScript/1.0 (contact: your-email@example.com)"
+    }
+    
     try:
-        response = requests.post(overpass_url, data={'data': query}, timeout=65)
+        response = requests.post(overpass_url, data={'data': query}, headers=headers, timeout=65)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
-        print(f"Error fetching data from Overpass for {region_name}: {e}")
+        print(f"Error fetching data for {region_name}: {e}")
         return []
     
     elements = data.get('elements', [])
-    print(f"Found {len(elements)} raw elements in {region_name}")
-    
     areas = []
     for element in elements:
         tags = element.get('tags', {})
-        name = tags.get('name')
-        # Fallback to name:en or other tags if 'name' is missing
-        if not name:
-            name = tags.get('name:en') or tags.get('name:ms')
-            
+        name = tags.get('name') or tags.get('name:en') or tags.get('name:ms')
         place_type = tags.get('place')
-        
-        # Coordinates: nodes have 'lat'/'lon', ways/relations have 'center' from 'out center'
         lat = element.get('lat') or element.get('center', {}).get('lat')
         lon = element.get('lon') or element.get('center', {}).get('lon')
         
         if name and lat and lon:
             areas.append({
+                'osm_id': element.get('id'),
                 'name': name,
                 'type': place_type,
                 'lat': lat,
                 'lon': lon,
-                'osm_id': element.get('id'),
                 'region': region_name
             })
             
-    # Remove duplicates by name
-    unique_areas = {}
-    for a in areas:
-        unique_areas[a['name']] = a
-        
-    result = list(unique_areas.values())
-    print(f"Extracted {len(result)} unique areas for {region_name}")
-    return result
+    return areas
 
-def save_to_google_cloud_database(region_name: str, areas: List[Dict]):
+# ---------------------------------------------------------
+# STORAGE LOGIC (CLOUD SQL)
+# ---------------------------------------------------------
+def save_to_cloud_sql(areas: List[Dict]):
     """
-    Saves the fetched area data to Firestore.
+    Menyimpan list data daerah ke dalam database Cloud SQL.
     """
     if not areas:
-        print(f"No data to save for {region_name}")
         return
 
-    print(f"Saving data to Google Cloud Firestore (Collection: cities)...")
-    
-    # Use batching for efficiency (Firestore batch limit is 500)
-    batch = db.batch()
-    collection_ref = db.collection("cities")
-    
-    count = 0
-    for area in areas:
-        # Create a document ID that is somewhat readable and unique
-        # e.g., selangor_shah_alam
-        clean_region = region_name.lower().replace(" ", "_")
-        clean_name = area['name'].lower().replace(" ", "_").replace("/", "_")
-        doc_id = f"{clean_region}_{clean_name}"
-        
-        doc_ref = collection_ref.document(doc_id)
-        
-        data_to_save = {
-            **area,
-            "updated_at": firestore.SERVER_TIMESTAMP
-        }
-        
-        batch.set(doc_ref, data_to_save)
-        count += 1
-        
-        if count >= 499: # Firestore batch limit
-            batch.commit()
-            batch = db.batch()
-            count = 0
-            
-    batch.commit()
-    print(f"Successfully saved {len(areas)} areas for {region_name}")
-
-from fastapi import APIRouter, HTTPException
-from typing import List, Dict
-
-router = APIRouter(prefix="/ingestion", tags=["ingestion"])
-
-@router.post("/run-osm")
-async def trigger_osm_ingestion():
-    """
-    API Endpoint to trigger the OSM ingestion process.
-    """
+    db = SessionLocal()
     try:
-        run_ingestion()
-        return {"status": "success", "message": "OSM ingestion completed successfully"}
+        print(f"Saving {len(areas)} areas to Cloud SQL...")
+        for area_data in areas:
+            # Cari apakah data sudah ada berdasarkan osm_id (agar tidak duplikat)
+            existing_area = db.query(CityArea).filter(CityArea.osm_id == area_data['osm_id']).first()
+            
+            if existing_area:
+                # Update jika sudah ada
+                existing_area.name = area_data['name']
+                existing_area.type = area_data['type']
+                existing_area.lat = area_data['lat']
+                existing_area.lon = area_data['lon']
+                existing_area.region = area_data['region']
+                existing_area.updated_at = datetime.datetime.utcnow()
+            else:
+                # Insert baru jika belum ada
+                new_area = CityArea(**area_data)
+                db.add(new_area)
+        
+        db.commit()
+        print("Success: Data saved successfully.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+        db.rollback()
+        print(f"Error saving to database: {e}")
+    finally:
+        db.close()
 
-def run_ingestion():
-    """
-    Main execution function to loop through regions and perform ingestion.
-    """
-    results = {}
+# ---------------------------------------------------------
+# MAIN EXECUTION (PROSES BIASA)
+# ---------------------------------------------------------
+def run_main_ingestion():
+    print("Starting OSM Ingestion Process...")
+    
+    # 1. Pastikan tabel sudah ada
+    try:
+        # Uncomment baris di bawah jika ingin mereset skema (HATI-HATI: Data akan terhapus)
+        # Base.metadata.drop_all(bind=engine) 
+        init_db()
+    except Exception as e:
+        print(f"Gagal inisialisasi database: {e}")
+        print("Pastikan HOST, USER, PASS, dan DB_NAME sudah benar.")
+        return
+
+    # 2. Proses tiap wilayah
     for region in REGIONS:
-        try:
-            areas = fetch_areas_from_osm(region)
-            save_to_google_cloud_database(region, areas)
-            results[region] = f"Saved {len(areas)} areas"
-        except Exception as e:
-            print(f"Critical error during ingestion for {region}: {e}")
-            results[region] = f"Error: {str(e)}"
-    return results
+        areas = fetch_areas_from_osm(region)
+        save_to_cloud_sql(areas)
+        
+    print("\nAll regions processed!")
 
 if __name__ == "__main__":
-    # If run as a script, execute ingestion directly
-    run_ingestion()
+    # Menjalankan proses secara langsung (bukan API)
+    run_main_ingestion()
