@@ -1,0 +1,178 @@
+{
+  "evidence_pack_id": null,
+  "pack_schema_version": "2026.A",
+  "generated_at": "2026-05-11T11:58:25.328917+00:00",
+  "area": {
+    "area_id": "Sungai Besi",
+    "area_name": "Sungai Besi",
+    "region_id": "kuala_lumpur"
+  },
+  "provenance": {
+    "pipeline_version": "4.0.0-elite",
+    "schema_version": "2026.A",
+    "gtfs_feed_version": "2024-Q1-SNAPSHOT",
+    "osm_extract_date": "2024-05-10",
+    "poi_snapshot_date": "2024-05-10",
+    "rag_index_version": "v2.1",
+    "data_age_days": 5
+  },
+  "data_quality": {
+    "gtfs": 0.0,
+    "osm": 0.0
+  },
+  "statistics": {
+    "routes": 1,
+    "challenges": 1
+  },
+  "processing_status": {
+    "area": "completed",
+    "gtfs": "completed",
+    "osm": "completed",
+    "poi": "completed",
+    "challenges": "completed",
+    "rag": "completed"
+  },
+  "indicators": {
+    "route_frequency": {
+      "summary": [
+        {
+          "evidence_id": "gtfs_LRT_1",
+          "trace_id": "eb29e190-9004-48a1-83ec-e2cb5a3f4b30",
+          "route_id": "LRT_1",
+          "trips_per_day": 120
+        }
+      ],
+      "metrics": {
+        "signal_strength": 0.0,
+        "completeness": 0.0,
+        "reliability": 0.85
+      },
+      "metadata": {
+        "source_table": "gtfs_route_frequency_summary",
+        "record_count": null,
+        "pipeline_version": "4.0.0-elite",
+        "signal_type": null
+      }
+    },
+    "transit_coverage": {
+      "summary": {
+        "coverage": "Good"
+      },
+      "metrics": {
+        "signal_strength": 0.0,
+        "completeness": 0.8,
+        "reliability": 0.9
+      },
+      "metadata": {
+        "source_table": "transit_coverage_summary",
+        "record_count": null,
+        "pipeline_version": "4.0.0-elite",
+        "signal_type": null
+      }
+    }
+  },
+  "candidate_problem_directions": {
+    "directions": [
+      {
+        "challenge_type": "bus_frequency_gap"
+      }
+    ]
+  },
+  "rag_support": {
+    "enabled": true,
+    "message": "Successfully found 4 RAG sources.",
+    "rag_by_challenge": [
+      {
+        "challenge": "General Transit",
+        "chunks": [
+          {
+            "chunk_id": "local_chunk",
+            "doc_id": "local_doc",
+            "title": "MRT Putrajaya Line Service Disruption (Taman Naga Emas)",
+            "source_type": "complaint",
+            "source_url": "https://paultan.org/2024/02/14/mrt-putrajaya-line-service-disrupted-this-morning-by-trespasser-between-tmn-naga-emas-sg-besi-stations/",
+            "publisher": "Local Knowledge Base",
+            "published_date": "2024-02-14",
+            "chunk_text": "MRT Putrajaya Line service was disrupted in February 2024 between Taman Naga Emas and Sungai Besi stations due to a trespasser incident, affecting thousands of early morning commuters.",
+            "area_tags": [
+              "Sungai Besi"
+            ],
+            "challenge_type_tags": []
+          },
+          {
+            "chunk_id": "local_chunk",
+            "doc_id": "local_doc",
+            "title": "Severe Gridlock at Sungai Besi Toll (July 2024)",
+            "source_type": "complaint",
+            "source_url": "https://www.facebook.com/groups/mysgroadtrip/posts/3755486514704815/",
+            "publisher": "Local Knowledge Base",
+            "published_date": "2024-07-29",
+            "chunk_text": "Massive traffic jams were reported at the Sungai Besi toll plaza on July 29, 2024, due to unannounced police roadblocks, causing significant delays for commuters entering Kuala Lumpur.",
+            "area_tags": [
+              "Sungai Besi"
+            ],
+            "challenge_type_tags": []
+          },
+          {
+            "chunk_id": "local_chunk",
+            "doc_id": "local_doc",
+            "title": "DBKL: Jalan Sungai Besi Upgrade (Sept 2023 - Sept 2024)",
+            "source_type": "report",
+            "source_url": "https://www.malaymail.com/news/malaysia/2023/10/02/dbkl-jalan-sungai-besi-upgrade-to-start-september-30-closure-in-stages-until-september-2024/93933",
+            "publisher": "Local Knowledge Base",
+            "published_date": "2023-10-02",
+            "chunk_text": "Kuala Lumpur City Hall (DBKL) is executing a major infrastructure upgrade for Jalan Sungai Besi. The project involves phased road closures and bridge construction, scheduled to continue through September 2024.",
+            "area_tags": [
+              "Sungai Besi"
+            ],
+            "challenge_type_tags": []
+          },
+          {
+            "chunk_id": "local_chunk",
+            "doc_id": "local_doc",
+            "title": "Scheduled Road Works on Sungai Besi Highway (2024)",
+            "source_type": "news_discovery",
+            "source_url": "https://malaysia.news.yahoo.com/scheduled-road-works-sungai-besi-083651019.html",
+            "publisher": "Local Knowledge Base",
+            "published_date": "2024-08-01",
+            "chunk_text": "Besraya and LLM are conducting scheduled road maintenance on the Sungai Besi Highway from August 1 to December 31, 2024. Phased nightly lane closures (10PM-6AM) are expected to cause periodic disruptions.",
+            "area_tags": [
+              "Sungai Besi"
+            ],
+            "challenge_type_tags": []
+          }
+        ]
+      }
+    ]
+  },
+  "validation_policy": {
+    "allowed_geography": {},
+    "enforce_claim_hedging": true
+  },
+  "blocked_claims": [
+    "Anti-hallucination policy enforced."
+  ],
+  "limitations": [
+    "Heuristic-based confidence models applied."
+  ],
+  "evidence_rules": {
+    "strict_rag": true
+  },
+  "audit": {
+    "trace_id": "eb29e190-9004-48a1-83ec-e2cb5a3f4b30",
+    "environment": "production",
+    "system": "Windows 10",
+    "python_version": "3.11.9",
+    "generated_by": "EvidencePackAssembler_Elite",
+    "builder_version": "4.0.0-elite"
+  },
+  "runtime_metrics": {
+    "area_ms": 0,
+    "gtfs_ms": 0,
+    "osm_ms": 0,
+    "poi_ms": 0,
+    "spatial_fetch_ms": 0,
+    "challenges_ms": 0,
+    "total_duration_ms": 53
+  }
+}
