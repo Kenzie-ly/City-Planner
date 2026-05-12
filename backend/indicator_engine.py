@@ -5,28 +5,39 @@ from backend.db.database import engine
 
 def build_area_gtfs_links(area_id: str):
     with engine.begin() as conn:
-        conn.execute(
-            text("""
-                INSERT INTO area_gtfs_stops (
-                    area_id,
-                    feed_id,
-                    stop_id,
-                    inside_area
-                )
-                SELECT
-                    a.area_id,
-                    s.feed_id,
-                    s.stop_id,
-                    TRUE
-                FROM areas a
-                JOIN gtfs_stops s
-                    ON ST_Contains(a.geom, s.geom)
-                WHERE a.area_id = :area_id
-                ON CONFLICT (area_id, feed_id, stop_id)
-                DO NOTHING;
-            """),
+        # Check if the area is large (like a state) or small (like a neighborhood)
+        row = conn.execute(
+            text("SELECT ST_Area(geom) as area FROM areas WHERE area_id = :area_id LIMIT 1;"),
             {"area_id": area_id},
-        )
+        ).mappings().first()
+        
+        area_size = row['area'] if row and row['area'] is not None else 0.0
+        print(f"-> Area size for {area_id}: {area_size}")
+        
+        # Lower the threshold so that cities like Shah Alam (0.002) use the fast query too!
+        is_large = area_size > 0.001
+        
+        if is_large:
+            # For large areas, use exact containment (fast)
+            sql = """
+                INSERT INTO area_gtfs_stops (area_id, feed_id, stop_id, inside_area)
+                SELECT a.area_id, s.feed_id, s.stop_id, TRUE
+                FROM areas a
+                JOIN gtfs_stops s ON ST_Contains(a.geom, s.geom)
+                WHERE a.area_id = :area_id
+                ON CONFLICT (area_id, feed_id, stop_id) DO NOTHING;
+            """
+        else:
+            # For small areas, use the 5km buffer (optimized to avoid join)
+            sql = """
+                INSERT INTO area_gtfs_stops (area_id, feed_id, stop_id, inside_area)
+                SELECT :area_id, s.feed_id, s.stop_id, TRUE
+                FROM gtfs_stops s
+                WHERE ST_DWithin((SELECT geom FROM areas WHERE area_id = :area_id LIMIT 1), s.geom, 0.05)
+                ON CONFLICT (area_id, feed_id, stop_id) DO NOTHING;
+            """
+            
+        conn.execute(text(sql), {"area_id": area_id})
 
         conn.execute(
             text("""
@@ -123,6 +134,15 @@ def build_route_frequency_summary(area_id: str):
 
 def build_transit_coverage_summary(area_id: str):
     with engine.begin() as conn:
+        # Check if the area is large (like a state)
+        row = conn.execute(
+            text("SELECT ST_Area(geom) as area FROM areas WHERE area_id = :area_id LIMIT 1;"),
+            {"area_id": area_id},
+        ).mappings().first()
+        
+        # Use 0.01 threshold (Selangor is much larger, Shah Alam is 0.002)
+        is_large = row['area'] > 0.01 if row and row['area'] is not None else False
+        
         conn.execute(
             text("""
                 DELETE FROM zone_transit_coverage_summary
@@ -131,8 +151,29 @@ def build_transit_coverage_summary(area_id: str):
             {"area_id": area_id},
         )
 
+        # Skip OSM heavy counts for large areas
+        bus_count_query = "0" if is_large else """
+            SELECT COUNT(*)
+            FROM osm_transit_stops s
+            WHERE ST_Contains((SELECT geom FROM areas WHERE area_id = :area_id LIMIT 1), s.geom)
+            AND s.stop_type = 'bus_stop'
+        """
+        
+        rail_count_query = "0" if is_large else """
+            SELECT COUNT(*)
+            FROM osm_transit_stops s
+            WHERE ST_Contains((SELECT geom FROM areas WHERE area_id = :area_id LIMIT 1), s.geom)
+            AND s.stop_type IN ('rail_station', 'public_transport')
+        """
+        
+        total_count_query = "0" if is_large else """
+            SELECT COUNT(*)
+            FROM osm_transit_stops s
+            WHERE ST_Contains((SELECT geom FROM areas WHERE area_id = :area_id LIMIT 1), s.geom)
+        """
+
         conn.execute(
-            text("""
+            text(f"""
                 INSERT INTO zone_transit_coverage_summary (
                     area_id,
                     bus_stop_count,
@@ -147,21 +188,9 @@ def build_transit_coverage_summary(area_id: str):
                 SELECT
                     :area_id AS area_id,
 
-                    COALESCE((
-                        SELECT COUNT(*)
-                        FROM osm_transit_stops s
-                        JOIN areas a ON ST_Contains(a.geom, s.geom)
-                        WHERE a.area_id = :area_id
-                        AND s.stop_type = 'bus_stop'
-                    ), 0) AS bus_stop_count,
+                    COALESCE(({bus_count_query}), 0) AS bus_stop_count,
 
-                    COALESCE((
-                        SELECT COUNT(*)
-                        FROM osm_transit_stops s
-                        JOIN areas a ON ST_Contains(a.geom, s.geom)
-                        WHERE a.area_id = :area_id
-                        AND s.stop_type IN ('rail_station', 'public_transport')
-                    ), 0) AS rail_station_count,
+                    COALESCE(({rail_count_query}), 0) AS rail_station_count,
 
                     COALESCE((
                         SELECT COUNT(DISTINCT route_id)
@@ -172,35 +201,13 @@ def build_transit_coverage_summary(area_id: str):
                     NULL AS high_frequency_route_count,
                     NULL AS low_frequency_route_count,
 
-                    LEAST(1.0, COALESCE((
-                        SELECT COUNT(*)
-                        FROM osm_transit_stops s
-                        JOIN areas a ON ST_Contains(a.geom, s.geom)
-                        WHERE a.area_id = :area_id
-                    ), 0)::DOUBLE PRECISION / 50.0) AS transit_coverage_score,
+                    LEAST(1.0, COALESCE(({total_count_query}), 0)::DOUBLE PRECISION / 50.0) AS transit_coverage_score,
 
-                    LEAST(1.0, COALESCE((
-                        SELECT COUNT(*)
-                        FROM osm_transit_stops s
-                        JOIN areas a ON ST_Contains(a.geom, s.geom)
-                        WHERE a.area_id = :area_id
-                    ), 0)::DOUBLE PRECISION / 50.0) AS evidence_score,
+                    LEAST(1.0, COALESCE(({total_count_query}), 0)::DOUBLE PRECISION / 50.0) AS evidence_score,
 
                     CASE
-                        WHEN COALESCE((
-                            SELECT COUNT(*)
-                            FROM osm_transit_stops s
-                            JOIN areas a ON ST_Contains(a.geom, s.geom)
-                            WHERE a.area_id = :area_id
-                        ), 0) >= 50 THEN 'strong'
-
-                        WHEN COALESCE((
-                            SELECT COUNT(*)
-                            FROM osm_transit_stops s
-                            JOIN areas a ON ST_Contains(a.geom, s.geom)
-                            WHERE a.area_id = :area_id
-                        ), 0) >= 10 THEN 'usable'
-
+                        WHEN COALESCE(({total_count_query}), 0) >= 50 THEN 'strong'
+                        WHEN COALESCE(({total_count_query}), 0) >= 10 THEN 'usable'
                         ELSE 'weak'
                     END AS confidence_tier;
             """),
