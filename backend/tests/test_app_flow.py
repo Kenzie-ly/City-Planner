@@ -156,9 +156,7 @@ def _install_test_stubs() -> None:
     helper_mod.get_malaysia_coords = lambda city: {"lat": 3.1390, "lng": 101.6869}
     sys.modules["building_agent_helper"] = helper_mod
 
-    roads_mod = types.ModuleType("FindRoads")
-    roads_mod.run_city_road_connection_analysis = lambda **kwargs: {"candidates": [{"candidate_id": "c1"}]}
-    sys.modules["FindRoads"] = roads_mod
+
 
 
 _install_test_stubs()

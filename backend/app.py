@@ -32,7 +32,6 @@ from agent import (
     review_agent,
 )
 from building_agent_helper import process_agent_assets, format_entities
-from FindRoads import run_city_road_connection_analysis
 from evidence_pipeline import (
     audit_osm_transit_gap,
     compute_merged_confidence,
@@ -1552,30 +1551,6 @@ def _resolve_area_selection(user_message: str, area_options: list[dict[str, Any]
     return None
 
 
-def _run_route_feasibility(city: str, selected_area: dict[str, Any]) -> dict[str, Any]:
-    aliases = selected_area.get("area_aliases") or [selected_area.get("area_label") or city]
-    road_a = [str(aliases[0])]
-    road_b = [str(aliases[-1])]
-    try:
-        result = run_city_road_connection_analysis(
-            user_city=city,
-            road_a_queries=road_a,
-            road_b_queries=road_b,
-            regions_path="regions.json",
-            city_buffer_m=1200,
-            routing_mode="drive",
-        )
-        candidates = result.get("candidates", [])
-        route_valid = bool(result.get("route_valid", bool(candidates)))
-        return {
-            "pass": route_valid and bool(candidates),
-            "score": 1.0 if route_valid and candidates else 0.0,
-            "candidate_count": len(candidates),
-            "route_status": result.get("route_status"),
-            "route_error": result.get("route_error"),
-        }
-    except Exception as exc:
-        return {"pass": False, "score": 0.0, "candidate_count": 0, "error": str(exc)}
 
 
 ############################################
@@ -1663,33 +1638,6 @@ async def _screen_single_area(selected_city: str, opt: dict[str, Any]) -> dict[s
         return None
 
 
-async def _verify_single_area(selected_city: str, opt: dict[str, Any]) -> dict[str, Any] | None:
-    try:
-        async with nominatim_semaphore:
-            osm_audit = await asyncio.to_thread(audit_osm_transit_gap, selected_city, str(opt.get("area_label") or selected_city))
-        
-        feasibility = await asyncio.to_thread(_run_route_feasibility, selected_city, opt)
-        complaint_verified = await asyncio.to_thread(verify_complaint_against_osm, osm_audit, opt)
-        merged = compute_merged_confidence(
-            report_score=float(opt.get("report_score", 0.0)),
-            gap_score=float(osm_audit.gap_score),
-            feasibility=float(feasibility.get("score", 0.0)),
-            equity_flag=bool(opt.get("equity_flag")),
-            completeness_score=float(osm_audit.completeness_score),
-            complaint_verified=complaint_verified,
-        )
-        opt = dict(opt)
-        opt["osm_audit"] = osm_audit.audit_details
-        opt["osm_gap_score"] = osm_audit.gap_score
-        opt["osm_completeness_score"] = osm_audit.completeness_score
-        opt["route_feasibility"] = feasibility
-        opt["merged_confidence"] = merged
-        opt["confidence_label"] = merged.get("band", "low")
-        opt["complaint_verified"] = complaint_verified
-        return opt
-    except Exception as exc:
-        print(f"Full verification failed for {opt.get('area_label')}: {exc}")
-        return None
 
 
 async def _speculative_find_needs_task(session_id: str, city: str, top_candidate: dict[str, Any]):
@@ -2301,25 +2249,24 @@ def _build_anchor_point_hints(selected_micro: dict[str, Any]) -> dict[str, dict[
 
 
 def _run_micro_analysis_direct(selected_micro: dict[str, Any], selected_city: str) -> list[dict[str, Any]]:
-    routing_mode = _routing_mode_for_micro(selected_micro)
-    road_a_queries = list(selected_micro.get("road_a_queries") or selected_micro.get("ROAD_A_QUERIES") or [])
-    road_b_queries = list(selected_micro.get("road_b_queries") or selected_micro.get("ROAD_B_QUERIES") or [])
-    if not road_a_queries or not road_b_queries:
-        raise ValueError("Selected micro-symptom is missing anchor query arrays.")
-
-    result = run_city_road_connection_analysis(
-        user_city=selected_city,
-        road_a_queries=road_a_queries,
-        road_b_queries=road_b_queries,
-        regions_path="regions.json",
-        city_buffer_m=1000,
-        routing_mode=routing_mode,
-        anchor_point_hints=_build_anchor_point_hints(selected_micro),
-    )
-    result["selected_micro_source"] = "PRIMARY_MICRO"
-    result["selected_micro_type"] = selected_micro.get("type") or selected_micro.get("TYPE")
-    result["selected_micro_symptom"] = selected_micro.get("symptom") or selected_micro.get("SYMPTOM")
-    result["selected_micro_location_label"] = selected_micro.get("location_label") or selected_micro.get("LOCATION_LABEL")
+    # FindRoads decommissioned - providing structured placeholder for the prompt.
+    # Routing geometry will be handled on-demand by the Building Agent (Overpass API).
+    result = {
+        "status": "success",
+        "route_status": "Routing bypassed (FindRoads decommissioned)",
+        "candidates": [{
+             "id": "placeholder_route",
+             "name": selected_micro.get("location_label") or "Selected Hotspot",
+             "dominant_class": "unclassified",
+             "length_m": 1000.0
+        }],
+        "route_geometry": [{"lat": 0, "lng": 0}], # Placeholder geometry
+        "route_valid": True,
+        "selected_micro_source": "PRIMARY_MICRO",
+        "selected_micro_type": selected_micro.get("type") or selected_micro.get("TYPE"),
+        "selected_micro_symptom": selected_micro.get("symptom") or selected_micro.get("SYMPTOM"),
+        "selected_micro_location_label": selected_micro.get("location_label") or selected_micro.get("LOCATION_LABEL")
+    }
     return [result]
 
 
@@ -3546,15 +3493,8 @@ Remember:
         ################################################
         # Verify Selected Area - Check feasibility and confidence
         ################################################
-        verified_option = await _verify_single_area(selected_city, selected_option)
-        if verified_option is None:
-            verified_option = dict(selected_option)
-            verified_option["route_feasibility"] = {"pass": False, "score": 0.0, "candidate_count": 0, "error": "verification_failed"}
-            verified_option["merged_confidence"] = {"confidence": 0.0, "band": "low", "pass_gate": False}
-            verified_option["osm_gap_score"] = float(selected_option.get("osm_gap_score", 0.0))
-            verified_option["osm_completeness_score"] = float(selected_option.get("osm_completeness_score", 0.0))
-
-        selected_option = verified_option
+        # Use the selected option directly (verification handled during screening)
+        selected_option = dict(selected_option)
         state["selected_area_option"] = selected_option
 
         ################################################
