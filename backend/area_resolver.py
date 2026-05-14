@@ -6,7 +6,7 @@ from pathlib import Path
 import osmnx as ox
 from sqlalchemy import text
 
-from backend.db.database import engine
+from db.database import engine
 
 REGIONS_PATH = Path(__file__).resolve().parent / "regions.json"
 

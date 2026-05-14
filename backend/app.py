@@ -29,8 +29,6 @@ from agent import (
     building_agent,
     InfrastructurePlannerOrchestrator,
     find_hotspot_agent,
-    review_agent,
-    hallucination_audit_agent,
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
@@ -157,10 +155,47 @@ async def get_diagnostic_hotspots(area_id: str):
         print(f"DEBUG: API Key loaded = {os.getenv('GEMINI_API_KEY')[:10]}...")
         client = genai.Client() # Reads GEMINI_API_KEY
         
+        # --- RAG Integration ---
+        articles_context = ""
+        try:
+            # 1. Generate embedding for the search query
+            response = client.models.embed_content(
+                model='gemini-embedding-2',
+                contents="public transport issues and bus coverage",
+            )
+            query_vector = response.embeddings[0].values
+            vector_str = "[" + ",".join(map(str, query_vector)) + "]"
+            
+            # 2. Query the database using pgvector
+            query = """
+                SELECT title, content, source_type
+                FROM city_problems_rag
+                WHERE city = :city
+                ORDER BY embedding <=> :vector ASC
+                LIMIT 3;
+            """
+            with engine.connect() as conn:
+                res = conn.execute(text(query), {"vector": vector_str, "city": area_id}).fetchall()
+                for r in res:
+                    articles_context += f"Source Type: {r.source_type}\nTitle: {r.title}\nContent: {r.content}\n\n"
+                    
+            if articles_context:
+                print(f"✅ RAG found {len(res)} articles for {area_id}!")
+            else:
+                print(f"ℹ️ No RAG articles found for {area_id}. Falling back to general knowledge.")
+                
+        except Exception as e:
+            print(f"RAG search failed: {e}. Falling back to general knowledge.")
+            
         prompt = f"""
         You are a Transport Infrastructure Solution Expert in Malaysia.
         I will give you a list of 3 specific Points of Interest (POIs) found in our database that have high activity but likely transit gaps.
-        Your task is to generate a smart, realistic, and professional "issue" description and "recommended action" for each.
+        
+        Real Data Context (Use this to ground your issues if available!):
+        {articles_context if articles_context else "No real articles found for this city. Use your general transport knowledge."}
+        
+        Your task is to generate a smart, realistic, and professional "issue" description and "recommended action" for each POI.
+        If real articles are provided above, try to mention the issues cited in them (like bus delays, congestion, or specific plans).
         
         Data:
         {json.dumps(db_hotspots, indent=2)}
@@ -168,7 +203,7 @@ async def get_diagnostic_hotspots(area_id: str):
         Return a STRICT JSON ARRAY of 3 objects with the following keys:
         - id: "hotspot_1", "hotspot_2", "hotspot_3"
         - name: The POI name and road name combined nicely (e.g., "1 Mont Kiara (Jalan Kiara)").
-        - issue: 2-3 sentences explaining the problem based on the data or general transport knowledge of that area.
+        - issue: 2-3 sentences explaining the problem. Use the real data context if it helps, otherwise use general transport knowledge.
         - severity: "High" or "Medium".
         - recommended_action: 1 sentence on what to do next.
         
