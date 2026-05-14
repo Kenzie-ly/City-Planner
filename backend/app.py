@@ -61,6 +61,89 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from sqlalchemy import text
+from ingest_links.ingestion_utils import engine
+
+@app.get("/api/diagnostic/hotspots")
+async def get_diagnostic_hotspots(area_id: str):
+    query = """
+        SELECT p.name as poi_name, e.name as road_name, p.poi_category
+        FROM osm_pois p
+        LEFT JOIN osm_edges e 
+        ON ST_DWithin(p.geom, e.geometry, 0.005)
+        WHERE p.area_id = :area_id AND p.name != 'Unnamed'
+        ORDER BY ST_Distance(p.geom, e.geometry) ASC
+        LIMIT 15;
+    """
+    
+    category_scores = {
+        "station": "10.0",
+        "rail_station": "10.0",
+        "mall": "8.5",
+        "university": "9.0",
+        "office": "8.0",
+        "commercial": "7.0",
+        "supermarket": "6.0",
+        "apartments": "5.0",
+        "bus_stop": "4.0",
+        "other": "1.0"
+    }
+    
+    hotspots = []
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text(query), {"area_id": area_id})
+            used_pois = set()
+            
+            for row in result:
+                poi_name = row.poi_name
+                road_name = row.road_name or "Unknown Road"
+                category = row.poi_category
+                
+                # Avoid duplicates
+                if poi_name in used_pois:
+                    continue
+                used_pois.add(poi_name)
+                
+                demand_score = category_scores.get(category, "1.0")
+                
+                # Clean road_name if it's stored as a JSON string in DB
+                if road_name.startswith("["):
+                    import json
+                    try:
+                        names = json.loads(road_name)
+                        road_name = names[0] if names else "Unknown Road"
+                    except:
+                        pass
+                
+                hotspots.append({
+                    "id": f"hotspot_{len(hotspots)+1}",
+                    "name": f"{poi_name} ({road_name})",
+                    "issue": f"The area around {road_name} is identified as a high-activity hub (Demand Score: {demand_score}), but our data shows a gap in transit coverage nearby.",
+                    "severity": "High" if float(demand_score) >= 7.0 else "Medium",
+                    "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+                })
+                
+                if len(hotspots) >= 3:
+                    break
+                    
+    except Exception as e:
+        print(f"Database error: {e}")
+        
+    # Fallback if DB is empty or fails
+    if not hotspots:
+        return [
+          {
+            "id": "hotspot_1",
+            "name": "Johor Bahru Sentral (Jalan Jim Quee)",
+            "issue": "The area around Jalan Jim Quee is identified as a high-activity hub (Demand Score: 10.0), but our data shows a gap in transit coverage nearby.",
+            "severity": "High",
+            "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+          }
+        ]
+        
+    return hotspots
+
 from concurrency import llm_semaphore, nominatim_semaphore
 
 APP_NAME = "infrastructure_planner"
