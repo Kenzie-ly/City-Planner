@@ -1,4 +1,6 @@
 import os
+import uuid
+import hashlib
 from rag_service import RagService
 
 # Initialize the local RAG service
@@ -45,11 +47,27 @@ def search_rag_chunks_by_area_and_challenge(
     # Map local results to the "Database" structure you designed
     mapped_rows = []
     for res in results:
+        # Normalize source types to match DB schema (news, report, complaint, etc)
+        orig_type = res.get("type", "report").lower()
+        if "news" in orig_type:
+            db_type = "news"
+        elif "complaint" in orig_type or "issue" in orig_type:
+            db_type = "complaint"
+        elif "planning" in orig_type or "report" in orig_type:
+            db_type = "report"
+        else:
+            db_type = "report"
+
+        # Generate deterministic UUIDs based on text content
+        text_hash = hashlib.md5(res["text"].encode()).hexdigest()
+        c_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"chunk_{text_hash}"))
+        d_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"doc_{res.get('source', 'unknown')}"))
+
         mapped_rows.append({
-            "chunk_id": "local_chunk",
-            "doc_id": "local_doc",
+            "chunk_id": c_id,
+            "doc_id": d_id,
             "title": res.get("metadata", {}).get("title", "Unknown Report"),
-            "source_type": res.get("type", "report"),
+            "source_type": db_type,
             "source_url": res.get("metadata", {}).get("url", ""),
             "publisher": "Local Knowledge Base",
             "published_date": res.get("metadata", {}).get("published_at", "2024-01-01"),

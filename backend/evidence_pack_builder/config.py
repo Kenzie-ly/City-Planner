@@ -3,8 +3,9 @@ from pydantic_settings import BaseSettings
 
 class PipelineConfig(BaseSettings):
     # Pipeline Versions
-    VERSION: str = "4.0.0-elite"
-    SCHEMA_VERSION: str = "2026.A"
+    PIPELINE_VERSION: str = "4.0.0-elite"
+    PACK_VERSION: str = "1.0.0"
+    DB_SCHEMA_VERSION: str = "2026.A"
     
     # Dataset Metadata (Move from hardcoded to here)
     GTFS_FEED_VERSION: str = os.getenv("GTFS_FEED_VERSION", "2024-Q1-SNAPSHOT")
@@ -19,5 +20,6 @@ class PipelineConfig(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 config = PipelineConfig()

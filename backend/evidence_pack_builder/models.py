@@ -35,7 +35,7 @@ class ConfidenceObject(BaseModel):
     inference_confidence: float
 
 class ProblemDirection(BaseModel):
-    problem_direction_id: int
+    problem_direction_id: str
     challenge_type: str
     title: str
     reason_hint: str
@@ -56,7 +56,7 @@ class ValidationPolicy(BaseModel):
 
 class EvidencePack(BaseModel):
     evidence_pack_id: Optional[str] = None
-    pack_schema_version: str
+    pack_version: str
     generated_at: str
     area: Dict[str, Any]
     provenance: EvidenceProvenance
