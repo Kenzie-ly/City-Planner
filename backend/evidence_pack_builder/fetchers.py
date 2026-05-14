@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy import text
-from backend.db.database import engine
+from db.database import engine
 
 logger = logging.getLogger(__name__)
 

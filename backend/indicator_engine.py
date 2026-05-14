@@ -1,6 +1,6 @@
 from sqlalchemy import text
 
-from backend.db.database import engine
+from db.database import engine
 
 
 def build_area_gtfs_links(area_id: str):

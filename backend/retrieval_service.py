@@ -6,7 +6,7 @@ from rag_service import RagService
 # Initialize the local RAG service
 kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
 rag = RagService(kb_dir)
-rag.ingest_directory()
+# rag.ingest_directory()  # Moved to manual/on-demand to avoid startup timeouts
 
 def search_rag_chunks_by_area_and_challenge(
     area_id: str,

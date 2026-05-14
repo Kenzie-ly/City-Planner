@@ -10,8 +10,8 @@ from typing import Callable, Any
 
 from sqlalchemy import text
 
-from backend.db.database import engine
-from backend.evidence_pack_builder.models import (
+from db.database import engine
+from .models import (
     EvidencePack, 
     EvidenceProvenance, 
     ValidationPolicy, 
@@ -20,8 +20,8 @@ from backend.evidence_pack_builder.models import (
     IndicatorMetadata,
     StageStatus
 )
-from backend.evidence_pack_builder import fetchers, metrics
-from backend.evidence_pack_builder.config import config
+from . import fetchers, metrics
+from .config import config
 
 # =========================================================
 # Setup & Logging
@@ -55,7 +55,7 @@ def with_retry(max_attempts: int = config.MAX_RETRIES, delay: float = config.RET
     return decorator
 
 
-from backend.retrieval_service import search_rag_chunks_by_area_and_challenge
+from retrieval_service import search_rag_chunks_by_area_and_challenge
 
 def get_rag_support(area_id: str) -> dict:
     """

@@ -6,15 +6,8 @@ python-dotenv
 requests
 google-adk
 google-genai
-networkx
-pandas
-pyproj
 shapely
-geopandas
-flask
-flask-cors
 firebase-admin
-gunicorn
 scikit-learn
 sqlalchemy
 psycopg2-binary

@@ -1,9 +1,11 @@
 FROM python:3.10-slim
 
-# Install only minimal system dependencies
+# Install minimal system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
+    libgomp1 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for Python
