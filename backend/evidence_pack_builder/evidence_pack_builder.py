@@ -152,17 +152,17 @@ class EvidencePackAssembler:
                     signal_strength=metrics.calculate_route_signal_strength(enriched_routes), 
                     completeness=gtfs_comp, reliability=0.85
                 ),
-                metadata=IndicatorMetadata(source_table="gtfs_route_frequency_summary", pipeline_version=config.VERSION)
+                metadata=IndicatorMetadata(source_table="gtfs_route_frequency_summary", pipeline_version=config.PIPELINE_VERSION)
             ),
             "transit_coverage": IndicatorSection(
                 summary=osm if osm else {},
                 metrics=ConfidenceMetrics(signal_strength=osm_score, completeness=0.80 if osm else 0, reliability=0.90),
-                metadata=IndicatorMetadata(source_table="transit_coverage_summary", pipeline_version=config.VERSION)
+                metadata=IndicatorMetadata(source_table="transit_coverage_summary", pipeline_version=config.PIPELINE_VERSION)
             ),
             "demand_proxy": IndicatorSection(
                 summary=poi if poi else {},
                 metrics=ConfidenceMetrics(signal_strength=1.0 if poi else 0, completeness=0.80 if poi else 0, reliability=0.90),
-                metadata=IndicatorMetadata(source_table="demand_proxy_summary", pipeline_version=config.VERSION)
+                metadata=IndicatorMetadata(source_table="demand_proxy_summary", pipeline_version=config.PIPELINE_VERSION)
             )
         }
 
@@ -178,16 +178,16 @@ class EvidencePackAssembler:
             "system": f"{platform.system()} {platform.release()}",
             "python_version": platform.python_version(),
             "generated_by": "EvidencePackAssembler_Elite",
-            "builder_version": config.VERSION
+            "builder_version": config.PIPELINE_VERSION
         }
 
         return EvidencePack(
-            pack_schema_version=config.SCHEMA_VERSION,
+            pack_version=config.PACK_VERSION,
             generated_at=generated_at,
             area=area,
             provenance=EvidenceProvenance(
-                pipeline_version=config.VERSION, 
-                schema_version=config.SCHEMA_VERSION,
+                pipeline_version=config.PIPELINE_VERSION, 
+                schema_version=config.DB_SCHEMA_VERSION,
                 gtfs_feed_version=config.GTFS_FEED_VERSION, 
                 osm_extract_date=config.OSM_EXTRACT_DATE, 
                 poi_snapshot_date=config.POI_SNAPSHOT_DATE, 
@@ -231,13 +231,12 @@ def store_evidence_pack(area_id: str, pack: EvidencePack) -> str:
     with engine.begin() as conn:
         conn.execute(
             text("""
-                INSERT INTO evidence_packs (evidence_pack_id, area_id, pack_version, pack_json, created_at)
-                VALUES (:evidence_pack_id, :area_id, :pack_version, :pack_json, NOW());
+                INSERT INTO evidence_packs (evidence_pack_id, area_id, pack_json, created_at)
+                VALUES (:evidence_pack_id, :area_id, :pack_json, NOW());
             """),
             {
                 "evidence_pack_id": evidence_pack_id,
                 "area_id": area_id,
-                "pack_version": pack.pack_schema_version,
                 "pack_json": json.dumps(pack.to_dict()), 
             },
         )

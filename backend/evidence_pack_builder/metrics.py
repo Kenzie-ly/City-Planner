@@ -2,7 +2,7 @@ def calculate_gtfs_completeness(route_frequency: list[dict]) -> float:
     """Assess how much of the GTFS data has valid headway info."""
     if not route_frequency:
         return 0.0
-    valid = sum(1 for r in route_frequency if r.get("avg_headway_minutes") is not None)
+    valid = sum(1 for r in route_frequency if r.get("median_headway_min") is not None)
     return round(valid / len(route_frequency), 2)
 
 

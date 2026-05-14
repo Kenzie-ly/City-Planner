@@ -58,7 +58,6 @@ from google.genai import types
 import os
 import json
 
-client = genai.Client() # Reads GEMINI_API_KEY from .env
 
 @app.get("/api/diagnostic/hotspots")
 async def get_diagnostic_hotspots(area_id: str):

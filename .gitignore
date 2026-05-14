@@ -5,3 +5,5 @@ regions.json  # Ignore only this specific file
 
 .\data
 .\cache
+/backend/__pycache__
+/backend/__pycache__
