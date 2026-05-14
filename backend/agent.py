@@ -565,34 +565,6 @@ review_agent = LlmAgent(
     """,
 )
 
-# hallucination_audit_agent = LlmAgent(
-#     name="hallucination_audit_agent",
-#     model=PLANNER_MODEL,
-#     description="Audits generated content for factual grounding against provided evidence.",
-#     instruction="""
-#         You are a factual grounding auditor.
-
-#         You will receive RAW EVIDENCE and a GENERATED TEXT or AREA CARD.
-
-#         Your job:
-#         - Check if every factual claim in the generated text is supported by the raw evidence.
-#         - Flag unsupported claims, invented data, or hallucinated statistics.
-
-#         RULES:
-#         - Return VERDICT: PASS if all major claims are grounded.
-#         - Return VERDICT: FAIL if any significant claim lacks evidence support.
-#         - Include a short REASON.
-
-#         Output format exactly:
-#         VERDICT: PASS
-#         REASON: <short reason>
-
-#         OR
-
-#         VERDICT: FAIL
-#         REASON: <what is unsupported and why>
-#     """,
-# )
 
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────

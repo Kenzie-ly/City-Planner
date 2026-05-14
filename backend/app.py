@@ -29,6 +29,7 @@ from agent import (
     building_agent,
     InfrastructurePlannerOrchestrator,
     find_hotspot_agent,
+    review_agent,
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
@@ -779,35 +780,6 @@ def _build_area_card_paragraphs(
     return description_paragraph.strip(), micro_paragraph.strip()
 
 
-async def _hallucination_audit_area_card(
-    session_id: str,
-    trusted_sources: list[dict[str, Any]],
-    description_paragraph: str,
-    micro_paragraph: str,
-) -> bool:
-    prompt = f"""
-You are auditing area-card narratives for evidence grounding.
-
-RAW EVIDENCE JSON:
-{json.dumps(trusted_sources, ensure_ascii=False, indent=2)}
-
-GENERATED AREA CARD JSON:
-{json.dumps({"description_paragraph": description_paragraph, "micro_paragraph": micro_paragraph}, ensure_ascii=False, indent=2)}
-
-Return:
-VERDICT: PASS or FAIL
-REASON: <short reason>
-""".strip()
-
-    audit_raw = await run_agent_once(hallucination_audit_agent, session_id, prompt)
-    text = str(audit_raw or "").upper()
-    if "VERDICT: FAIL" in text:
-        return False
-    if "VERDICT: PASS" in text:
-        return True
-    if "HALLUCINATION" in text or "UNSUPPORTED" in text:
-        return False
-    return bool(text.strip())
 
 
 def _default_credible_sources() -> list[dict[str, Any]]:
@@ -873,29 +845,6 @@ async def _synthesize_area_card_content(
         option["trusted_sources"] = trusted_sources
         return option
 
-    # passed = await _hallucination_audit_area_card(
-    #     session_id,
-    #     trusted_sources,
-    #     description_paragraph,
-    #     micro_paragraph,
-    # )
-    # if not passed:
-    #     impacted = _extract_impacted_locations(option, trusted_sources, city)
-    #     impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
-    #     description_paragraph = (
-    #         f"{option.get('area_label') or city} is flagged from trusted transport evidence as a corridor with observed demand pressure in {city}."
-    #     )
-    #     micro_paragraph = (
-    #         f"Micro symptom overview for {impacted_text}: trusted reports describe real commuting friction between residential neighborhoods and job hubs."
-    #     )
-    #     passed = await _hallucination_audit_area_card(
-    #         session_id,
-    #         trusted_sources,
-    #         description_paragraph,
-    #         micro_paragraph,
-    #     )
-    #     if not passed:
-    #         return None
 
     option["description_paragraph"] = description_paragraph
     option["micro_paragraph"] = micro_paragraph
@@ -1352,27 +1301,6 @@ def _build_find_needs_fallback_response(
 
 
 
-async def audit_generated_challenges(session_id: str, selected_option: dict[str, Any], generated_challenges_raw: str) -> tuple[bool, str]:
-    raw_snippets = json.dumps(selected_option.get("google_evidence", []), indent=2)
-    audit_prompt = (
-        "Review the generated challenge set against the raw evidence.\n\n"
-        "Return exactly:\n"
-        "VERDICT: PASS or FAIL\n"
-        "REASON: <short reason>\n\n"
-        f"RAW EVIDENCE:\n{raw_snippets}\n\n"
-        f"GENERATED CHALLENGES:\n{generated_challenges_raw}"
-    )
-    audit_raw = await run_agent_with_retry(hallucination_audit_agent, session_id, audit_prompt)
-    if is_retry_response(audit_raw):
-        return True, audit_raw
-    audit_text = str(audit_raw or "").upper()
-    if "VERDICT: FAIL" in audit_text:
-        return False, audit_raw
-    if "VERDICT: PASS" in audit_text:
-        return True, audit_raw
-    if "HALLUCINATION" in audit_text or "UNSUPPORTED" in audit_text:
-        return False, audit_raw
-    return True, audit_raw
 
 def build_find_needs_prompt(
     target_places: list[str],
@@ -1880,25 +1808,10 @@ async def start_area_option_phase(session_id: str, current_session, background_t
     candidates = sorted(candidates, key=lambda x: x.get("report_score", 0.0), reverse=True)
     prescreen_pool = candidates[:5]
     
-    # NEW: BATCH AUDIT AGENT CALL
-    print(f"[AUDIT] Starting batch audit for {len(prescreen_pool)} candidates...")
-    audit_prompt = f"""
-RAW EVIDENCE JSON:
-{json.dumps(candidates, ensure_ascii=False, indent=2)}
-
-PROPOSED AREA OPTIONS:
-{json.dumps([{ "area_label": opt.get("area_label"), "rationale": opt.get("rationale") } for opt in prescreen_pool], ensure_ascii=False, indent=2)}
-""".strip()
-    
-    audit_raw = await run_agent_once(hallucination_audit_agent, session_id, audit_prompt)
-    try:
-        audit_res = safe_json_loads(audit_raw)
-        audit_results = audit_res.get("results", [True] * len(prescreen_pool))
-        audit_reasons = audit_res.get("reasons", ["No reason provided"] * len(prescreen_pool))
-    except Exception:
-        print("[AUDIT ERROR] Failed to parse batch audit JSON. Defaulting to PASS.")
-        audit_results = [True] * len(prescreen_pool)
-        audit_reasons = ["Parse failure"] * len(prescreen_pool)
+    # Pass through all candidates (hallucination audit decommissioned)
+    print(f"[AUDIT] Bypassing batch audit for {len(prescreen_pool)} candidates.")
+    audit_results = [True] * len(prescreen_pool)
+    audit_reasons = ["Internal data trusted"] * len(prescreen_pool)
 
     # Now process each one with the audit result
     tasks = []
@@ -3756,12 +3669,6 @@ Remember:
                 retry_feedback=extract_retry_feedback(initial_raw),
             )
 
-        audit_passed, audit_raw = await audit_generated_challenges(session_id, selected_option, initial_raw)
-        state["last_find_needs_audit"] = audit_raw
-        if not audit_passed:
-            print(f"Fact-Check Audit flagged output for {selected_option.get('area_label')}: {audit_raw}")
-        else:
-            print(f"Fact-Check Audit completed for {selected_option.get('area_label')}")
 
         raw_step_output, display_reply, find_needs_options = await prepare_find_needs_output(
             session_id=session_id,
