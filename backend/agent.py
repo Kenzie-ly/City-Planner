@@ -615,55 +615,55 @@ building_agent = LlmAgent(
 
 # ── Review agent for later checkpoint-based pipeline ─────────────────────────
 
-# review_agent = LlmAgent(
-#     name="review_agent",
-#     model=PLANNER_MODEL,
-#     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
-#     instruction="""
-#         You are a review agent for a multi-step infrastructure planning workflow.
+review_agent = LlmAgent(
+    name="review_agent",
+    model=PLANNER_MODEL,
+    description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
+    instruction="""
+        You are a review agent for a multi-step infrastructure planning workflow.
 
-#         You will be receiving either challanges selection at run time.
+        You will be receiving either challanges selection at run time.
 
-#         Your job:
-#         - decide whether the user response is a valid selection or approval
-#         - detect vague, unrelated, or invalid responses
-#         - detect when the user wants the previous step regenerated or revised
-#         - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
+        Your job:
+        - decide whether the user response is a valid selection or approval
+        - detect vague, unrelated, or invalid responses
+        - detect when the user wants the previous step regenerated or revised
+        - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
 
-#         NATURAL COMMUNICATION:
-#         - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
+        NATURAL COMMUNICATION:
+        - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
 
-#         RULES:
-#         - Return PASS only if the user response can be confidently mapped to the current output.
-#         - Return REVISE if the response is too vague, invalid, or unrelated.
-#         - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
-#         - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
-#         - If the user says "1", "2", "the first one", etc., resolve it explicitly.
-#         - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
-#         - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
-#         - For approval steps such as planning/solution/building, you may return the current JSON or text as OUTPUT.
-#         - Do not add extra commentary outside the required format.
+        RULES:
+        - Return PASS only if the user response can be confidently mapped to the current output.
+        - Return REVISE if the response is too vague, invalid, or unrelated.
+        - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
+        - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
+        - If the user says "1", "2", "the first one", etc., resolve it explicitly.
+        - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
+        - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
+        - For approval steps such as planning/solution/building, you may return the current JSON or text as OUTPUT.
+        - Do not add extra commentary outside the required format.
 
-#         Output format exactly:
+        Output format exactly:
 
-#         VERDICT: PASS
-#         REASON: <brief reason>
-#         RESOLVED_REFERENCE: <explicit resolved item>
-#         JSON_OUTPUT: <single JSON object if available>
+        VERDICT: PASS
+        REASON: <brief reason>
+        RESOLVED_REFERENCE: <explicit resolved item>
+        JSON_OUTPUT: <single JSON object if available>
 
-#         OR
+        OR
 
-#         VERDICT: REVISE
-#         INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
-#         RESOLVED_REFERENCE:
+        VERDICT: REVISE
+        INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
+        RESOLVED_REFERENCE:
 
-#         OR
+        OR
 
-#         VERDICT: REVISE_TOTAL
-#         INSTRUCTION: <specific actionable instruction based on the user's response>
-#         RESOLVED_REFERENCE:
-#     """,
-# )
+        VERDICT: REVISE_TOTAL
+        INSTRUCTION: <specific actionable instruction based on the user's response>
+        RESOLVED_REFERENCE:
+    """,
+)
 
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────
@@ -1334,12 +1334,6 @@ place_intake_root = PlaceIntakeOrchestrator(
     app_name="infrastructure_planner",
     session_svc=session_service,
 )
-dummy_reviewer = LlmAgent(
-    name="dummy_reviewer",
-    model=PLANNER_MODEL,
-    description="Dummy reviewer to satisfy Pydantic.",
-    instruction="Always return VERDICT: PASS"
-)
 
 planning_root = InfrastructurePlannerOrchestrator(
     name="infrastructure_planner_orchestrator",
@@ -1353,7 +1347,7 @@ planning_root = InfrastructurePlannerOrchestrator(
     ],
     app_name="infrastructure_planner",
     session_svc=session_service,
-    reviewer=dummy_reviewer,
+    reviewer=review_agent,
 )
 
 
