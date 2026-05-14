@@ -1270,7 +1270,15 @@ def run_city_road_connection_analysis(
     # 1. Find region and load regional graph
     region = find_region_for_city(user_city, regions_path=regions_path)
     
-    graph_path = region["graphml"]
+    # Use specific graph based on routing mode if available
+    if routing_mode == "walk":
+        graph_path = region.get("graphml_walk") or region.get("graphml")
+    else:
+        graph_path = region.get("graphml_drive") or region.get("graphml")
+    
+    if not graph_path:
+        raise KeyError(f"No graph path (graphml, graphml_drive, or graphml_walk) found in regions.json for: {region.get('region_name')}")
+
     if graph_path in GRAPH_CACHE:
         G_region = GRAPH_CACHE[graph_path]
     else:

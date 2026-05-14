@@ -451,6 +451,7 @@ def assess_solution_eligibility(
     }
 
 
+### Solution Readiness Pack ###
 def build_decision_package(
     selected_city: str,
     selected_micro: dict[str, Any],
@@ -552,6 +553,7 @@ def _rewrite_unsupported_numeric_claims(text: str, allowed_facts: list[str], rem
     return NUMERIC_CLAIM_PATTERN.sub(_replace, text)
 
 
+### Feasibility Reviewer Agent ###
 def audit_solution_claims(solution_result: dict[str, Any], decision_package: dict[str, Any]) -> ClaimAuditResult:
     sanitized = dict(solution_result or {})
     removed_claims: list[str] = []
