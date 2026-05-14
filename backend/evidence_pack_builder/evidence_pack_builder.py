@@ -209,6 +209,7 @@ class EvidencePackAssembler:
         )
 
 
+### General Evidence Pack ###
 def build_general_evidence_pack(area_id: str) -> EvidencePack:
     """Entry Point: Generates a high-integrity Evidence Pack."""
     return EvidencePackAssembler(area_id).assemble()

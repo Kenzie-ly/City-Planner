@@ -14,6 +14,9 @@ import re
 from FindRoads import run_city_road_connection_analysis
 from building_agent_helper import process_agent_assets, format_entities
 import json
+from area_resolver import resolve_area
+from indicator_engine import run_indicator_engine
+from evidence_pack_builder.evidence_pack_builder import build_general_evidence_pack
 
 # Load API key from .env file
 load_dotenv()
@@ -219,102 +222,6 @@ find_hotspot_agent = LlmAgent(
     output_key="hotspot_hypothesis",
 )
 
-# planning_agent = LlmAgent(
-#     name="planning_agent",
-#     model=PLANNER_MODEL,
-#     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
-#     instruction = """
-#         You are a Transport Planning Decision Agent for Malaysia.
-#         You will receive:
-
-#         A structured transport problem
-#         A list of candidate routes generated from a graph-based road analysis system
-        
-#         FEEDBACK LOOP:
-#         - If the previous plan was rejected, follow the user's instructions to select a different candidate or intervention type.
-        
-#         Compare all candidates carefully
-#         Select the MOST appropriate candidate for addressing the problem
-#         Identify the most suitable intervention type
-#         Justify your decision using ONLY the provided data
-#         Explain tradeoffs between candidates
-#         Assign a realistic confidence level
-#         CRITICAL RULES (MUST FOLLOW)
-#         - You MUST NOT invent exact distances, lane counts, travel-time savings, percentages, economic values, or any other numeric impact metric unless that exact value already appears in the provided input JSON.
-#         - If the provided input does not contain a required number, use qualitative wording such as "short connector", "limited road width", or "likely moderate benefit" instead of fabricating precision.
-#         You MUST only choose from the provided candidates.
-#         You MUST NOT invent new roads, paths, or geometry.
-#         You MUST base your reasoning ONLY on:
-#         candidate attributes
-#         problem description
-#         You MUST NOT assume real-world conditions not present in the data.
-#         You MUST NOT overclaim engineering certainty.
-#         DECISION LOGIC GUIDELINES
-#         You MUST consider:
-
-#         Problem type (junction, corridor, etc.)
-#         Path length
-#         Number of segments
-#         Connector count
-#         Road class composition
-#         Whether the candidate reflects:
-#         a direct conflict point (junction)
-#         a meaningful corridor (multi-segment)
-#         a detour through lower-class roads
-#         INTERVENTION TYPE RULES
-#         You MUST select one of:
-
-#         transit_hub_upgrade
-#         feeder_bus_route
-#         brt_corridor
-#         pedestrian_walkway
-#         micromobility_station
-#         transit_priority_lane
-#         Guidance:
-
-#         If the problem relates to industrial worker mobility → prefer feeder_bus_route or brt_corridor connecting to industrial landuse
-#         If the problem is "transit_node" and the candidate connects to low-to-middle income (B40/M40) residential areas → prefer feeder_bus_route or pedestrian_walkway
-#         If the candidate spans a major arterial → consider brt_corridor or transit_priority_lane
-#         If the candidate relies on local roads near LRT/MRT → consider micromobility_station or pedestrian_walkway
-#         If the input indicates official service overlap or duplication risk → prefer transit_hub_upgrade, pedestrian_walkway, or transit_priority_lane over inventing a brand-new feeder route
-#         CONFIDENCE RULES
-#         HIGH → one candidate clearly dominates
-#         MEDIUM → reasonable but not definitive
-#         LOW → ambiguity or weak evidence
-#         Do NOT assign HIGH unless strongly justified.
-#         OUTPUT FORMAT (STRICT JSON ONLY)
-#         {
-#         "selected_candidate_id": "<candidate_id>",
-#         "intervention_type": "",
-#         "decision_summary": "<1-2 sentence explanation>",
-#         "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and explains the expected public-transport benefit for B40/M40 commuters without inventing unsupported numbers.>",
-#         "reasons": [
-#         "<reason 1 grounded in data>",
-#         "<reason 2 grounded in data>",
-#         "<reason 3 grounded in data>"
-#         ],
-#         "tradeoffs": [
-#         "<tradeoff 1>",
-#         "<tradeoff 2>"
-#         ],
-#         "priority_level": "<low | medium | high>",
-#         "confidence": "<low | medium | high>"
-#         }
-
-#         JSON SAFETY RULE:
-#         - You MUST produce a single, valid JSON object.
-#         - You MUST NOT include any conversational text before or after the JSON.
-#         - You MUST escape all newlines as \n within JSON string values.
-#         - Do NOT include literal newlines in strings.
-#         FINAL CHECK (MANDATORY)
-#         Before output:
-
-#         Ensure selected_candidate_id exists in input
-#         Ensure all reasoning refers to actual candidate data
-#         Ensure no hallucinated roads or features are introduced
-#     """,
-#     output_key="planning_result"
-# )
 
 solution_agent = LlmAgent(
     name="solution_agent",
@@ -615,55 +522,77 @@ building_agent = LlmAgent(
 
 # ── Review agent for later checkpoint-based pipeline ─────────────────────────
 
-# review_agent = LlmAgent(
-#     name="review_agent",
-#     model=PLANNER_MODEL,
-#     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
-#     instruction="""
-#         You are a review agent for a multi-step infrastructure planning workflow.
+review_agent = LlmAgent(
+    name="review_agent",
+    model=PLANNER_MODEL,
+    description="Evaluates whether the user's response is a valid selection or revision request.",
+    instruction="""
+        You are a review agent for a multi-step infrastructure planning workflow.
 
-#         You will be receiving either challanges selection at run time.
+        Your job:
+        - decide whether the user response is a valid selection or approval
+        - detect vague, unrelated, or invalid responses
+        - detect when the user wants the previous step regenerated or revised
+        - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
 
-#         Your job:
-#         - decide whether the user response is a valid selection or approval
-#         - detect vague, unrelated, or invalid responses
-#         - detect when the user wants the previous step regenerated or revised
-#         - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
+        RULES:
+        - Return PASS only if the user response can be confidently mapped to the current output.
+        - Return REVISE if the response is too vague, invalid, or unrelated.
+        - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
+        - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
+        - If the user says "1", "2", "the first one", etc., resolve it explicitly.
+        - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
+        - Do not add extra commentary outside the required format.
 
-#         NATURAL COMMUNICATION:
-#         - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
+        Output format exactly:
 
-#         RULES:
-#         - Return PASS only if the user response can be confidently mapped to the current output.
-#         - Return REVISE if the response is too vague, invalid, or unrelated.
-#         - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
-#         - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
-#         - If the user says "1", "2", "the first one", etc., resolve it explicitly.
-#         - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
-#         - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
-#         - For approval steps such as planning/solution/building, you may return the current JSON or text as OUTPUT.
-#         - Do not add extra commentary outside the required format.
+        VERDICT: PASS
+        REASON: <brief reason>
+        RESOLVED_REFERENCE: <explicit resolved item>
+        JSON_OUTPUT: <single JSON object if available>
 
-#         Output format exactly:
+        OR
 
-#         VERDICT: PASS
-#         REASON: <brief reason>
-#         RESOLVED_REFERENCE: <explicit resolved item>
-#         JSON_OUTPUT: <single JSON object if available>
+        VERDICT: REVISE
+        INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification.>
+        RESOLVED_REFERENCE:
 
-#         OR
+        OR
 
-#         VERDICT: REVISE
-#         INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
-#         RESOLVED_REFERENCE:
+        VERDICT: REVISE_TOTAL
+        INSTRUCTION: <specific actionable instruction based on the user's response>
+        RESOLVED_REFERENCE:
+    """,
+)
 
-#         OR
+hallucination_audit_agent = LlmAgent(
+    name="hallucination_audit_agent",
+    model=PLANNER_MODEL,
+    description="Audits generated content for factual grounding against provided evidence.",
+    instruction="""
+        You are a factual grounding auditor.
 
-#         VERDICT: REVISE_TOTAL
-#         INSTRUCTION: <specific actionable instruction based on the user's response>
-#         RESOLVED_REFERENCE:
-#     """,
-# )
+        You will receive RAW EVIDENCE and a GENERATED TEXT or AREA CARD.
+
+        Your job:
+        - Check if every factual claim in the generated text is supported by the raw evidence.
+        - Flag unsupported claims, invented data, or hallucinated statistics.
+
+        RULES:
+        - Return VERDICT: PASS if all major claims are grounded.
+        - Return VERDICT: FAIL if any significant claim lacks evidence support.
+        - Include a short REASON.
+
+        Output format exactly:
+        VERDICT: PASS
+        REASON: <short reason>
+
+        OR
+
+        VERDICT: FAIL
+        REASON: <what is unsupported and why>
+    """,
+)
 
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────
@@ -833,7 +762,32 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
             while True:
                 if attempt == True:
                     if step_name == "Find needs":
-                        step_prompt = f'Identify and rank the top 3 infrastructure-related challenges for {ctx.session.state["target_places"]}'
+                        # NEW: Resolve area and build evidence pack
+                        target_places = ctx.session.state.get("target_places", [])
+                        if not target_places:
+                            raise RuntimeError("No target places found in session state. Run intake first.")
+                        
+                        main_city = target_places[0]
+                        area_info = resolve_area(main_city)
+                        area_id = area_info["area_id"]
+                        ctx.session.state["area_id"] = area_id
+
+                        # Ensure indicators are ready in DB
+                        run_indicator_engine(area_id)
+
+                        # Build the General Evidence Pack
+                        evidence_pack = build_general_evidence_pack(area_id)
+                        pack_data = evidence_pack.to_dict()
+                        ctx.session.state["general_evidence_pack"] = pack_data
+
+                        step_prompt = f"""
+                        Identify and rank the top 3 infrastructure-related challenges for {main_city}.
+                        
+                        Use the provided GENERAL EVIDENCE PACK as your primary ground truth.
+                        
+                        GENERAL EVIDENCE PACK:
+                        {json.dumps(pack_data, indent=2)}
+                        """.strip()
                     elif step_name == "Plan improvements":
                         analysis = ctx.session.state.get("analysis_result")
                         if not analysis:

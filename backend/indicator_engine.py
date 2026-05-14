@@ -393,6 +393,7 @@ def build_candidate_problem_directions(area_id: str):
         )
 
 
+### Indicator Engine ###
 def run_indicator_engine(area_id: str) -> dict:
     build_area_gtfs_links(area_id)
     build_route_frequency_summary(area_id)

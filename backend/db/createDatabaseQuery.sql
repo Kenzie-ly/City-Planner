@@ -985,3 +985,7 @@ ON osm_edges(region_id, network_type);
 
 CREATE INDEX IF NOT EXISTS idx_osm_nodes_region_network
 ON osm_nodes(region_id, network_type);
+
+-- MIGRATION_QUERIES  for session persistence
+ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES user_sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(session_id);

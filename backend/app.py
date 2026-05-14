@@ -10,6 +10,11 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 import os
 import requests
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from typing import Any
 import uuid
@@ -23,18 +28,24 @@ from agent import (
     solution_agent,
     building_agent,
     InfrastructurePlannerOrchestrator,
-    find_hotspot_agent
+    find_hotspot_agent,
+    review_agent,
+    hallucination_audit_agent,
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
 from evidence_pipeline import (
-    collect_google_growth_signals,
-    cluster_findings_to_area_options,
     audit_osm_transit_gap,
     compute_merged_confidence,
     verify_complaint_against_osm,
     filter_trusted_evidence,
 )
+from reliability import (
+    build_decision_package,
+    audit_solution_claims,
+    validate_geo_consistency,
+)
+import persistence_service
 
 load_dotenv("../.env")
 load_dotenv()
@@ -193,6 +204,7 @@ class SelectHotspotRequest(BaseModel):
     poi_name: str
     area_id: str
 
+### Solution Readiness Pack ###
 @app.post("/api/diagnostic/hotspots/select")
 async def select_hotspot(req: SelectHotspotRequest):
     # 1. Fetch the POI and nearest road from DB
@@ -781,6 +793,7 @@ def _default_credible_sources() -> list[dict[str, Any]]:
         ]
     )
 
+### Problem-specific retrieval/filtering ###
 async def _synthesize_area_card_content(
     session_id: str,
     city: str,
@@ -1399,10 +1412,54 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
         #add retrieval logic
     ########################################
 
-    if not findings:
-        findings = collect_google_growth_signals(city, search_fn=lambda _q: [], iterations=3)
+    # NEW FLOW: Database-driven Indicator Engine & Evidence Pack
+    try:
+        # 1. Resolve Area (Find area_id for the city)
+        from area_resolver import resolve_area
+        area_id = resolve_area(city)
+        if not area_id:
+            logger.error(f"Could not resolve area_id for city: {city}")
+            return []
 
-    options = cluster_findings_to_area_options(findings, city=city)
+        # 2. Run Indicator Engine (Ensure DB indicators are fresh)
+        from indicator_engine import run_indicator_engine
+        run_indicator_engine(area_id)
+
+        # 3. Build General Evidence Pack
+        from evidence_pack_builder.evidence_pack_builder import build_general_evidence_pack
+        pack = build_general_evidence_pack(area_id)
+        
+        # 4. Use Evidence Understanding Agent (find_needs_agent) to generate cards
+        # This part is usually handled in start_planning_phase, 
+        # but since _generate_area_options is used as a discovery step, we'll return
+        # the directions found in the pack as "options".
+        directions = pack.candidate_problem_directions.get("directions", [])
+        
+        # Map DB directions to the "Area Option" format the old UI expects
+        options = []
+        for d in directions:
+            options.append({
+                "id": d.get("problem_direction_id"),
+                "area_label": d.get("title", "Transport Challenge"),
+                "challenge_type": d.get("challenge_type"),
+                "rationale": d.get("reason_hint"),
+                "report_score": d.get("evidence_score", 0.5),
+                "confidence_label": d.get("confidence_tier", "usable"),
+                "google_evidence": [], # Replaced by RAG/Indicators
+                "sources": d.get("evidence_refs", []),
+                "growth_signals": {},
+                "equity_flag": False,
+                "area_aliases": [city]
+            })
+        
+        if not options:
+             logger.warning(f"No problem directions found in DB for {area_id}. Using fallback.")
+             # Fallback logic remains below
+        else:
+            return options
+
+    except Exception as e:
+        logger.error(f"Error in new flow for _generate_area_options: {e}")
     if not options:
         options = [
             {
@@ -2384,6 +2441,7 @@ def _evidence_fallback(city: str, location_label: str, reason: str) -> dict[str,
     }
 
 
+### Focused Evidence Pack ###
 def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> dict[str, Any]:
     location_label = hypothesis.get("location_label", "unknown")
     road_queries = list(hypothesis.get("road_a_queries") or [])
@@ -2945,7 +3003,6 @@ Task:
 def build_solution_prompt(
     selected_challenge: dict[str, Any],
     selected_micro: dict[str, Any],
-    planning_result: dict[str, Any],
     decision_package: dict[str, Any],
 ) -> str:
     return f"""
@@ -2963,9 +3020,6 @@ SELECTED_MICRO_JSON:
 
 DECISION_PACKAGE_JSON:
 {json.dumps(decision_package, ensure_ascii=False, indent=2)}
-
-PLANNING_RESULT_JSON:
-{json.dumps(planning_result, ensure_ascii=False, indent=2)}
 
 Task:
 - Design a realistic public-transport intervention grounded only in the provided problem and selected candidate.
@@ -3408,6 +3462,13 @@ async def start(req: StartRequest):
         session_id=session_id,
         state={"feedback": "", "valid_places_text": "", "target_places": []},
     )
+
+    # Persist session to database
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO user_sessions (session_id, status) VALUES (:session_id, 'active')"),
+            {"session_id": session_id}
+        )
 
     greeting_prompt = """
 The conversation is starting.
@@ -4114,18 +4175,9 @@ Remember:
                     "needs_input": True,
                     "specific_options": _specific_options_from_state(state),
                 }
-            planning_prompt = build_planning_prompt(
-                selected_challenge=state["selected_challenge"],
-                selected_micro=selected_micro,
-                decision_package=decision_package,
-            )
-            planning_raw = await run_agent_once(planning_agent, session_id, planning_prompt)
-            state["decision_package"] = decision_package
-            state["planning_result"] = safe_json_loads(planning_raw)
             solution_prompt = build_solution_prompt(
                 selected_challenge=state["selected_challenge"],
                 selected_micro=selected_micro,
-                planning_result=state["planning_result"],
                 decision_package=decision_package,
             )
             solution_raw = await run_agent_once(solution_agent, session_id, solution_prompt)
@@ -4312,7 +4364,6 @@ Remember:
         next_prompt = build_solution_prompt(
             selected_challenge=state["selected_challenge"],
             selected_micro=state["selected_micro"],
-            planning_result=state["planning_result"],
             decision_package=decision_package,
         )
     elif next_step_name == "Building simulations":
