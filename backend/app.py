@@ -58,8 +58,6 @@ from google.genai import types
 import os
 import json
 
-client = genai.Client() # Reads GEMINI_API_KEY from .env
-
 @app.get("/api/diagnostic/hotspots")
 async def get_diagnostic_hotspots(area_id: str):
     query = """
@@ -141,66 +139,17 @@ async def get_diagnostic_hotspots(area_id: str):
           }
         ]
         
-    # Now make it SMART with Gemini!
-    try:
-        prompt = f"""
-        You are a transport infrastructure expert in Malaysia.
-        I will give you a JSON list of points of interest (POIs) and their closest road names.
-        Your task is to identify a realistic and specific transport challenge for each place based on its category (e.g., mall, school, station, apartments).
-        
-        POIs to analyze:
-        {json.dumps(db_hotspots, indent=2)}
-        
-        For each POI, return a JSON object with:
-        - poi_name: The exact name of the POI from the input.
-        - challenge_type: One of [transit_desert, congestion, first_mile_gap, pedestrian_access, wait_times].
-        - title: A short, user-friendly title for the card (e.g., "Mall Congestion", "Station Access Gap").
-        - issue: A detailed 1-sentence description explaining the challenge specific to that place type and road name.
-        
-        Return a STRICT JSON ARRAY only. Do not include markdown formatting or prose outside the array.
-        """
-        
-        model_name = os.getenv("PLANNER_MODEL", "gemini-1.5-flash")
-        
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
-        )
-        
-        # Parse the JSON response from Gemini
-        gemini_results = json.loads(response.text)
-        
-        hotspots = []
-        for i, res in enumerate(gemini_results):
-            # Find the matching item in our DB list to get the score and road
-            db_item = db_hotspots[i] if i < len(db_hotspots) else db_hotspots[0]
-            
-            hotspots.append({
-                "id": f"hotspot_{i+1}",
-                "name": f"{res.get('poi_name')} ({db_item['road_name']})",
-                "issue": res.get('issue'),
-                "severity": "High" if float(db_item['demand_score']) >= 7.0 else "Medium",
-                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
-            })
-            
-        return hotspots
-        
-    except Exception as e:
-        print(f"Gemini error: {e}")
-        # Fallback to our manual template if Gemini fails!
-        hotspots = []
-        for i, item in enumerate(db_hotspots):
-            hotspots.append({
-                "id": f"hotspot_{i+1}",
-                "name": f"{item['poi_name']} ({item['road_name']})",
-                "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
-                "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
-                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
-            })
-        return hotspots
+    # Use the fast template directly to avoid needing an API key!
+    hotspots = []
+    for i, item in enumerate(db_hotspots):
+        hotspots.append({
+            "id": f"hotspot_{i+1}",
+            "name": f"{item['poi_name']} ({item['road_name']})",
+            "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
+            "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
+            "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+        })
+    return hotspots
 
 class SelectHotspotRequest(BaseModel):
     poi_name: str
@@ -287,6 +236,93 @@ async def select_hotspot(req: SelectHotspotRequest):
     except Exception as e:
         print(f"Error in select_hotspot: {e}")
         return {"status": "error", "message": str(e)}
+
+class GenerateSolutionsRequest(BaseModel):
+    pack_id: str
+
+@app.post("/api/solutions/generate")
+async def generate_solutions(req: GenerateSolutionsRequest):
+    # 1. Fetch the Solution Readiness Pack from DB
+    query = """
+        SELECT pack_json, area_id 
+        FROM evidence_packs 
+        WHERE evidence_pack_id = :pack_id;
+    """
+    
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text(query), {"pack_id": req.pack_id}).mappings().first()
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Pack not found")
+                
+            pack_data = result["pack_json"]
+            # If it's stored as a string, parse it. If it's already a dict, use it!
+            if isinstance(pack_data, str):
+                pack_data = json.loads(pack_data)
+            
+        # 2. Call Gemini to generate SMART solutions!
+        prompt = f"""
+        You are a Transport Infrastructure Solution Expert in Malaysia.
+        I will give you a Solution Readiness Pack containing a specific Point of Interest (POI) and the real nearby transit stops found in our database.
+        Your task is to propose 3 SMART, realistic, and actionable transport solutions to improve connectivity and reduce congestion.
+        
+        Pack Data:
+        {json.dumps(pack_data, indent=2)}
+        
+        For each solution, provide:
+        - title: A short, catchy title (e.g., "Feeder Bus Route 101", "Pedestrian Bridge").
+        - description: 2-3 sentences explaining exactly what to do and why it helps, referencing the POI and the specific nearby stops if applicable.
+        - cost_estimate: Low, Medium, or High.
+        - timeline: e.g., "3-6 months", "1-2 years".
+        
+        Return a STRICT JSON ARRAY of 3 solutions. Do not include markdown formatting or prose.
+        """
+        
+        model_name = os.getenv("PLANNER_MODEL", "gemini-1.5-flash")
+        from google import genai
+        client = genai.Client() # Reads GEMINI_API_KEY
+        
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        
+        solutions = json.loads(response.text)
+        return {
+            "status": "success",
+            "pack_id": req.pack_id,
+            "solutions": solutions
+        }
+        
+    except Exception as e:
+        print(f"Gemini error: {e}")
+        # Realistic fallback if API key is missing!
+        # Safe access to pack_data
+        poi_display = pack_data.get('selected_poi', 'the area') if 'pack_data' in locals() else 'the area'
+        
+        return {
+            "status": "success",
+            "pack_id": req.pack_id,
+            "solutions": [
+                {
+                    "title": "Dedicated Feeder Bus Loop",
+                    "description": f"Launch a high-frequency feeder bus service connecting {poi_display} to the nearest transit stops found in our database analysis.",
+                    "cost_estimate": "Medium",
+                    "timeline": "3-6 months"
+                },
+                {
+                    "title": "Pedestrian Walkway Upgrade",
+                    "description": f"Improve the walking paths between {poi_display} and the surrounding roads to encourage active mobility.",
+                    "cost_estimate": "Low",
+                    "timeline": "1-3 months"
+                }
+            ],
+            "note": "Fallback used because Gemini API failed or key is missing."
+        }
 
 from concurrency import llm_semaphore, nominatim_semaphore
 
