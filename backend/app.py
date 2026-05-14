@@ -36,6 +36,7 @@ from evidence_pipeline import (
     filter_trusted_evidence,
 )
 
+load_dotenv("../.env")
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
@@ -139,17 +140,54 @@ async def get_diagnostic_hotspots(area_id: str):
           }
         ]
         
-    # Use the fast template directly to avoid needing an API key!
-    hotspots = []
-    for i, item in enumerate(db_hotspots):
-        hotspots.append({
-            "id": f"hotspot_{i+1}",
-            "name": f"{item['poi_name']} ({item['road_name']})",
-            "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
-            "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
-            "recommended_action": "Run detailed transport accessibility analysis for this specific area."
-        })
-    return hotspots
+    # Try to use Gemini to generate smart descriptions!
+    try:
+        from google import genai
+        print(f"DEBUG: API Key loaded = {os.getenv('GEMINI_API_KEY')[:10]}...")
+        client = genai.Client() # Reads GEMINI_API_KEY
+        
+        prompt = f"""
+        You are a Transport Infrastructure Solution Expert in Malaysia.
+        I will give you a list of 3 specific Points of Interest (POIs) found in our database that have high activity but likely transit gaps.
+        Your task is to generate a smart, realistic, and professional "issue" description and "recommended action" for each.
+        
+        Data:
+        {json.dumps(db_hotspots, indent=2)}
+        
+        Return a STRICT JSON ARRAY of 3 objects with the following keys:
+        - id: "hotspot_1", "hotspot_2", "hotspot_3"
+        - name: The POI name and road name combined nicely (e.g., "1 Mont Kiara (Jalan Kiara)").
+        - issue: 2-3 sentences explaining the problem based on the data or general transport knowledge of that area.
+        - severity: "High" or "Medium".
+        - recommended_action: 1 sentence on what to do next.
+        
+        Do not include markdown formatting or prose.
+        """
+        
+        model_name = os.getenv("PLANNER_MODEL", "gemini-2.5-flash")
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        
+        return json.loads(response.text)
+        
+    except Exception as e:
+        print(f"Gemini error in hotspots: {e}")
+        # Fallback to the fast template if Gemini fails!
+        hotspots = []
+        for i, item in enumerate(db_hotspots):
+            hotspots.append({
+                "id": f"hotspot_{i+1}",
+                "name": f"{item['poi_name']} ({item['road_name']})",
+                "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
+                "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
+                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+            })
+        return hotspots
 
 class SelectHotspotRequest(BaseModel):
     poi_name: str
