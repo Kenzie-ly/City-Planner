@@ -39,7 +39,9 @@ def detect_region(user_input: str) -> dict:
                     return {
                         "region_id": region_id,
                         "region_name": region_id.replace("_", " ").title(),
-                        "graphml": cfg["graphml"],
+                        "graphml": cfg.get("graphml") or cfg.get("graphml_drive") or cfg.get("graphml_walk"),
+                        "graphml_drive": cfg.get("graphml_drive"),
+                        "graphml_walk": cfg.get("graphml_walk"),
                         "center_lat": cfg.get("center_lat"),
                         "center_lon": cfg.get("center_lon"),
                         "dist_m": cfg.get("dist_m"),
@@ -50,7 +52,9 @@ def detect_region(user_input: str) -> dict:
                         return {
                             "region_id": region_id,
                             "region_name": region_id.replace("_", " ").title(),
-                            "graphml": cfg["graphml"],
+                            "graphml": cfg.get("graphml") or cfg.get("graphml_drive") or cfg.get("graphml_walk"),
+                            "graphml_drive": cfg.get("graphml_drive"),
+                            "graphml_walk": cfg.get("graphml_walk"),
                             "center_lat": cfg.get("center_lat"),
                             "center_lon": cfg.get("center_lon"),
                             "dist_m": cfg.get("dist_m"),
@@ -62,7 +66,9 @@ def detect_region(user_input: str) -> dict:
                     return {
                         "region_id": region_id,
                         "region_name": region_id.replace("_", " ").title(),
-                        "graphml": cfg["graphml"],
+                        "graphml": cfg.get("graphml") or cfg.get("graphml_drive") or cfg.get("graphml_walk"),
+                        "graphml_drive": cfg.get("graphml_drive"),
+                        "graphml_walk": cfg.get("graphml_walk"),
                         "center_lat": cfg.get("center_lat"),
                         "center_lon": cfg.get("center_lon"),
                         "dist_m": cfg.get("dist_m"),
@@ -74,7 +80,9 @@ def detect_region(user_input: str) -> dict:
         return {
             "region_id": "kuala_lumpur",
             "region_name": "Kuala Lumpur",
-            "graphml": cfg["graphml"],
+            "graphml": cfg.get("graphml") or cfg.get("graphml_drive") or cfg.get("graphml_walk"),
+            "graphml_drive": cfg.get("graphml_drive"),
+            "graphml_walk": cfg.get("graphml_walk"),
             "center_lat": cfg.get("center_lat"),
             "center_lon": cfg.get("center_lon"),
             "dist_m": cfg.get("dist_m"),
@@ -156,7 +164,7 @@ def upsert_region(region: dict):
             {
                 "region_id": region["region_id"],
                 "region_name": region["region_name"],
-                "graphml_path": region["graphml"],
+                "graphml_path": region.get("graphml"),
             },
         )
 
@@ -226,7 +234,9 @@ def resolve_area(user_input: str) -> dict:
         "area_id": area_id,
         "area_name": user_input.strip(),
         "region_id": region["region_id"],
-        "graphml": region["graphml"],
+        "graphml": region.get("graphml") or region.get("graphml_drive") or region.get("graphml_walk"),
+        "graphml_drive": region.get("graphml_drive"),
+        "graphml_walk": region.get("graphml_walk"),
         "has_geometry": True,
         "source": "newly_resolved",
     }
