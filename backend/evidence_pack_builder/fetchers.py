@@ -22,6 +22,7 @@ def get_route_frequency_summary(area_id: str) -> list[dict]:
             rows = conn.execute(
                 text("""
                     SELECT route_id, route_name as route_short_name, trips_per_day, 
+                           median_headway_min,
                            confidence_tier as frequency_tier, evidence_score
                     FROM route_headway_summary
                     WHERE area_id = :area_id
@@ -59,10 +60,10 @@ def get_demand_proxy_summary(area_id: str) -> dict | None:
         with engine.connect() as conn:
             row = conn.execute(
                 text("""
-                    SELECT COALESCE(SUM(p.demand_score), 0.0) as estimated_activity_score
-                    FROM poi_demand_proxy p
-                    JOIN areas a ON ST_DWithin(a.geom::geography, ST_SetSRID(ST_Point(p.longitude, p.latitude), 4326)::geography, 5000)
-                    WHERE a.area_id = :area_id;
+                    SELECT demand_proxy_score as estimated_activity_score
+                    FROM demand_proxy_summary
+                    WHERE area_id = :area_id
+                    LIMIT 1;
                 """),
                 {"area_id": area_id},
             ).mappings().first()
