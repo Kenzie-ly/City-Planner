@@ -139,7 +139,6 @@ def _install_test_stubs() -> None:
     agent_mod.building_agent = _A("building_agent")
     agent_mod.review_agent = _A("review_agent")
     agent_mod.find_hotspot_agent = _A("find_hotspot_agent")
-    agent_mod.hallucination_audit_agent = _A("hallucination_audit_agent")
 
     class InfrastructurePlannerOrchestrator:
         def __init__(self, *args, **kwargs):
@@ -350,8 +349,6 @@ class AppFlowTests(unittest.TestCase):
                 )
             if name == "find_needs_agent":
                 return _mock_challenges()
-            if name == "hallucination_audit_agent":
-                return "VERDICT: PASS\nREASON: grounded in provided evidence."
             if name == "review_agent":
                 if "step name: find needs" in p:
                     ch = json.loads(_mock_challenges())["CHALLENGE_1"]
@@ -615,8 +612,6 @@ class AppFlowTests(unittest.TestCase):
                 return "[]"
             if name == "find_needs_agent":
                 return _mock_challenges()
-            if name == "hallucination_audit_agent":
-                return "VERDICT: PASS\nREASON: grounded in provided evidence."
             return "VERDICT: PASS\nREASON: ok\n"
 
         with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once), patch.object(
@@ -904,87 +899,6 @@ class AppFlowTests(unittest.TestCase):
             self.assertEqual(len(area_pick.get("find_needs_options", [])), 3)
             self.assertIn("Review the 3 evidence cards below", area_pick["reply"])
 
-    def test_area_card_audit_rewrite_then_pass(self):
-        option = {
-            "id": "area_1",
-            "city": "Shah Alam",
-            "area_label": "Section 13",
-            "google_evidence": [
-                {
-                    "title": "Industrial expansion in Section 13",
-                    "url": "https://mot.gov.my/ind-13",
-                    "snippet": "Factory jobs expansion reported near Section 13.",
-                    "published_at": "2026-02-10",
-                    "source_tier": "government",
-                    "claim_type": "industrial",
-                    "area_label": "Section 13",
-                },
-                {
-                    "title": "Township growth in Section 7",
-                    "url": "https://bernama.com/sec-7",
-                    "snippet": "Housing growth and commuting pressure observed in Section 7.",
-                    "published_at": "2026-01-10",
-                    "source_tier": "major_media",
-                    "claim_type": "population",
-                    "area_label": "Section 7",
-                },
-            ],
-            "growth_signals": {"population": 1, "industrial": 1, "trip_generator": 0, "complaints": 0},
-        }
-
-        calls = {"n": 0}
-
-        async def fake_run_agent_once(agent, session_id: str, prompt: str) -> str:
-            if getattr(agent, "name", "") == "hallucination_audit_agent":
-                calls["n"] += 1
-                if calls["n"] == 1:
-                    return "VERDICT: FAIL\nREASON: unsupported claim"
-                return "VERDICT: PASS\nREASON: grounded"
-            return "VERDICT: PASS\nREASON: ok"
-
-        with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once):
-            enriched = asyncio.run(appmod._synthesize_area_card_content("sid", "Shah Alam", option))
-            self.assertIsNotNone(enriched)
-            self.assertEqual(calls["n"], 2)
-            self.assertIn("description_paragraph", enriched)
-            self.assertIn("micro_paragraph", enriched)
-
-    def test_area_card_audit_rewrite_then_fail_drops_card(self):
-        option = {
-            "id": "area_1",
-            "city": "Shah Alam",
-            "area_label": "Section 13",
-            "google_evidence": [
-                {
-                    "title": "Industrial expansion in Section 13",
-                    "url": "https://mot.gov.my/ind-13",
-                    "snippet": "Factory jobs expansion reported near Section 13.",
-                    "published_at": "2026-02-10",
-                    "source_tier": "government",
-                    "claim_type": "industrial",
-                    "area_label": "Section 13",
-                },
-                {
-                    "title": "Township growth in Section 7",
-                    "url": "https://bernama.com/sec-7",
-                    "snippet": "Housing growth and commuting pressure observed in Section 7.",
-                    "published_at": "2026-01-10",
-                    "source_tier": "major_media",
-                    "claim_type": "population",
-                    "area_label": "Section 7",
-                },
-            ],
-            "growth_signals": {"population": 1, "industrial": 1, "trip_generator": 0, "complaints": 0},
-        }
-
-        async def fake_run_agent_once(agent, session_id: str, prompt: str) -> str:
-            if getattr(agent, "name", "") == "hallucination_audit_agent":
-                return "VERDICT: FAIL\nREASON: unsupported claim"
-            return "VERDICT: PASS\nREASON: ok"
-
-        with patch.object(appmod, "run_agent_once", side_effect=fake_run_agent_once):
-            enriched = asyncio.run(appmod._synthesize_area_card_content("sid", "Shah Alam", option))
-            self.assertIsNone(enriched)
 
 
 if __name__ == "__main__":
