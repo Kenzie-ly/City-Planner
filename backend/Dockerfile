@@ -1,21 +1,14 @@
 FROM python:3.10-slim
 
-# Install system dependencies for geospatial libraries and build tools
+# Install only minimal system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
-    gdal-bin \
-    libgdal-dev \
-    libproj-dev \
-    libgeos-dev \
-    libspatialindex-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Python and GDAL
+# Set environment variables for Python
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    CPLUS_INCLUDE_PATH=/usr/include/gdal \
-    C_INCLUDE_PATH=/usr/include/gdal
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 

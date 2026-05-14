@@ -7,7 +7,6 @@ requests
 google-adk
 google-genai
 networkx
-osmnx
 pandas
 pyproj
 shapely
@@ -17,3 +16,5 @@ flask-cors
 firebase-admin
 gunicorn
 scikit-learn
+sqlalchemy
+psycopg2-binary

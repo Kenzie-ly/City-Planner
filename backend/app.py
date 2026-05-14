@@ -1375,13 +1375,15 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
     ########################################
 
     # NEW FLOW: Database-driven Indicator Engine & Evidence Pack
+    options = []
     try:
         # 1. Resolve Area (Find area_id for the city)
         from area_resolver import resolve_area
-        area_id = resolve_area(city)
-        if not area_id:
+        area_info = resolve_area(city)
+        if not area_info:
             logger.error(f"Could not resolve area_id for city: {city}")
             return []
+        area_id = area_info["area_id"]
 
         # 2. Run Indicator Engine (Ensure DB indicators are fresh)
         from indicator_engine import run_indicator_engine

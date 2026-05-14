@@ -3,7 +3,8 @@ import re
 import unicodedata
 from pathlib import Path
 
-import osmnx as ox
+import requests
+from shapely.geometry import shape, Point
 from sqlalchemy import text
 
 from db.database import engine
@@ -112,31 +113,39 @@ def get_existing_area(area_id: str):
 
 def geocode_area(user_input: str):
     place_query = f"{user_input}, Malaysia"
-    
+    headers = {"User-Agent": "CityPlannerApp/1.0"}
+    params = {
+        "q": place_query,
+        "format": "json",
+        "limit": 1,
+        "polygon_geojson": 1,
+    }
     try:
-        gdf = ox.geocode_to_gdf(place_query).to_crs(4326)
-    except Exception as e:
-        if "did not geocode query" in str(e) or "geometry of type" in str(e):
-            print(f"[Warning] OSMnx could not find polygon for {place_query}. Falling back to Point + Buffer.")
-            # Fallback to Point
-            lat, lon = ox.geocode(place_query)
-            from shapely.geometry import Point
-            import geopandas as gpd
-            # Create a point geometry
-            p = Point(lon, lat)
-            gdf = gpd.GeoDataFrame(geometry=[p], crs="EPSG:4326")
-            # Buffer the point (0.02 degrees is roughly 2km)
-            gdf['geometry'] = gdf['geometry'].buffer(0.02)
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if not results:
+            raise ValueError(f"Nominatim returned no results for: {place_query}")
+
+        result = results[0]
+        geojson = result.get("geojson")
+        if geojson and geojson.get("type") not in (None, "Point"):
+            geom = shape(geojson)
         else:
-            raise e
+            lat = float(result["lat"])
+            lon = float(result["lon"])
+            geom = Point(lon, lat).buffer(0.02)
 
-    if gdf.empty:
-        raise ValueError(f"Could not geocode area: {place_query}")
+        centroid = geom.centroid
+        return geom.wkt, centroid.wkt
 
-    geom = gdf.geometry.iloc[0]
-    centroid = geom.centroid
-
-    return geom.wkt, centroid.wkt
+    except Exception as e:
+        raise ValueError(f"Could not geocode area '{place_query}': {e}")
 
 
 def upsert_region(region: dict):
