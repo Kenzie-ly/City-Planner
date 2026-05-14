@@ -117,6 +117,16 @@ CREATE INDEX idx_osm_edges_name
 ON osm_edges(name);
 
 
+CREATE TABLE city_problems_rag (
+    id SERIAL PRIMARY KEY,
+    city VARCHAR(50),
+    source_type VARCHAR(20),
+    title TEXT,
+    content TEXT,
+    embedding vector(3072)
+);
+
+
 CREATE TABLE osm_transit_stops (
     osm_stop_id TEXT PRIMARY KEY,
     area_id TEXT REFERENCES areas(area_id),

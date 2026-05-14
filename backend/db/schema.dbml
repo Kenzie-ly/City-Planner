@@ -1,3 +1,11 @@
+Table "city_problems_rag" {
+  "id" integer [pk, not null, increment]
+  "city" varchar(50)
+  "source_type" varchar(20)
+  "title" text
+  "content" text
+  "embedding" public.vector
+}
 
 Table "agent_runs" {
   "agent_run_id" uuid [pk, not null, default: `gen_random_uuid()`]
