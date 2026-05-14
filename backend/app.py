@@ -45,8 +45,8 @@ ENABLE_SPECULATIVE_FIND_NEEDS = os.getenv("ENABLE_SPECULATIVE_FIND_NEEDS", "0").
 app = FastAPI(title="Infrastructure Planner API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://city-planner-711110564007.asia-southeast1.run.app"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
