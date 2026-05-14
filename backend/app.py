@@ -20,15 +20,10 @@ from urllib.parse import urlparse
 from agent import (
     place_intake_agent,
     find_needs_agent,
-    growth_signal_agent,
-    planning_agent,
     solution_agent,
     building_agent,
-    review_agent,
     InfrastructurePlannerOrchestrator,
-    find_hotspot_agent,
-    hallucination_audit_agent,
-    rag,
+    find_hotspot_agent
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
@@ -39,11 +34,6 @@ from evidence_pipeline import (
     compute_merged_confidence,
     verify_complaint_against_osm,
     filter_trusted_evidence,
-)
-from reliability import (
-    audit_solution_claims,
-    build_decision_package,
-    validate_geo_consistency,
 )
 
 load_dotenv()
@@ -62,7 +52,13 @@ app.add_middleware(
 )
 
 from sqlalchemy import text
-from ingest_links.ingestion_utils import engine
+from db.database import engine
+from google import genai
+from google.genai import types
+import os
+import json
+
+client = genai.Client() # Reads GEMINI_API_KEY from .env
 
 @app.get("/api/diagnostic/hotspots")
 async def get_diagnostic_hotspots(area_id: str):
@@ -89,7 +85,7 @@ async def get_diagnostic_hotspots(area_id: str):
         "other": "1.0"
     }
     
-    hotspots = []
+    db_hotspots = []
     try:
         with engine.connect() as conn:
             result = conn.execute(text(query), {"area_id": area_id})
@@ -105,44 +101,192 @@ async def get_diagnostic_hotspots(area_id: str):
                     continue
                 used_pois.add(poi_name)
                 
-                demand_score = category_scores.get(category, "1.0")
-                
                 # Clean road_name if it's stored as a JSON string in DB
                 if road_name.startswith("["):
-                    import json
                     try:
                         names = json.loads(road_name)
                         road_name = names[0] if names else "Unknown Road"
                     except:
                         pass
                 
-                hotspots.append({
-                    "id": f"hotspot_{len(hotspots)+1}",
-                    "name": f"{poi_name} ({road_name})",
-                    "issue": f"The area around {road_name} is identified as a high-activity hub (Demand Score: {demand_score}), but our data shows a gap in transit coverage nearby.",
-                    "severity": "High" if float(demand_score) >= 7.0 else "Medium",
-                    "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+                demand_score = category_scores.get(category, "1.0")
+                
+                db_hotspots.append({
+                    "poi_name": poi_name,
+                    "road_name": road_name,
+                    "category": category,
+                    "demand_score": demand_score
                 })
                 
-                if len(hotspots) >= 3:
+                if len(db_hotspots) >= 3:
                     break
                     
     except Exception as e:
         print(f"Database error: {e}")
         
     # Fallback if DB is empty or fails
-    if not hotspots:
-        return [
+    if not db_hotspots:
+        db_hotspots = [
           {
-            "id": "hotspot_1",
-            "name": "Johor Bahru Sentral (Jalan Jim Quee)",
-            "issue": "The area around Jalan Jim Quee is identified as a high-activity hub (Demand Score: 10.0), but our data shows a gap in transit coverage nearby.",
-            "severity": "High",
-            "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+            "poi_name": "Johor Bahru Sentral",
+            "road_name": "Jalan Jim Quee",
+            "category": "station",
+            "demand_score": "10.0"
+          },
+          {
+            "poi_name": "City Square",
+            "road_name": "Jalan Wong Ah Fook",
+            "category": "mall",
+            "demand_score": "8.5"
           }
         ]
         
-    return hotspots
+    # Now make it SMART with Gemini!
+    try:
+        prompt = f"""
+        You are a transport infrastructure expert in Malaysia.
+        I will give you a JSON list of points of interest (POIs) and their closest road names.
+        Your task is to identify a realistic and specific transport challenge for each place based on its category (e.g., mall, school, station, apartments).
+        
+        POIs to analyze:
+        {json.dumps(db_hotspots, indent=2)}
+        
+        For each POI, return a JSON object with:
+        - poi_name: The exact name of the POI from the input.
+        - challenge_type: One of [transit_desert, congestion, first_mile_gap, pedestrian_access, wait_times].
+        - title: A short, user-friendly title for the card (e.g., "Mall Congestion", "Station Access Gap").
+        - issue: A detailed 1-sentence description explaining the challenge specific to that place type and road name.
+        
+        Return a STRICT JSON ARRAY only. Do not include markdown formatting or prose outside the array.
+        """
+        
+        model_name = os.getenv("PLANNER_MODEL", "gemini-1.5-flash")
+        
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        
+        # Parse the JSON response from Gemini
+        gemini_results = json.loads(response.text)
+        
+        hotspots = []
+        for i, res in enumerate(gemini_results):
+            # Find the matching item in our DB list to get the score and road
+            db_item = db_hotspots[i] if i < len(db_hotspots) else db_hotspots[0]
+            
+            hotspots.append({
+                "id": f"hotspot_{i+1}",
+                "name": f"{res.get('poi_name')} ({db_item['road_name']})",
+                "issue": res.get('issue'),
+                "severity": "High" if float(db_item['demand_score']) >= 7.0 else "Medium",
+                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+            })
+            
+        return hotspots
+        
+    except Exception as e:
+        print(f"Gemini error: {e}")
+        # Fallback to our manual template if Gemini fails!
+        hotspots = []
+        for i, item in enumerate(db_hotspots):
+            hotspots.append({
+                "id": f"hotspot_{i+1}",
+                "name": f"{item['poi_name']} ({item['road_name']})",
+                "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
+                "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
+                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
+            })
+        return hotspots
+
+class SelectHotspotRequest(BaseModel):
+    poi_name: str
+    area_id: str
+
+@app.post("/api/diagnostic/hotspots/select")
+async def select_hotspot(req: SelectHotspotRequest):
+    # 1. Fetch the POI and nearest road from DB
+    query = """
+        SELECT p.name as poi_name, e.name as road_name, p.poi_category, p.geom
+        FROM osm_pois p
+        LEFT JOIN osm_edges e 
+        ON ST_DWithin(p.geom, e.geometry, 0.005)
+        WHERE p.name = :poi_name AND p.area_id = :area_id
+        LIMIT 1;
+    """
+    
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text(query), {"poi_name": req.poi_name, "area_id": req.area_id}).fetchone()
+            
+            if not result:
+                return {"status": "error", "message": "POI not found"}
+                
+            poi_name = result.poi_name
+            road_name = result.road_name or "Unknown Road"
+            category = result.poi_category
+            poi_geom = result.geom
+            
+            # 2. Fetch nearest transit stops (Gathering data for Solution Readiness!)
+            stops_query = """
+                SELECT stop_name, stop_type, ST_Distance(geom, :poi_geom) as distance
+                FROM osm_transit_stops
+                WHERE ST_DWithin(geom, :poi_geom, 0.01)
+                ORDER BY distance ASC
+                LIMIT 5;
+            """
+            
+            stops_result = conn.execute(text(stops_query), {"poi_geom": poi_geom}).fetchall()
+            
+            stops_list = []
+            for r in stops_result:
+                stops_list.append({
+                    "name": r.stop_name,
+                    "type": r.stop_type,
+                    "distance_m": round(r.distance * 111000, 2) # Convert degrees to meters approx
+                })
+                
+            # 3. Create the Solution Readiness Pack
+            pack_json = {
+                "selected_poi": poi_name,
+                "road_name": road_name,
+                "category": category,
+                "nearby_transit_stops": stops_list,
+                "analysis_goal": f"Improve transit access and reduce congestion around {poi_name} on {road_name}."
+            }
+            
+            # 4. Save to evidence_packs table!
+            pack_id = str(uuid.uuid4())
+            
+            insert_query = """
+                INSERT INTO evidence_packs (evidence_pack_id, area_id, pack_type, pack_json, created_at)
+                VALUES (:pack_id, :area_id, 'solution_readiness', :pack_json, NOW());
+            """
+            
+            # We need to commit the transaction in some SQLAlchemy versions, 
+            # but since we are using engine.connect() directly, let's execute it!
+            conn.execute(text(insert_query), {
+                "pack_id": pack_id,
+                "area_id": req.area_id,
+                "pack_json": json.dumps(pack_json)
+            })
+            
+            # Some setups require explicit commit
+            conn.execute(text("COMMIT"))
+            
+            return {
+                "status": "success",
+                "message": "Solution Readiness Pack generated and saved to database!",
+                "pack_id": pack_id,
+                "pack_data": pack_json
+            }
+            
+    except Exception as e:
+        print(f"Error in select_hotspot: {e}")
+        return {"status": "error", "message": str(e)}
 
 from concurrency import llm_semaphore, nominatim_semaphore
 
@@ -158,7 +302,6 @@ production_counters: dict[str, int] = {
 }
 
 PIPELINE = [
-    ("Plan improvements", planning_agent, "planning_result"),
     ("Generate solutions", solution_agent, "solution_result"),
     ("Building simulations", building_agent, "simulation_result"),
 ]
@@ -608,29 +751,29 @@ async def _synthesize_area_card_content(
         option["trusted_sources"] = trusted_sources
         return option
 
-    passed = await _hallucination_audit_area_card(
-        session_id,
-        trusted_sources,
-        description_paragraph,
-        micro_paragraph,
-    )
-    if not passed:
-        impacted = _extract_impacted_locations(option, trusted_sources, city)
-        impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
-        description_paragraph = (
-            f"{option.get('area_label') or city} is flagged from trusted transport evidence as a corridor with observed demand pressure in {city}."
-        )
-        micro_paragraph = (
-            f"Micro symptom overview for {impacted_text}: trusted reports describe real commuting friction between residential neighborhoods and job hubs."
-        )
-        passed = await _hallucination_audit_area_card(
-            session_id,
-            trusted_sources,
-            description_paragraph,
-            micro_paragraph,
-        )
-        if not passed:
-            return None
+    # passed = await _hallucination_audit_area_card(
+    #     session_id,
+    #     trusted_sources,
+    #     description_paragraph,
+    #     micro_paragraph,
+    # )
+    # if not passed:
+    #     impacted = _extract_impacted_locations(option, trusted_sources, city)
+    #     impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
+    #     description_paragraph = (
+    #         f"{option.get('area_label') or city} is flagged from trusted transport evidence as a corridor with observed demand pressure in {city}."
+    #     )
+    #     micro_paragraph = (
+    #         f"Micro symptom overview for {impacted_text}: trusted reports describe real commuting friction between residential neighborhoods and job hubs."
+    #     )
+    #     passed = await _hallucination_audit_area_card(
+    #         session_id,
+    #         trusted_sources,
+    #         description_paragraph,
+    #         micro_paragraph,
+    #     )
+    #     if not passed:
+    #         return None
 
     option["description_paragraph"] = description_paragraph
     option["micro_paragraph"] = micro_paragraph
@@ -1140,59 +1283,47 @@ def build_find_needs_prompt(
         """.strip()
 
 
-def _extract_growth_findings(raw: str) -> list[dict[str, Any]]:
-    try:
-        parsed = safe_json_loads(raw)
-        if isinstance(parsed, list):
-            return [x for x in parsed if isinstance(x, dict)]
-    except Exception:
-        pass
-    return []
+# def _extract_growth_findings(raw: str) -> list[dict[str, Any]]:
+#     try:
+#         parsed = safe_json_loads(raw)
+#         if isinstance(parsed, list):
+#             return [x for x in parsed if isinstance(x, dict)]
+#     except Exception:
+#         pass
+#     return []
 
 
-async def _growth_search_fn(session_id: str, city: str, query: str) -> list[dict[str, Any]]:
-    prompt = f"""
-    CITY: {city}
-    SEARCH_QUERY_HINT: {query}
+# async def _growth_search_fn(session_id: str, city: str, query: str) -> list[dict[str, Any]]:
+#     prompt = f"""
+#     CITY: {city}
+#     SEARCH_QUERY_HINT: {query}
 
-    Return ONLY strict JSON array of finding objects.
-    """.strip()
-    raw = await run_agent_once(growth_signal_agent, session_id, prompt)
-    findings = _extract_growth_findings(raw)
-    
-    # NEW: Add findings to RAG memory
-    if findings:
-        rag_docs = []
-        for f in findings:
-            text = f.get("data_narrative") or f.get("snippet") or f.get("title")
-            if text:
-                rag_docs.append({
-                    "text": text,
-                    "source": f.get("url") or "google_search",
-                    "type": "news_discovery",
-                    "metadata": f
-                })
-        if rag_docs:
-            rag.add_documents(rag_docs)
-            
-    for f in findings:
-        if not f.get("area_label"):
-            f["area_label"] = city
-    return findings
+#     Return ONLY strict JSON array of finding objects.
+#     """.strip()
+#     raw = await run_agent_once(growth_signal_agent, session_id, prompt)
+#     findings = _extract_growth_findings(raw)
+#     for f in findings:
+#         if not f.get("area_label"):
+#             f["area_label"] = city
+#     return findings
 
 
 async def _generate_area_options(session_id: str, city: str) -> list[dict[str, Any]]:
-    async def _search(query: str) -> list[dict[str, Any]]:
-        return await _growth_search_fn(session_id, city, query)
+    # async def _search(query: str) -> list[dict[str, Any]]:
+    #     return await _growth_search_fn(session_id, city, query)
 
-    queries = [
-        f"{city} population growth new township Malaysia",
-        f"{city} industrial park jobs factory expansion Malaysia",
-        f"{city} transit complaints stranded workers bus frequency",
-    ]
-    findings: list[dict[str, Any]] = []
-    for q in queries:
-        findings.extend(await _search(q))
+    # queries = [
+    #     f"{city} population growth new township Malaysia",
+    #     f"{city} industrial park jobs factory expansion Malaysia",
+    #     f"{city} transit complaints stranded workers bus frequency",
+    # ]
+    # findings: list[dict[str, Any]] = []
+    # for q in queries:
+    #     findings.extend(await _search(q))
+
+    #########################################
+        #add retrieval logic
+    ########################################
 
     if not findings:
         findings = collect_google_growth_signals(city, search_fn=lambda _q: [], iterations=3)
@@ -1353,6 +1484,9 @@ def _run_route_feasibility(city: str, selected_area: dict[str, Any]) -> dict[str
         return {"pass": False, "score": 0.0, "candidate_count": 0, "error": str(exc)}
 
 
+############################################
+    #this can be changed by diagnostic agent
+############################################
 def _build_strategic_narrative(selected_option: dict[str, Any], osm_audit: Any) -> str:
     signals = selected_option.get("growth_signals", {})
     pop = float(signals.get("population", 0))
@@ -2642,38 +2776,39 @@ def format_step_reply(step_name: str, raw_output: str) -> str:
         actions = _get_list(data, "proposed_actions")
         effects = _get_list(data, "expected_effect")
         blocks = []
-        blocks.append(f"### {title}")
-        header_parts = [f"**Intervention Type:** {sol_type}", f"**Complexity:** {complexity}", f"**Confidence:** {confidence}"]
+        blocks.append(f"{title}\n")
+        blocks.append(f"Intervention Type: {sol_type}")
         if primary_family:
-            header_parts.insert(1, f"**Primary Family:** {primary_family}")
-        blocks.append(" | ".join(header_parts) + "\n")
+            blocks.append(f"Primary Family: {primary_family}")
+        blocks.append(f"Complexity: {complexity}")
+        blocks.append(f"Confidence: {confidence}\n")
         road_context = f" involving {', '.join(roads)}" if roads else ""
-        blocks.append(f"**Target Location:** {location}{road_context}.\n")
-        blocks.append(f"**What problem is being solved:** {problem}\n")
-        blocks.append(f"**Why this intervention was chosen:** {why_chosen}\n")
-        blocks.append(f"**What existing service it connects to:** {service_connection}\n")
+        blocks.append(f"Target Location: {location}{road_context}.\n")
+        blocks.append(f"What problem is being solved: {problem}\n")
+        blocks.append(f"Why this intervention was chosen:{why_chosen}\n")
+        blocks.append(f"What existing service it connects to: {service_connection}\n")
 
         if actions:
-            blocks.append("**Proposed Actions:**")
+            blocks.append("Proposed Actions:")
             for action in actions:
                 blocks.append(f"* {action}")
             blocks.append("")
 
         if effects:
-            blocks.append("**Expected Effects:**")
+            blocks.append("Expected Effects:")
             for effect in effects:
                 blocks.append(f"* {effect}")
             blocks.append("")
 
         if uncertainties:
-            blocks.append("**What is still uncertain:**")
+            blocks.append("What is still uncertain:")
             for item in uncertainties:
                 blocks.append(f"* {item}")
             blocks.append("")
 
         impact = data.get("societal_impact")
         if impact:
-            blocks.append(f"**Societal Impact:**\n{impact}")
+            blocks.append(f"Societal Impact:\n{impact}")
 
         return "\n".join(blocks).strip()
 
@@ -3227,9 +3362,15 @@ FEEDBACK: <your greeting and question>
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
+    ################################################
+    # Main Chat Handler - Processes user messages through workflow phases
+    ################################################
     session_id = req.session_id
     user_message = req.message.strip()
 
+    ################################################
+    # Session Validation - Ensure session exists
+    ################################################
     if session_id not in workflow_state:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -3241,6 +3382,9 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     state = workflow_state[session_id]
     phase = state["phase"]
 
+    ################################################
+    # Phase: Intake - Process and validate user location input
+    ################################################
     if phase == "intake":
         intake_prompt = f"""
 User message:
@@ -3261,15 +3405,11 @@ Remember:
         if parsed["verdict"] == "SUCCESS" and parsed["places"]:
             current_session.state["target_places"] = parsed["places"]
             planning_response: dict[str, Any]
-            if GROWTH_FLOW_ENABLED:
-                planning_response = await start_area_option_phase(session_id, current_session, background_tasks)
-            else:
-                planning_response = await start_planning_phase(session_id, current_session)
+            planning_response = await start_planning_phase(session_id, current_session)
             planning_response["reply"] = (
                 f"Location confirmed: {', '.join(parsed['places'])}. Moving to the planning phase.\n\n"
                 + planning_response["reply"]
             )
-            return planning_response
 
         return {
             "ok": True,
@@ -3279,10 +3419,19 @@ Remember:
             "needs_input": True,
         }
 
+    ################################################
+    # Phase: Area Selection - Generate and handle area options for hotspots
+    ################################################
     if phase == "area_selection":
+        ######################################
+            #show area hotspot/specific area
+        ######################################
         selected_city = (state.get("target_places") or ["Kuala Lumpur"])[0]
         area_options = list(state.get("area_options") or [])
 
+        ################################################
+        # Handle Regenerate/Refresh Requests - Generate new area options
+        ################################################
         if user_message.strip().lower() in {"regenerate", "refresh", "another"}:
             refreshed = await _generate_area_options(session_id, selected_city)
             state["area_options"] = refreshed
@@ -3296,7 +3445,10 @@ Remember:
                 "area_options": refreshed,
             }
 
-        selected_option = _resolve_area_selection(user_message, area_options)
+        ################################################
+        # Process Area Selection - Resolve user choice and verify area
+        ################################################
+        selected_option = _resolve_area_selection(user_message, area_options) #once user has done selecting area
         if not selected_option:
             return {
                 "ok": True,
@@ -3308,6 +3460,9 @@ Remember:
                 "area_options": area_options,
             }
 
+        ################################################
+        # Verify Selected Area - Check feasibility and confidence
+        ################################################
         verified_option = await _verify_single_area(selected_city, selected_option)
         if verified_option is None:
             verified_option = dict(selected_option)
@@ -3319,6 +3474,9 @@ Remember:
         selected_option = verified_option
         state["selected_area_option"] = selected_option
 
+        ################################################
+        # Build Evidence Summary - Aggregate scores and impact drivers
+        ################################################
         osm_gap_score = float(selected_option.get("osm_gap_score", 0.0))
         osm_completeness_score = float(selected_option.get("osm_completeness_score", 0.0))
         feasibility = selected_option.get("route_feasibility") or {"pass": False, "score": 0.0}
@@ -3344,6 +3502,9 @@ Remember:
             "complaint_verified": complaint_verified,
         }
 
+        ################################################
+        # Gate Checks - Determine if area passes validation thresholds
+        ################################################
         gate_pass = bool(merged.get("pass_gate", False))
         soft_pass = (
             float(selected_option.get("report_score", 0.0)) >= 0.72
@@ -3461,6 +3622,9 @@ Remember:
                 "area_options": area_options,
                 "evidence_summary": evidence_summary,
             }
+        ################################################
+        # Transition to Challenge Selection Phase
+        ################################################
         state.update(
             {
                 "phase": "challenge_selection",
@@ -3481,9 +3645,15 @@ Remember:
             "find_needs_options": find_needs_options,
         }
 
+    ################################################
+    # Phase: Challenge Selection - Handle user selection of broad transport challenges
+    ################################################
     if phase == "challenge_selection":
         raw_step_output = state["last_step_output"]
         
+        ################################################
+        # Fast Path for Digit Selection - Bypass LLM for simple numeric choices
+        ################################################
         # --- FAST PATH: Bypass the LLM for digit selection to save quota ---
         clean_msg = user_message.strip()
         find_needs_options = state.get("find_needs_options", [])
@@ -3495,6 +3665,9 @@ Remember:
                 "detail": "",
                 "final_output": json.dumps(selected_challenge, ensure_ascii=False)
             }
+        ################################################
+        # LLM Review for Complex Selections - Use agent to parse user input
+        ################################################
         else:
             review_prompt = (
                 "STEP NAME: Find needs\n\n"
@@ -3654,6 +3827,9 @@ Remember:
             "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
         }
 
+    ################################################
+    # Phase: Specific Card Selection - Handle user selection of micro hotspots
+    ################################################
     if phase == "specific_card_selection":
         raw_step_output = state["last_step_output"]
         review_prompt = (
@@ -3913,6 +4089,9 @@ Remember:
                 "needs_input": True,
             }
 
+    ################################################
+    # Phase: Planning - Execute iterative transport planning pipeline
+    ################################################
     if phase != "planning":
         raise HTTPException(status_code=400, detail=f"Unsupported phase: {phase}")
 

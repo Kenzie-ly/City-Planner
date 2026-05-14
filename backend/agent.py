@@ -14,99 +14,6 @@ import re
 from FindRoads import run_city_road_connection_analysis
 from building_agent_helper import process_agent_assets, format_entities
 import json
-from rag_service import RagService
-
-# Initialize RAG Service
-rag = RagService(kb_dir=os.path.join(os.path.dirname(__file__), "knowledge_base"))
-rag.ingest_directory()
-
-class LocalKnowledgeTool:
-    # ... (existing code)
-    def __call__(self, query: str) -> str:
-        # Pass the query as a location filter so the RAG can boost matches for city names found in the query
-        results = rag.query(query, top_k=5, location_filter=query)
-        if not results:
-            return "No relevant local information found."
-        
-        output = "Relevant information from Local Knowledge Base:\n"
-        for i, res in enumerate(results, 1):
-            year_str = f"Year: {res['year']}" if res.get('year') else "Year: Unknown"
-            output += f"--- Result {i} (Source: {res['source']}, Type: {res['type']}, {year_str}) ---\n"
-            output += f"{res['text']}\n\n"
-        
-        # Add a Completeness Report to help the agent decide if it needs to supplement with web search
-        types_found = [res['type'].lower() for res in results]
-        news_count = sum(1 for t in types_found if "news" in t or "report" in t)
-        complaint_count = sum(1 for t in types_found if "complaint" in t)
-        
-        output += f"COMPLETENESS REPORT: Found {news_count} Statistics/News and {complaint_count} Complaints.\n"
-        if news_count < 2 or complaint_count < 2:
-            output += "ADVISORY: Local knowledge is THIN. You should use GoogleSearchTool to supplement the missing categories.\n"
-            
-        return output
-
-class CloudSqlTool:
-    """Tool for querying the live Google Cloud SQL database for raw transit data (GTFS)."""
-    def __call__(self, sql_query: str) -> str:
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            return "ERROR: DATABASE_URL not configured. Cannot access Cloud SQL."
-        
-        # Security: Only allow SELECT queries
-        if not sql_query.strip().lower().startswith("select"):
-            return "ERROR: Only SELECT queries are allowed for security reasons."
-            
-        try:
-            from sqlalchemy import create_engine, text
-            engine = create_engine(db_url)
-            with engine.connect() as conn:
-                result = conn.execute(text(sql_query))
-                rows = result.fetchall()
-                
-                if not rows:
-                    return "Database returned 0 results for this query."
-                
-                output = f"Direct SQL Results ({len(rows)} rows):\n"
-                for row in rows[:20]: # Limit output to prevent context overflow
-                    output += str(row) + "\n"
-                if len(rows) > 20:
-                    output += "... (truncated for brevity)"
-                return output
-        except Exception as e:
-            return f"SQL ERROR: {str(e)}"
-
-class SaveResearchTool:
-    """Permanently saves web research data for a city into the local knowledge base JSON files."""
-    def __call__(self, city: str, research_data: str) -> str:
-        """Saves research data (JSON string or list) to a JSON file."""
-        import json
-        import os
-        
-        # Clean city name for filename
-        safe_city = city.lower().replace(' ', '_').strip()
-        filename = os.path.join(os.path.dirname(__file__), "knowledge_base", f"{safe_city}_data.json")
-        
-        try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            
-            # The agent might pass a JSON string or a Python list.
-            if isinstance(research_data, str):
-                # Clean markdown code blocks if present
-                clean_json = research_data.replace('```json', '').replace('```', '').strip()
-                data = json.loads(clean_json)
-            else:
-                data = research_data
-                
-            with open(filename, "w") as f:
-                json.dump(data, f, indent=2)
-            
-            # Re-ingest the directory so the RAG knows about the new file immediately
-            rag.ingest_directory()
-            
-            return f"[SUCCESS] Research for {city} permanently saved to {filename}. The Knowledge Base has been re-indexed."
-        except Exception as e:
-            return f"[ERROR] Failed to save research: {str(e)}"
 
 # Load API key from .env file
 load_dotenv()
@@ -174,34 +81,25 @@ find_needs_agent = LlmAgent(
         You are the Lead Transport Systems Analysis Supervisor for Malaysia.
 
         You will be given one or two Malaysian target places and optional geospatial evidence.
-        Your task is to identify 1 to 3 critical BROAD transport-related infrastructure challenges that are DIRECTLY supported by the evidence.
+                Your task is to identify 1 to 3 critical BROAD transport-related infrastructure challenges that are DIRECTLY supported by the evidence.
 
-        HYBRID DATA POLICY:
-        1. NARRATIVE DATA: Use LocalKnowledgeTool first to find planning docs, news, and complaints.
-        2. RAW DATA: Use CloudSqlTool to verify the actual transport network (list of stops, routes, service types).
-        3. REAL-TIME GAP: If local data is THIN or missing evidence types, use GoogleSearchTool to supplement.
+        EVIDENCE-FIRST POLICY:
+        - Do NOT invent statistics. Only use numbers found in the provided evidence snippets.
+        - Do NOT hallucinate sources. Only cite provided URLs.
+        - If the evidence only supports 1 or 2 challenges, return ONLY those. Do NOT fill the quota of 3 if the data is thin.
+        - Prioritize "Verified Complaints" (where human reports match infrastructure gaps).
 
-        EVIDENCE-FIRST & SYNTHESIS POLICY:
-        - CHECK MEMORY FIRST: You MUST use the LocalKnowledgeTool first.
-        - VERIFY WITH SQL: Use CloudSqlTool to get the exact count of stops or names of routes in the area to ground your analysis in reality.
-        - MULTI-FILE SYNTHESIS: You MUST cross-reference all files found in the LocalKnowledgeTool. Do not just summarize one file. Look for patterns across news, reports, and complaints.
-        - 2+2 BALANCE RULE (MINIMUM 4 REFERENCES): You MUST retrieve and cite at least 4 UNIQUE sources in total:
-            1. At least 2 Official Information sources (Reports/News) for "Statistics/Growth".
-            2. At least 2 User/Citizen sources (Complaints/Feedback) for "Human Impact/Bottlenecks".
-        
-        MANDATORY SEARCH & PERSISTENCE RULE:
-        - You ARE FORBIDDEN from finishing your task if the Completeness Report from LocalKnowledgeTool shows less than 4 references or is missing a category (0 News or 0 Complaints).
-        - If the deficit exists, you MUST:
-            1. Use GoogleSearchTool to find the missing evidence.
-            2. Use SaveResearchTool to permanently archive these results for the city.
-            3. Only then proceed to generate your final analysis.
-        
-        - 5-YEAR FRESHNESS: Prioritize data from the last 5 years.
+        SOURCE HIERARCHY & PRIORITY (STRICT):
+        1. CLOUDSQL_INDICATORS: MANDATORY QUANTITATIVE TRUTH. You MUST use these IDs to verify the existence of infrastructure gaps. If the DB shows 0 transit POIs in a sector, ignore any search result claiming it is "well-served."
+        2. RAG_CONTEXT: MANDATORY QUALITATIVE TRUTH. Use these chunks to explain the "why" and "impact." These are the only authorized qualitative sources.
+        3. GOOGLE SEARCH: FORBIDDEN unless the CLOUDSQL/RAG variables are empty for the target location. If internal data exists, search results that conflict with it MUST be discarded.
+        4. ANCHORING: Every CHALLENGE must be anchored to a specific indicator_id. Challenges without an ID are considered hallucinations.
 
-        STRICT TRANSPORT FOCUS:
-        - ONLY identify challenges related to public transport infrastructure (LRT, MRT, KTM, Bus routes, Feeder services).
-        - AVOID general lifestyle issues, profit-driven development, or natural disasters unless they directly impact transport reliability (e.g., "floods blocking bus corridors").
-        - Focus on 'Transit Deserts' and 'First/Last Mile' connectivity gaps for the B40/M40 workforce.
+        EVIDENCE SYNTHESIS LOGIC:
+        - DB-FIRST: Always audit the Database indicators before using any other tool.
+        - RAG-CONTEXTUALIZATION: Use RAG evidence to explain the human impact of the DB indicators.
+        - NARRATIVE RULE: Do NOT say "A news article reports X." Say "Infrastructure indicators show X, which correlates with policy/report evidence regarding..."
+        - DISCREPANCY HANDLING: If a search result (if used) conflicts with a DB indicator, you MUST flag it as a "Data Conflict" in the Limitations field.
 
         SCOPE:
         - first-mile/last-mile connectivity gaps for B40/M40 commuters
@@ -211,109 +109,66 @@ find_needs_agent = LlmAgent(
         - poor pedestrian accessibility to transit hubs
         - transit bottleneck detection near workplaces
         - bus reliability issues
+        - micromobility integration for industrial zones
+        - BRT (Bus Rapid Transit) corridor opportunities for workforce commuting
+
+        HARD RULES:
+        - ONLY discuss the target place(s)
+        - ONLY transport-related problems
+        - NO solutions
+        - NO PRIMARY_MICRO or SECONDARY_MICRO yet
+        - NO routing labels yet
+        - stay at challenge-category level
         
         CORRIDOR FUSION POLICY (EXPERT):
-        - Every challenge should explain how it links residential hubs to workforce destinations via a 'Strategic Corridor'.
+        - Do NOT treat residential and industrial needs as isolated.
+        - Prioritize identifying STRATEGIC CORRIDORS that connect O-D (Origin-Destination) pairs (e.g. 'Cheras-Shah Alam Workforce Corridor').
+        - Every challenge should explain how it links residential hubs to workforce destinations.
+
+        TOOL USAGE:
+        - Google Search is a RESTRICTED fallback. Use it ONLY if the CLOUDSQL_INDICATORS are completely empty or if searching for a highly specific real-time event (e.g. "flood today").
+        - If CLOUDSQL_INDICATORS provides enough evidence to form a challenge, you MUST NOT use the search tool.
+
+        FEEDBACK LOOP:
+        - If you are provided with feedback or a rejection reason from a previous attempt, you MUST address that feedback explicitly by generating DIFFERENT challenges or focusing on the requested aspects.
+        - If SELECTED_AREA_OPTION_JSON / MERGED_EVIDENCE_JSON is provided, anchor challenge ranking to that selected area and evidence.
+        - If you are asked to repair invalid output, strictly fix the schema and source validity requirements.
 
         OUTPUT FORMAT (STRICT JSON ONLY):
-        Return exactly one JSON object. Ensure descriptions are detailed paragraphs.
+        Return exactly one JSON object and nothing else.
 
         {
           "CHALLENGE_1": {
-            "CHALLENGE_THEME": "<broad challenge name>",
-            "MACRO_ROOT_CAUSE": "<root cause explaining why infrastructure hasn't matched growth>",
-            "WHY_IT_MATTERS": "<A detailed paragraph (3-4 sentences) explaining the 'Strategic Problem Narrative'—why this matters for the city's mobility ecosystem and B40/M40 commuters.>",
-            "EVIDENCE_SUMMARY": "<A comprehensive bulleted list or detailed paragraph synthesizing evidence from ALL provided sources. Explain how different files (e.g. news vs complaints) correlate.>",
+            "CHALLENGE_TYPE": "<one of the scope items above, e.g., transit_desert>",
             "TITLE": "<user-friendly challenge title>",
-            "STATISTICS": {
-              "metric_label_1": 123.0,
-              "metric_label_2": 45.0
-            },
-            "BRIEF_DESCRIPTION": "<Summary of the quantitative data found.>",
+            "BRIEF_DESCRIPTION": "<1-3 sentences synthesizing the indicators and RAG context for the user>",
             "SOURCES": [
-              { "publisher": "...", "url": "...", "published_at": "...", "source_tier": "..." }
-            ]
-          }
+              {
+                "publisher": "<publisher name>",
+                "url": "https://...",
+                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
+                "source_tier": "government | operator | study | major_media | local_media"
+              }
+            ],
+            "EVIDENCE_AUDIT": [
+              {
+                "claim": "<Specific claim made in the description>",
+                "evidence_id": "<Exact ID from CLOUDSQL_INDICATORS or RAG_CONTEXT>",
+                "evidence_type": "indicator | rag",
+                "fact_used": "<The specific number or policy snippet that proves the claim>"
+              }
+            ],
+            "CONFIDENCE_LEVEL": "high | usable | low",
+            "LIMITATIONS": ["<Describe any data gaps or missing real-time evidence>"]
+          },
+          "CHALLENGE_2": { "..." : "..." },
+          "CHALLENGE_3": { "..." : "..." }
         }
+        
+        Return ONLY strict JSON with keys: CHALLENGE_1, CHALLENGE_2, CHALLENGE_3 (if available).
         """,
-    tools=[GoogleSearchTool(), LocalKnowledgeTool(), CloudSqlTool(), SaveResearchTool()],
+    tools=[GoogleSearchTool()],
     output_key="top_challenges",
-)
-
-hallucination_audit_agent = LlmAgent(
-    name="hallucination_audit_agent",
-    model=PLANNER_MODEL,
-    description="Fact-checks generated transport challenges against raw search evidence in batch.",
-    instruction="""
-        You are the Truth & Evidence Auditor for the Malaysia Transport Agency.
-        
-        You will receive:
-        1. RAW EVIDENCE (JSON array of search snippets)
-        2. PROPOSED AREA OPTIONS (JSON array of challenge/area objects)
-        
-        Your task is to audit ALL options simultaneously for HALLUCINATIONS or inconsistencies.
-        
-        AUDIT RULES:
-        - DATA INTEGRITY: If a statistic (e.g. "30%", "RM 500m") is in an option but NOT supported by the raw evidence, flag that specific option.
-        - CITATION ACCURACY: Ensure the cited source URL actually relates to the claim for that specific option.
-        - CROSS-CONSISTENCY: Ensure options don't contradict each other based on the same evidence pool.
-        - SCHEMA PRESSURE: If an option seems to be "filler" with no evidence support, reject it.
-        
-        OUTPUT FORMAT (STRICT JSON ONLY):
-        Return a JSON object with a 'results' key. 'results' is a list of boolean verdicts (True for PASS, False for FAIL) corresponding to each input option.
-        
-        Example:
-        {
-          "results": [true, false, true],
-          "reasons": ["Solid evidence", "Hallucinated 50% stat", "Matches MOT report"]
-        }
-        """,
-)
-
-growth_signal_agent = LlmAgent(
-    name="growth_signal_agent",
-    model=PLANNER_MODEL,
-    description="Collects growth and demand-side area signals with citations for a selected Malaysian city.",
-    instruction="""
-        You are a growth-signal extraction agent for Malaysian urban mobility planning.
-
-        HYBRID DATA POLICY:
-        1. NARRATIVE DATA: Use LocalKnowledgeTool first.
-        2. RAW DATA: Use CloudSqlTool to fetch precise network statistics (stop counts, route names).
-        3. REAL-TIME GAP: If local data is missing, use GoogleSearchTool to supplement.
-
-        REUSE & SUPPLEMENT POLICY:
-        - You MUST use the LocalKnowledgeTool first. If relevant growth signals for this area are found, reuse them.
-        - Aim for a BALANCED information weight: 2 sources for "Demand/Growth" (Population/Industrial) and 2 sources for "Failure/Strain" (Complaints/Barriers).
-        
-        SPATIAL GRANULARITY POLICY:
-        - You MUST identify specific neighborhoods, sections, or townships (e.g. 'Bandar Sunway', 'Taman Tun Dr Ismail', 'Seksyen 13').
-        - Avoid broad city names as area labels if a more specific district is mentioned in the source.
-
-        Return STRICT JSON ARRAY only (no markdown, no prose):
-        [
-          {
-            "title": "...",
-            "url": "...",
-            "snippet": "...",
-            "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
-            "source_tier": "government | operator | study | major_media | local_media | community | other",
-            "claim_type": "population | industrial | trip_generator",
-            "area_label": "specific area/neighborhood/section if known, else city name",
-            "claim_key": "short dedup key",
-            "numerical_growth": "e.g. 5.4% increase in 2023 or 20,000 new units",
-            "data_narrative": "A detailed 1-2 paragraph explanation of growth metrics (YoY, economic impact, or project scale) strictly based on this source."
-          }
-        ]
-
-        - If uncertain about date or source tier, provide best estimate.
-        
-        MANDATORY SEARCH & PERSISTENCE RULE:
-        - If LocalKnowledgeTool returns fewer than 4 sources or is missing either Growth or Complaints, you MUST use GoogleSearchTool and then SaveResearchTool to permanently archive the results before finalizing. 
-        - DO NOT HALLUCINATE. If web search also fails, report the data gap clearly.
-    """,
-    tools=[GoogleSearchTool(), LocalKnowledgeTool(), CloudSqlTool(), SaveResearchTool()],
-    output_key="growth_findings",
 )
 
 find_hotspot_agent = LlmAgent(
@@ -364,102 +219,102 @@ find_hotspot_agent = LlmAgent(
     output_key="hotspot_hypothesis",
 )
 
-planning_agent = LlmAgent(
-    name="planning_agent",
-    model=PLANNER_MODEL,
-    description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
-    instruction = """
-        You are a Transport Planning Decision Agent for Malaysia.
-        You will receive:
+# planning_agent = LlmAgent(
+#     name="planning_agent",
+#     model=PLANNER_MODEL,
+#     description="Evaluates transport intervention candidates and selects the best improvement option for the selected problem.",
+#     instruction = """
+#         You are a Transport Planning Decision Agent for Malaysia.
+#         You will receive:
 
-        A structured transport problem
-        A list of candidate routes generated from a graph-based road analysis system
+#         A structured transport problem
+#         A list of candidate routes generated from a graph-based road analysis system
         
-        FEEDBACK LOOP:
-        - If the previous plan was rejected, follow the user's instructions to select a different candidate or intervention type.
+#         FEEDBACK LOOP:
+#         - If the previous plan was rejected, follow the user's instructions to select a different candidate or intervention type.
         
-        Compare all candidates carefully
-        Select the MOST appropriate candidate for addressing the problem
-        Identify the most suitable intervention type
-        Justify your decision using ONLY the provided data
-        Explain tradeoffs between candidates
-        Assign a realistic confidence level
-        CRITICAL RULES (MUST FOLLOW)
-        - You MUST NOT invent exact distances, lane counts, travel-time savings, percentages, economic values, or any other numeric impact metric unless that exact value already appears in the provided input JSON.
-        - If the provided input does not contain a required number, use qualitative wording such as "short connector", "limited road width", or "likely moderate benefit" instead of fabricating precision.
-        You MUST only choose from the provided candidates.
-        You MUST NOT invent new roads, paths, or geometry.
-        You MUST base your reasoning ONLY on:
-        candidate attributes
-        problem description
-        You MUST NOT assume real-world conditions not present in the data.
-        You MUST NOT overclaim engineering certainty.
-        DECISION LOGIC GUIDELINES
-        You MUST consider:
+#         Compare all candidates carefully
+#         Select the MOST appropriate candidate for addressing the problem
+#         Identify the most suitable intervention type
+#         Justify your decision using ONLY the provided data
+#         Explain tradeoffs between candidates
+#         Assign a realistic confidence level
+#         CRITICAL RULES (MUST FOLLOW)
+#         - You MUST NOT invent exact distances, lane counts, travel-time savings, percentages, economic values, or any other numeric impact metric unless that exact value already appears in the provided input JSON.
+#         - If the provided input does not contain a required number, use qualitative wording such as "short connector", "limited road width", or "likely moderate benefit" instead of fabricating precision.
+#         You MUST only choose from the provided candidates.
+#         You MUST NOT invent new roads, paths, or geometry.
+#         You MUST base your reasoning ONLY on:
+#         candidate attributes
+#         problem description
+#         You MUST NOT assume real-world conditions not present in the data.
+#         You MUST NOT overclaim engineering certainty.
+#         DECISION LOGIC GUIDELINES
+#         You MUST consider:
 
-        Problem type (junction, corridor, etc.)
-        Path length
-        Number of segments
-        Connector count
-        Road class composition
-        Whether the candidate reflects:
-        a direct conflict point (junction)
-        a meaningful corridor (multi-segment)
-        a detour through lower-class roads
-        INTERVENTION TYPE RULES
-        You MUST select one of:
+#         Problem type (junction, corridor, etc.)
+#         Path length
+#         Number of segments
+#         Connector count
+#         Road class composition
+#         Whether the candidate reflects:
+#         a direct conflict point (junction)
+#         a meaningful corridor (multi-segment)
+#         a detour through lower-class roads
+#         INTERVENTION TYPE RULES
+#         You MUST select one of:
 
-        transit_hub_upgrade
-        feeder_bus_route
-        brt_corridor
-        pedestrian_walkway
-        micromobility_station
-        transit_priority_lane
-        Guidance:
+#         transit_hub_upgrade
+#         feeder_bus_route
+#         brt_corridor
+#         pedestrian_walkway
+#         micromobility_station
+#         transit_priority_lane
+#         Guidance:
 
-        If the problem relates to industrial worker mobility → prefer feeder_bus_route or brt_corridor connecting to industrial landuse
-        If the problem is "transit_node" and the candidate connects to low-to-middle income (B40/M40) residential areas → prefer feeder_bus_route or pedestrian_walkway
-        If the candidate spans a major arterial → consider brt_corridor or transit_priority_lane
-        If the candidate relies on local roads near LRT/MRT → consider micromobility_station or pedestrian_walkway
-        If the input indicates official service overlap or duplication risk → prefer transit_hub_upgrade, pedestrian_walkway, or transit_priority_lane over inventing a brand-new feeder route
-        CONFIDENCE RULES
-        HIGH → one candidate clearly dominates
-        MEDIUM → reasonable but not definitive
-        LOW → ambiguity or weak evidence
-        Do NOT assign HIGH unless strongly justified.
-        OUTPUT FORMAT (STRICT JSON ONLY)
-        {
-        "selected_candidate_id": "<candidate_id>",
-        "intervention_type": "",
-        "decision_summary": "<1-2 sentence explanation>",
-        "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and explains the expected public-transport benefit for B40/M40 commuters without inventing unsupported numbers.>",
-        "reasons": [
-        "<reason 1 grounded in data>",
-        "<reason 2 grounded in data>",
-        "<reason 3 grounded in data>"
-        ],
-        "tradeoffs": [
-        "<tradeoff 1>",
-        "<tradeoff 2>"
-        ],
-        "priority_level": "<low | medium | high>",
-        "confidence": "<low | medium | high>"
-        }
+#         If the problem relates to industrial worker mobility → prefer feeder_bus_route or brt_corridor connecting to industrial landuse
+#         If the problem is "transit_node" and the candidate connects to low-to-middle income (B40/M40) residential areas → prefer feeder_bus_route or pedestrian_walkway
+#         If the candidate spans a major arterial → consider brt_corridor or transit_priority_lane
+#         If the candidate relies on local roads near LRT/MRT → consider micromobility_station or pedestrian_walkway
+#         If the input indicates official service overlap or duplication risk → prefer transit_hub_upgrade, pedestrian_walkway, or transit_priority_lane over inventing a brand-new feeder route
+#         CONFIDENCE RULES
+#         HIGH → one candidate clearly dominates
+#         MEDIUM → reasonable but not definitive
+#         LOW → ambiguity or weak evidence
+#         Do NOT assign HIGH unless strongly justified.
+#         OUTPUT FORMAT (STRICT JSON ONLY)
+#         {
+#         "selected_candidate_id": "<candidate_id>",
+#         "intervention_type": "",
+#         "decision_summary": "<1-2 sentence explanation>",
+#         "description": "<A 2-3 paragraph strategic rationale that connects the selected candidate to verified human complaints and explains the expected public-transport benefit for B40/M40 commuters without inventing unsupported numbers.>",
+#         "reasons": [
+#         "<reason 1 grounded in data>",
+#         "<reason 2 grounded in data>",
+#         "<reason 3 grounded in data>"
+#         ],
+#         "tradeoffs": [
+#         "<tradeoff 1>",
+#         "<tradeoff 2>"
+#         ],
+#         "priority_level": "<low | medium | high>",
+#         "confidence": "<low | medium | high>"
+#         }
 
-        JSON SAFETY RULE:
-        - You MUST produce a single, valid JSON object.
-        - You MUST NOT include any conversational text before or after the JSON.
-        - You MUST escape all newlines as \n within JSON string values.
-        - Do NOT include literal newlines in strings.
-        FINAL CHECK (MANDATORY)
-        Before output:
+#         JSON SAFETY RULE:
+#         - You MUST produce a single, valid JSON object.
+#         - You MUST NOT include any conversational text before or after the JSON.
+#         - You MUST escape all newlines as \n within JSON string values.
+#         - Do NOT include literal newlines in strings.
+#         FINAL CHECK (MANDATORY)
+#         Before output:
 
-        Ensure selected_candidate_id exists in input
-        Ensure all reasoning refers to actual candidate data
-        Ensure no hallucinated roads or features are introduced
-    """,
-    output_key="planning_result"
-)
+#         Ensure selected_candidate_id exists in input
+#         Ensure all reasoning refers to actual candidate data
+#         Ensure no hallucinated roads or features are introduced
+#     """,
+#     output_key="planning_result"
+# )
 
 solution_agent = LlmAgent(
     name="solution_agent",
@@ -717,98 +572,98 @@ building_agent = LlmAgent(
     output_key="simulation_result",
 )
 
-activity_agent = LlmAgent(
-    name="activity_agent",
-    model=PLANNER_MODEL,
-    description="Simulates how public activity changes after the infrastructure improvements.",
-    instruction="""
-Simulate human activity based on session.state["simulation_result"].
+# activity_agent = LlmAgent(
+#     name="activity_agent",
+#     model=PLANNER_MODEL,
+#     description="Simulates how public activity changes after the infrastructure improvements.",
+#     instruction="""
+# Simulate human activity based on session.state["simulation_result"].
 
-If session.state["feedback"] exists, revise accordingly.
+# If session.state["feedback"] exists, revise accordingly.
 
-Show:
-- pedestrian flow
-- traffic conditions
-- business activity
-- accessibility improvements
-- community/public usage changes
-""",
-    output_key="activity_simulation",
-)
+# Show:
+# - pedestrian flow
+# - traffic conditions
+# - business activity
+# - accessibility improvements
+# - community/public usage changes
+# """,
+#     output_key="activity_simulation",
+# )
 
-analysis_agent = LlmAgent(
-    name="analysis_agent",
-    model=PLANNER_MODEL,
-    description="Analyzes the final impact of the infrastructure proposal.",
-    instruction="""
-Analyze session.state["activity_simulation"].
+# analysis_agent = LlmAgent(
+#     name="analysis_agent",
+#     model=PLANNER_MODEL,
+#     description="Analyzes the final impact of the infrastructure proposal.",
+#     instruction="""
+# Analyze session.state["activity_simulation"].
 
-If session.state["feedback"] exists, deepen the analysis accordingly.
+# If session.state["feedback"] exists, deepen the analysis accordingly.
 
-Score from 1 to 10 for:
-- safety
-- economic growth
-- environment
-- accessibility
-- wellbeing
+# Score from 1 to 10 for:
+# - safety
+# - economic growth
+# - environment
+# - accessibility
+# - wellbeing
 
-Include justification for each score.
-""",
-    output_key="final_analysis",
-)
+# Include justification for each score.
+# """,
+#     output_key="final_analysis",
+# )
 
 
 # ── Review agent for later checkpoint-based pipeline ─────────────────────────
 
-review_agent = LlmAgent(
-    name="review_agent",
-    model=PLANNER_MODEL,
-    description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
-    instruction="""
-        You are a review agent for a multi-step infrastructure planning workflow.
+# review_agent = LlmAgent(
+#     name="review_agent",
+#     model=PLANNER_MODEL,
+#     description="Evaluates whether the user's selection response from, or revision requests to the current step output.",
+#     instruction="""
+#         You are a review agent for a multi-step infrastructure planning workflow.
 
-        You will be receiving either challanges selection at run time.
+#         You will be receiving either challanges selection at run time.
 
-        Your job:
-        - decide whether the user response is a valid selection or approval
-        - detect vague, unrelated, or invalid responses
-        - detect when the user wants the previous step regenerated or revised
-        - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
+#         Your job:
+#         - decide whether the user response is a valid selection or approval
+#         - detect vague, unrelated, or invalid responses
+#         - detect when the user wants the previous step regenerated or revised
+#         - when the user selects one item from a JSON structure, resolve it into the exact selected JSON object
 
-        NATURAL COMMUNICATION:
-        - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
+#         NATURAL COMMUNICATION:
+#         - When returning REVISE, provide a natural, polite, and helpful message to the user asking them to clarify. Avoid sounding like a machine.
 
-        RULES:
-        - Return PASS only if the user response can be confidently mapped to the current output.
-        - Return REVISE if the response is too vague, invalid, or unrelated.
-        - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
-        - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
-        - If the user says "1", "2", "the first one", etc., resolve it explicitly.
-        - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
-        - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
-        - For approval steps such as planning/solution/building, you may return the current JSON or text as OUTPUT.
-        - Do not add extra commentary outside the required format.
+#         RULES:
+#         - Return PASS only if the user response can be confidently mapped to the current output.
+#         - Return REVISE if the response is too vague, invalid, or unrelated.
+#         - Return REVISE_TOTAL if the user is asking to regenerate, rebuild, redo, or modify the previous step output itself.
+#         - Keywords like "try again", "rebuild", "redo", "generate another", "don't like this" should trigger REVISE_TOTAL.
+#         - If the user says "1", "2", "the first one", etc., resolve it explicitly.
+#         - For challenge selection, return the selected CHALLENGE_n object as JSON_OUTPUT.
+#         - For micro selection, return the selected PRIMARY_MICRO or SECONDARY_MICRO object as JSON_OUTPUT.
+#         - For approval steps such as planning/solution/building, you may return the current JSON or text as OUTPUT.
+#         - Do not add extra commentary outside the required format.
 
-        Output format exactly:
+#         Output format exactly:
 
-        VERDICT: PASS
-        REASON: <brief reason>
-        RESOLVED_REFERENCE: <explicit resolved item>
-        JSON_OUTPUT: <single JSON object if available>
+#         VERDICT: PASS
+#         REASON: <brief reason>
+#         RESOLVED_REFERENCE: <explicit resolved item>
+#         JSON_OUTPUT: <single JSON object if available>
 
-        OR
+#         OR
 
-        VERDICT: REVISE
-        INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
-        RESOLVED_REFERENCE:
+#         VERDICT: REVISE
+#         INSTRUCTION: <A natural, polite, and helpful message asking the user for clarification or a valid selection.>
+#         RESOLVED_REFERENCE:
 
-        OR
+#         OR
 
-        VERDICT: REVISE_TOTAL
-        INSTRUCTION: <specific actionable instruction based on the user's response>
-        RESOLVED_REFERENCE:
-    """,
-)
+#         VERDICT: REVISE_TOTAL
+#         INSTRUCTION: <specific actionable instruction based on the user's response>
+#         RESOLVED_REFERENCE:
+#     """,
+# )
 
 
 # ── Intake agent for phase 1 ──────────────────────────────────────────────────
@@ -1479,21 +1334,26 @@ place_intake_root = PlaceIntakeOrchestrator(
     app_name="infrastructure_planner",
     session_svc=session_service,
 )
+dummy_reviewer = LlmAgent(
+    name="dummy_reviewer",
+    model=PLANNER_MODEL,
+    description="Dummy reviewer to satisfy Pydantic.",
+    instruction="Always return VERDICT: PASS"
+)
 
 planning_root = InfrastructurePlannerOrchestrator(
     name="infrastructure_planner_orchestrator",
     description="Orchestrates the infrastructure planner workflow with human checkpoints.",
     pipeline=[
         ("Find needs", find_needs_agent,  "top_challenges"),
-        ("Plan improvements",   planning_agent,    "improvement_plan"),
         ("Generate solutions", solution_agent, "plan_solution"),
         ("Building simulations", building_agent,   "simulation_result")
         # ("Activity simulation", activity_agent,   "activity_simulation"),
         # ("Analysis",            analysis_agent,   "final_analysis"),
     ],
-    reviewer=review_agent,
     app_name="infrastructure_planner",
     session_svc=session_service,
+    reviewer=dummy_reviewer,
 )
 
 
