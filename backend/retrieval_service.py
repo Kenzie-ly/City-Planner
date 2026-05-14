@@ -3,10 +3,14 @@ import uuid
 import hashlib
 from rag_service import RagService
 
-# Initialize the local RAG service
-kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
-rag = RagService(kb_dir)
-# rag.ingest_directory()  # Moved to manual/on-demand to avoid startup timeouts
+_rag_instance = None
+
+def get_rag():
+    global _rag_instance
+    if _rag_instance is None:
+        kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
+        _rag_instance = RagService(kb_dir)
+    return _rag_instance
 
 def search_rag_chunks_by_area_and_challenge(
     area_id: str,
@@ -30,6 +34,7 @@ def search_rag_chunks_by_area_and_challenge(
         locations = ["Johor Bahru", "JB", "Johor"]
         
     results = []
+    rag = get_rag()
     for loc in locations:
         # We increase top_k to 50 so that the math phase pulls enough files for the Location Shield to find a match!
         results.extend(rag.query(f"transport issues in {clean_city}", top_k=50, location_filter=loc))
