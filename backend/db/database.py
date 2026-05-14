@@ -9,7 +9,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     # Fallback for development if needed
-    DATABASE_URL = "postgresql+psycopg2://postgres:password@localhost:5432/transport_ai"
+    DATABASE_URL = "postgresql+psycopg2://postgres:password@localhost:5432/transport_ai2"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

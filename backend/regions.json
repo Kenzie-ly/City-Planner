@@ -4,27 +4,31 @@
     "center_lon": 103.7414,
     "dist_m": 90000,
     "cities": ["Johor Bahru", "Iskandar Puteri", "Pasir Gudang", "Batu Pahat", "Muar", "Kluang", "Segamat"],
-    "graphml": "data/graphs/johor.graphml"
+    "graphml_drive": "data/graphs/johor_drive.graphml",
+    "graphml_walk": "data/graphs/johor_walk.graphml"
   },
   "selangor": {
     "center_lat": 3.0738,
     "center_lon": 101.5183,
     "dist_m": 80000,
     "cities": ["Shah Alam", "Klang", "Petaling Jaya", "Subang Jaya", "Kajang", "Puchong", "Selayang", "Ampang Jaya", "Seri Kembangan", "Cyberjaya"],
-    "graphml": "data/graphs/selangor.graphml"
+    "graphml_drive": "data/graphs/selangor_drive.graphml",
+    "graphml_walk": "data/graphs/selangor_walk.graphml"
   },
   "kuala_lumpur": {
     "center_lat": 3.1390,
     "center_lon": 101.6869,
     "dist_m": 25000,
     "cities": ["Kuala Lumpur", "Cheras", "Setapak", "Wangsa Maju", "Batu", "Bandar Tun Razak", "Titiwangsa"],
-    "graphml": "data/graphs/kuala_lumpur.graphml"
+    "graphml_drive": "data/graphs/kuala_lumpur_drive.graphml",
+    "graphml_walk": "data/graphs/kuala_lumpur_walk.graphml"
   },
   "putrajaya": {
     "center_lat": 2.9264,
     "center_lon": 101.6964,
     "dist_m": 12000,
     "cities": ["Putrajaya", "Precinct 1", "Precinct 8", "Presint 9"],
-    "graphml": "data/graphs/putrajaya.graphml"
+    "graphml_drive": "data/graphs/putrajaya_drive.graphml",
+    "graphml_walk": "data/graphs/putrajaya_walk.graphml"
   }
 }

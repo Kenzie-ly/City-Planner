@@ -20,14 +20,12 @@ from urllib.parse import urlparse
 from agent import (
     place_intake_agent,
     find_needs_agent,
-    growth_signal_agent,
     planning_agent,
     solution_agent,
     building_agent,
     review_agent,
     InfrastructurePlannerOrchestrator,
-    find_hotspot_agent,
-    hallucination_audit_agent,
+    find_hotspot_agent
 )
 from building_agent_helper import process_agent_assets, format_entities
 from FindRoads import run_city_road_connection_analysis
@@ -524,29 +522,29 @@ async def _synthesize_area_card_content(
         option["trusted_sources"] = trusted_sources
         return option
 
-    passed = await _hallucination_audit_area_card(
-        session_id,
-        trusted_sources,
-        description_paragraph,
-        micro_paragraph,
-    )
-    if not passed:
-        impacted = _extract_impacted_locations(option, trusted_sources, city)
-        impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
-        description_paragraph = (
-            f"{option.get('area_label') or city} is flagged from trusted transport evidence as a corridor with observed demand pressure in {city}."
-        )
-        micro_paragraph = (
-            f"Micro symptom overview for {impacted_text}: trusted reports describe real commuting friction between residential neighborhoods and job hubs."
-        )
-        passed = await _hallucination_audit_area_card(
-            session_id,
-            trusted_sources,
-            description_paragraph,
-            micro_paragraph,
-        )
-        if not passed:
-            return None
+    # passed = await _hallucination_audit_area_card(
+    #     session_id,
+    #     trusted_sources,
+    #     description_paragraph,
+    #     micro_paragraph,
+    # )
+    # if not passed:
+    #     impacted = _extract_impacted_locations(option, trusted_sources, city)
+    #     impacted_text = ", ".join(impacted[:2]) if len(impacted) > 1 else impacted[0]
+    #     description_paragraph = (
+    #         f"{option.get('area_label') or city} is flagged from trusted transport evidence as a corridor with observed demand pressure in {city}."
+    #     )
+    #     micro_paragraph = (
+    #         f"Micro symptom overview for {impacted_text}: trusted reports describe real commuting friction between residential neighborhoods and job hubs."
+    #     )
+    #     passed = await _hallucination_audit_area_card(
+    #         session_id,
+    #         trusted_sources,
+    #         description_paragraph,
+    #         micro_paragraph,
+    #     )
+    #     if not passed:
+    #         return None
 
     option["description_paragraph"] = description_paragraph
     option["micro_paragraph"] = micro_paragraph
@@ -1056,43 +1054,47 @@ def build_find_needs_prompt(
         """.strip()
 
 
-def _extract_growth_findings(raw: str) -> list[dict[str, Any]]:
-    try:
-        parsed = safe_json_loads(raw)
-        if isinstance(parsed, list):
-            return [x for x in parsed if isinstance(x, dict)]
-    except Exception:
-        pass
-    return []
+# def _extract_growth_findings(raw: str) -> list[dict[str, Any]]:
+#     try:
+#         parsed = safe_json_loads(raw)
+#         if isinstance(parsed, list):
+#             return [x for x in parsed if isinstance(x, dict)]
+#     except Exception:
+#         pass
+#     return []
 
 
-async def _growth_search_fn(session_id: str, city: str, query: str) -> list[dict[str, Any]]:
-    prompt = f"""
-    CITY: {city}
-    SEARCH_QUERY_HINT: {query}
+# async def _growth_search_fn(session_id: str, city: str, query: str) -> list[dict[str, Any]]:
+#     prompt = f"""
+#     CITY: {city}
+#     SEARCH_QUERY_HINT: {query}
 
-    Return ONLY strict JSON array of finding objects.
-    """.strip()
-    raw = await run_agent_once(growth_signal_agent, session_id, prompt)
-    findings = _extract_growth_findings(raw)
-    for f in findings:
-        if not f.get("area_label"):
-            f["area_label"] = city
-    return findings
+#     Return ONLY strict JSON array of finding objects.
+#     """.strip()
+#     raw = await run_agent_once(growth_signal_agent, session_id, prompt)
+#     findings = _extract_growth_findings(raw)
+#     for f in findings:
+#         if not f.get("area_label"):
+#             f["area_label"] = city
+#     return findings
 
 
 async def _generate_area_options(session_id: str, city: str) -> list[dict[str, Any]]:
-    async def _search(query: str) -> list[dict[str, Any]]:
-        return await _growth_search_fn(session_id, city, query)
+    # async def _search(query: str) -> list[dict[str, Any]]:
+    #     return await _growth_search_fn(session_id, city, query)
 
-    queries = [
-        f"{city} population growth new township Malaysia",
-        f"{city} industrial park jobs factory expansion Malaysia",
-        f"{city} transit complaints stranded workers bus frequency",
-    ]
-    findings: list[dict[str, Any]] = []
-    for q in queries:
-        findings.extend(await _search(q))
+    # queries = [
+    #     f"{city} population growth new township Malaysia",
+    #     f"{city} industrial park jobs factory expansion Malaysia",
+    #     f"{city} transit complaints stranded workers bus frequency",
+    # ]
+    # findings: list[dict[str, Any]] = []
+    # for q in queries:
+    #     findings.extend(await _search(q))
+
+    #########################################
+        #add retrieval logic
+    ########################################
 
     if not findings:
         findings = collect_google_growth_signals(city, search_fn=lambda _q: [], iterations=3)
@@ -1253,6 +1255,9 @@ def _run_route_feasibility(city: str, selected_area: dict[str, Any]) -> dict[str
         return {"pass": False, "score": 0.0, "candidate_count": 0, "error": str(exc)}
 
 
+############################################
+    #this can be changed by diagnostic agent
+############################################
 def _build_strategic_narrative(selected_option: dict[str, Any], osm_audit: Any) -> str:
     signals = selected_option.get("growth_signals", {})
     pop = float(signals.get("population", 0))
@@ -3128,9 +3133,15 @@ FEEDBACK: <your greeting and question>
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
+    ################################################
+    # Main Chat Handler - Processes user messages through workflow phases
+    ################################################
     session_id = req.session_id
     user_message = req.message.strip()
 
+    ################################################
+    # Session Validation - Ensure session exists
+    ################################################
     if session_id not in workflow_state:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -3142,6 +3153,9 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     state = workflow_state[session_id]
     phase = state["phase"]
 
+    ################################################
+    # Phase: Intake - Process and validate user location input
+    ################################################
     if phase == "intake":
         intake_prompt = f"""
 User message:
@@ -3162,15 +3176,11 @@ Remember:
         if parsed["verdict"] == "SUCCESS" and parsed["places"]:
             current_session.state["target_places"] = parsed["places"]
             planning_response: dict[str, Any]
-            if GROWTH_FLOW_ENABLED:
-                planning_response = await start_area_option_phase(session_id, current_session, background_tasks)
-            else:
-                planning_response = await start_planning_phase(session_id, current_session)
+            planning_response = await start_planning_phase(session_id, current_session)
             planning_response["reply"] = (
                 f"Location confirmed: {', '.join(parsed['places'])}. Moving to the planning phase.\n\n"
                 + planning_response["reply"]
             )
-            return planning_response
 
         return {
             "ok": True,
@@ -3180,10 +3190,19 @@ Remember:
             "needs_input": True,
         }
 
+    ################################################
+    # Phase: Area Selection - Generate and handle area options for hotspots
+    ################################################
     if phase == "area_selection":
+        ######################################
+            #show area hotspot/specific area
+        ######################################
         selected_city = (state.get("target_places") or ["Kuala Lumpur"])[0]
         area_options = list(state.get("area_options") or [])
 
+        ################################################
+        # Handle Regenerate/Refresh Requests - Generate new area options
+        ################################################
         if user_message.strip().lower() in {"regenerate", "refresh", "another"}:
             refreshed = await _generate_area_options(session_id, selected_city)
             state["area_options"] = refreshed
@@ -3197,7 +3216,10 @@ Remember:
                 "area_options": refreshed,
             }
 
-        selected_option = _resolve_area_selection(user_message, area_options)
+        ################################################
+        # Process Area Selection - Resolve user choice and verify area
+        ################################################
+        selected_option = _resolve_area_selection(user_message, area_options) #once user has done selecting area
         if not selected_option:
             return {
                 "ok": True,
@@ -3209,6 +3231,9 @@ Remember:
                 "area_options": area_options,
             }
 
+        ################################################
+        # Verify Selected Area - Check feasibility and confidence
+        ################################################
         verified_option = await _verify_single_area(selected_city, selected_option)
         if verified_option is None:
             verified_option = dict(selected_option)
@@ -3220,6 +3245,9 @@ Remember:
         selected_option = verified_option
         state["selected_area_option"] = selected_option
 
+        ################################################
+        # Build Evidence Summary - Aggregate scores and impact drivers
+        ################################################
         osm_gap_score = float(selected_option.get("osm_gap_score", 0.0))
         osm_completeness_score = float(selected_option.get("osm_completeness_score", 0.0))
         feasibility = selected_option.get("route_feasibility") or {"pass": False, "score": 0.0}
@@ -3245,6 +3273,9 @@ Remember:
             "complaint_verified": complaint_verified,
         }
 
+        ################################################
+        # Gate Checks - Determine if area passes validation thresholds
+        ################################################
         gate_pass = bool(merged.get("pass_gate", False))
         soft_pass = (
             float(selected_option.get("report_score", 0.0)) >= 0.72
@@ -3362,6 +3393,9 @@ Remember:
                 "area_options": area_options,
                 "evidence_summary": evidence_summary,
             }
+        ################################################
+        # Transition to Challenge Selection Phase
+        ################################################
         state.update(
             {
                 "phase": "challenge_selection",
@@ -3382,9 +3416,15 @@ Remember:
             "find_needs_options": find_needs_options,
         }
 
+    ################################################
+    # Phase: Challenge Selection - Handle user selection of broad transport challenges
+    ################################################
     if phase == "challenge_selection":
         raw_step_output = state["last_step_output"]
         
+        ################################################
+        # Fast Path for Digit Selection - Bypass LLM for simple numeric choices
+        ################################################
         # --- FAST PATH: Bypass the LLM for digit selection to save quota ---
         clean_msg = user_message.strip()
         find_needs_options = state.get("find_needs_options", [])
@@ -3396,6 +3436,9 @@ Remember:
                 "detail": "",
                 "final_output": json.dumps(selected_challenge, ensure_ascii=False)
             }
+        ################################################
+        # LLM Review for Complex Selections - Use agent to parse user input
+        ################################################
         else:
             review_prompt = (
                 "STEP NAME: Find needs\n\n"
@@ -3555,6 +3598,9 @@ Remember:
             "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
         }
 
+    ################################################
+    # Phase: Specific Card Selection - Handle user selection of micro hotspots
+    ################################################
     if phase == "specific_card_selection":
         raw_step_output = state["last_step_output"]
         review_prompt = (
@@ -3814,6 +3860,9 @@ Remember:
                 "needs_input": True,
             }
 
+    ################################################
+    # Phase: Planning - Execute iterative transport planning pipeline
+    ################################################
     if phase != "planning":
         raise HTTPException(status_code=400, detail=f"Unsupported phase: {phase}")
 

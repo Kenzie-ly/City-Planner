@@ -1,0 +1,1028 @@
+"""
+Production-ready ingestion pipeline for the transport_ai database.
+
+What this replaces:
+- ingest_gtfs_static.py
+- osm_ingestion.py
+- POIdemandproxy.py
+
+Main goals:
+1. Load GTFS static into normalized GTFS tables.
+2. Load OSM regions, areas, road graph, POIs, and transit stops into existing PostGIS tables.
+3. Build relationship tables so data connects together:
+   - area_gtfs_stops
+   - area_gtfs_routes
+   - osm_gtfs_stop_matches
+   - demand_proxy_summary
+   - route_headway_summary
+   - zone_transit_coverage_summary is intentionally not generated unless zones exist.
+4. Track ingestion_runs and data_freshness.
+
+Requirements:
+    pip install pandas requests sqlalchemy psycopg2-binary python-dotenv osmnx geopandas shapely geoalchemy2
+
+Environment:
+    DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME
+
+Example:
+    python production_ingestion.py --gtfs rapid_bus_kl --osm-area "Kuala Lumpur, Malaysia"
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import logging
+import os
+import re
+import tempfile
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Iterable
+
+import pandas as pd
+import requests
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
+try:
+    import geopandas as gpd
+    import osmnx as ox
+    from shapely.geometry import LineString, MultiPolygon, Point, Polygon
+except Exception:  # OSM tasks will fail with a clear message if these are missing.
+    gpd = None
+    ox = None
+    LineString = MultiPolygon = Point = Polygon = None
+
+
+# -----------------------------------------------------------------------------
+# Config
+# -----------------------------------------------------------------------------
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+log = logging.getLogger("transport_ingestion")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is missing. Add it to .env or your environment variables.")
+
+engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+
+GTFS_FEEDS = {
+    "rapid_bus_kl": {
+        "feed_id": "prasarana_rapid_bus_kl",
+        "agency": "prasarana",
+        "category": "rapid-bus-kl",
+        "source_url": "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kl",
+    }
+}
+
+DEFAULT_HEADERS = {
+    "User-Agent": "TransportAIIngestion/1.0 (research prototype; contact: vxkenglyn@gmail.com)"
+}
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+@dataclass
+class RunCounter:
+    inserted: int = 0
+    updated: int = 0
+
+
+def slugify(value: str) -> str:
+    value = value.lower().strip()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    return value.strip("_")
+
+
+def clean_nan(value: Any) -> Any:
+    if pd.isna(value):
+        return None
+    return value
+
+
+def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    return df.where(pd.notna(df), None)
+
+
+def ensure_cols(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
+    df = df.copy()
+    for col in cols:
+        if col not in df.columns:
+            df[col] = None
+    return df
+
+
+def to_int_series(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(s, errors="coerce").astype("Int64")
+
+
+def to_float_series(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(s, errors="coerce")
+
+
+def date_yyyymmdd_series(s: pd.Series) -> pd.Series:
+    return pd.to_datetime(s, format="%Y%m%d", errors="coerce").dt.date
+
+
+def start_ingestion_run(source_type: str, source_name: str, region_id: str | None = None, area_id: str | None = None) -> str:
+    with engine.begin() as conn:
+        run_id = conn.execute(text("""
+            INSERT INTO ingestion_runs (source_type, source_name, region_id, area_id, status, started_at)
+            VALUES (:source_type, :source_name, :region_id, :area_id, 'running', NOW())
+            RETURNING ingestion_run_id::text;
+        """), {
+            "source_type": source_type,
+            "source_name": source_name,
+            "region_id": region_id,
+            "area_id": area_id,
+        }).scalar_one()
+    return run_id
+
+
+def finish_ingestion_run(run_id: str, status: str, counter: RunCounter, error_message: str | None = None) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE ingestion_runs
+            SET status = :status,
+                records_inserted = :inserted,
+                records_updated = :updated,
+                error_message = :error_message,
+                completed_at = NOW()
+            WHERE ingestion_run_id = :run_id;
+        """), {
+            "run_id": run_id,
+            "status": status,
+            "inserted": counter.inserted,
+            "updated": counter.updated,
+            "error_message": error_message,
+        })
+
+
+def update_freshness(source_type: str, source_name: str, region_id: str | None = None, area_id: str | None = None,
+                     status: str = "fresh", notes: str | None = None, next_days: int = 30) -> None:
+    # Your schema has no unique key on data_freshness, so use delete+insert to avoid duplicates.
+    with engine.begin() as conn:
+        conn.execute(text("""
+            DELETE FROM data_freshness
+            WHERE source_type IS NOT DISTINCT FROM :source_type
+              AND source_name IS NOT DISTINCT FROM :source_name
+              AND region_id IS NOT DISTINCT FROM :region_id
+              AND area_id IS NOT DISTINCT FROM :area_id;
+        """), {
+            "source_type": source_type,
+            "source_name": source_name,
+            "region_id": region_id,
+            "area_id": area_id,
+        })
+        conn.execute(text("""
+            INSERT INTO data_freshness (
+                source_type, source_name, region_id, area_id,
+                last_successful_update, next_scheduled_update,
+                freshness_status, notes
+            )
+            VALUES (
+                :source_type, :source_name, :region_id, :area_id,
+                NOW(), :next_update, :status, :notes
+            );
+        """), {
+            "source_type": source_type,
+            "source_name": source_name,
+            "region_id": region_id,
+            "area_id": area_id,
+            "next_update": datetime.utcnow() + timedelta(days=next_days),
+            "status": status,
+            "notes": notes,
+        })
+
+
+def temp_stage(df: pd.DataFrame, table_name: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(text(f'DROP TABLE IF EXISTS "{table_name}";'))
+    df.to_sql(table_name, engine, if_exists="replace", index=False, chunksize=500, method="multi")
+
+
+# -----------------------------------------------------------------------------
+# GTFS Static
+# -----------------------------------------------------------------------------
+
+def download_gtfs_zip(url: str) -> tuple[dict[str, pd.DataFrame], bytes]:
+    response = requests.get(url, headers=DEFAULT_HEADERS, timeout=90)
+    response.raise_for_status()
+    content = response.content
+    tables: dict[str, pd.DataFrame] = {}
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        for filename in z.namelist():
+            if filename.endswith(".txt"):
+                table_name = Path(filename).stem
+                with z.open(filename) as f:
+                    tables[table_name] = normalize_df(pd.read_csv(f))
+    return tables, content
+
+
+def save_raw_zip(feed_id: str, content: bytes) -> str:
+    raw_dir = Path("data/raw_gtfs")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    path = raw_dir / f"{feed_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip"
+    path.write_bytes(content)
+    return str(path)
+
+
+def upsert_gtfs_feed(feed: dict[str, str], raw_zip_path: str | None) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_feeds (feed_id, agency, category, source_url, downloaded_at, raw_zip_path, active)
+            VALUES (:feed_id, :agency, :category, :source_url, NOW(), :raw_zip_path, TRUE)
+            ON CONFLICT (feed_id)
+            DO UPDATE SET
+                agency = EXCLUDED.agency,
+                category = EXCLUDED.category,
+                source_url = EXCLUDED.source_url,
+                downloaded_at = NOW(),
+                raw_zip_path = EXCLUDED.raw_zip_path,
+                active = TRUE;
+        """), {**feed, "raw_zip_path": raw_zip_path})
+
+
+def upsert_gtfs_agency(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    df = ensure_cols(df, ["agency_id", "agency_name", "agency_url", "agency_timezone", "agency_lang", "agency_phone", "agency_fare_url"])
+    if df["agency_id"].isna().all():
+        df["agency_id"] = "default"
+    df["feed_id"] = feed_id
+    df = df[["feed_id", "agency_id", "agency_name", "agency_url", "agency_timezone", "agency_lang", "agency_phone", "agency_fare_url"]]
+    temp_stage(df, "stage_gtfs_agency")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_agency
+            SELECT * FROM stage_gtfs_agency
+            ON CONFLICT (feed_id, agency_id)
+            DO UPDATE SET
+                agency_name = EXCLUDED.agency_name,
+                agency_url = EXCLUDED.agency_url,
+                agency_timezone = EXCLUDED.agency_timezone,
+                agency_lang = EXCLUDED.agency_lang,
+                agency_phone = EXCLUDED.agency_phone,
+                agency_fare_url = EXCLUDED.agency_fare_url;
+            DROP TABLE stage_gtfs_agency;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_stops(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["stop_id", "stop_code", "stop_name", "stop_desc", "stop_lat", "stop_lon", "zone_id", "stop_url", "location_type", "parent_station", "wheelchair_boarding"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    df["stop_lat"] = to_float_series(df["stop_lat"])
+    df["stop_lon"] = to_float_series(df["stop_lon"])
+    for col in ["location_type", "wheelchair_boarding"]:
+        df[col] = to_int_series(df[col])
+    df = df[df["stop_id"].notna() & df["stop_lat"].notna() & df["stop_lon"].notna()]
+    df = df[["feed_id", "stop_id", "stop_code", "stop_name", "stop_desc", "stop_lat", "stop_lon", "zone_id", "stop_url", "location_type", "parent_station", "wheelchair_boarding"]]
+    temp_stage(df, "stage_gtfs_stops")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_stops (
+                feed_id, stop_id, stop_code, stop_name, stop_desc, stop_lat, stop_lon,
+                zone_id_raw, stop_url, location_type, parent_station, wheelchair_boarding, geom
+            )
+            SELECT
+                feed_id, stop_id, stop_code, stop_name, stop_desc, stop_lat, stop_lon,
+                zone_id, stop_url, location_type::integer, parent_station, wheelchair_boarding::integer,
+                ST_SetSRID(ST_MakePoint(stop_lon, stop_lat), 4326)
+            FROM stage_gtfs_stops
+            ON CONFLICT (feed_id, stop_id)
+            DO UPDATE SET
+                stop_code = EXCLUDED.stop_code,
+                stop_name = EXCLUDED.stop_name,
+                stop_desc = EXCLUDED.stop_desc,
+                stop_lat = EXCLUDED.stop_lat,
+                stop_lon = EXCLUDED.stop_lon,
+                zone_id_raw = EXCLUDED.zone_id_raw,
+                stop_url = EXCLUDED.stop_url,
+                location_type = EXCLUDED.location_type,
+                parent_station = EXCLUDED.parent_station,
+                wheelchair_boarding = EXCLUDED.wheelchair_boarding,
+                geom = EXCLUDED.geom;
+            DROP TABLE stage_gtfs_stops;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_routes(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["route_id", "agency_id", "route_short_name", "route_long_name", "route_desc", "route_type", "route_url", "route_color", "route_text_color"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    df["route_type"] = to_int_series(df["route_type"])
+    df = df[df["route_id"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_routes")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_routes
+            SELECT feed_id, route_id, agency_id, route_short_name, route_long_name, route_desc,
+                   route_type::integer, route_url, route_color, route_text_color
+            FROM stage_gtfs_routes
+            ON CONFLICT (feed_id, route_id)
+            DO UPDATE SET
+                agency_id = EXCLUDED.agency_id,
+                route_short_name = EXCLUDED.route_short_name,
+                route_long_name = EXCLUDED.route_long_name,
+                route_desc = EXCLUDED.route_desc,
+                route_type = EXCLUDED.route_type,
+                route_url = EXCLUDED.route_url,
+                route_color = EXCLUDED.route_color,
+                route_text_color = EXCLUDED.route_text_color;
+            DROP TABLE stage_gtfs_routes;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_trips(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["route_id", "service_id", "trip_id", "trip_headsign", "trip_short_name", "direction_id", "block_id", "shape_id", "wheelchair_accessible", "bikes_allowed"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    for col in ["direction_id", "wheelchair_accessible", "bikes_allowed"]:
+        df[col] = to_int_series(df[col])
+    df = df[df["trip_id"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_trips")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_trips
+            SELECT feed_id, route_id, service_id, trip_id, trip_headsign, trip_short_name,
+                   direction_id::integer, block_id, shape_id, wheelchair_accessible::integer, bikes_allowed::integer
+            FROM stage_gtfs_trips
+            ON CONFLICT (feed_id, trip_id)
+            DO UPDATE SET
+                route_id = EXCLUDED.route_id,
+                service_id = EXCLUDED.service_id,
+                trip_headsign = EXCLUDED.trip_headsign,
+                trip_short_name = EXCLUDED.trip_short_name,
+                direction_id = EXCLUDED.direction_id,
+                block_id = EXCLUDED.block_id,
+                shape_id = EXCLUDED.shape_id,
+                wheelchair_accessible = EXCLUDED.wheelchair_accessible,
+                bikes_allowed = EXCLUDED.bikes_allowed;
+            DROP TABLE stage_gtfs_trips;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_calendar(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["service_id", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "start_date", "end_date"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    for col in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
+        df[col] = to_int_series(df[col])
+    df["start_date"] = date_yyyymmdd_series(df["start_date"])
+    df["end_date"] = date_yyyymmdd_series(df["end_date"])
+    df = df[df["service_id"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_calendar")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_calendar
+            SELECT feed_id, service_id, monday::integer, tuesday::integer, wednesday::integer,
+                   thursday::integer, friday::integer, saturday::integer, sunday::integer,
+                   start_date::date, end_date::date
+            FROM stage_gtfs_calendar
+            ON CONFLICT (feed_id, service_id)
+            DO UPDATE SET
+                monday = EXCLUDED.monday, tuesday = EXCLUDED.tuesday, wednesday = EXCLUDED.wednesday,
+                thursday = EXCLUDED.thursday, friday = EXCLUDED.friday, saturday = EXCLUDED.saturday,
+                sunday = EXCLUDED.sunday, start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date;
+            DROP TABLE stage_gtfs_calendar;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_calendar_dates(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["service_id", "date", "exception_type"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    df["date"] = date_yyyymmdd_series(df["date"])
+    df["exception_type"] = to_int_series(df["exception_type"])
+    df = df[df["service_id"].notna() & df["date"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_calendar_dates")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_calendar_dates
+            SELECT feed_id, service_id, date::date, exception_type::integer
+            FROM stage_gtfs_calendar_dates
+            ON CONFLICT (feed_id, service_id, date)
+            DO UPDATE SET exception_type = EXCLUDED.exception_type;
+            DROP TABLE stage_gtfs_calendar_dates;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_stop_times(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["trip_id", "arrival_time", "departure_time", "stop_id", "stop_sequence", "stop_headsign", "pickup_type", "drop_off_type", "shape_dist_traveled", "timepoint"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    for col in ["stop_sequence", "pickup_type", "drop_off_type", "timepoint"]:
+        df[col] = to_int_series(df[col])
+    df["shape_dist_traveled"] = to_float_series(df["shape_dist_traveled"])
+    df = df[df["trip_id"].notna() & df["stop_id"].notna() & df["stop_sequence"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_stop_times")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_stop_times
+            SELECT feed_id, trip_id, arrival_time, departure_time, stop_id, stop_sequence::integer,
+                   stop_headsign, pickup_type::integer, drop_off_type::integer,
+                   shape_dist_traveled::double precision, timepoint::integer
+            FROM stage_gtfs_stop_times
+            ON CONFLICT (feed_id, trip_id, stop_sequence)
+            DO UPDATE SET
+                arrival_time = EXCLUDED.arrival_time,
+                departure_time = EXCLUDED.departure_time,
+                stop_id = EXCLUDED.stop_id,
+                stop_headsign = EXCLUDED.stop_headsign,
+                pickup_type = EXCLUDED.pickup_type,
+                drop_off_type = EXCLUDED.drop_off_type,
+                shape_dist_traveled = EXCLUDED.shape_dist_traveled,
+                timepoint = EXCLUDED.timepoint;
+            DROP TABLE stage_gtfs_stop_times;
+        """))
+    return len(df)
+
+
+def upsert_gtfs_shapes(feed_id: str, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    cols = ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence", "shape_dist_traveled"]
+    df = ensure_cols(df, cols)
+    df["feed_id"] = feed_id
+    df["shape_pt_lat"] = to_float_series(df["shape_pt_lat"])
+    df["shape_pt_lon"] = to_float_series(df["shape_pt_lon"])
+    df["shape_pt_sequence"] = to_int_series(df["shape_pt_sequence"])
+    df["shape_dist_traveled"] = to_float_series(df["shape_dist_traveled"])
+    df = df[df["shape_id"].notna() & df["shape_pt_lat"].notna() & df["shape_pt_lon"].notna() & df["shape_pt_sequence"].notna()]
+    df = df[["feed_id"] + cols]
+    temp_stage(df, "stage_gtfs_shapes")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_shapes (feed_id, shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled, geom)
+            SELECT feed_id, shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence::integer,
+                   shape_dist_traveled::double precision,
+                   ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326)
+            FROM stage_gtfs_shapes
+            ON CONFLICT (feed_id, shape_id, shape_pt_sequence)
+            DO UPDATE SET
+                shape_pt_lat = EXCLUDED.shape_pt_lat,
+                shape_pt_lon = EXCLUDED.shape_pt_lon,
+                shape_dist_traveled = EXCLUDED.shape_dist_traveled,
+                geom = EXCLUDED.geom;
+            DROP TABLE stage_gtfs_shapes;
+        """))
+    build_gtfs_shape_lines(feed_id)
+    return len(df)
+
+
+def build_gtfs_shape_lines(feed_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO gtfs_shape_lines (feed_id, shape_id, geom)
+            SELECT feed_id, shape_id, ST_MakeLine(geom ORDER BY shape_pt_sequence)::geometry(LineString,4326)
+            FROM gtfs_shapes
+            WHERE feed_id = :feed_id
+            GROUP BY feed_id, shape_id
+            HAVING COUNT(*) >= 2
+            ON CONFLICT (feed_id, shape_id)
+            DO UPDATE SET geom = EXCLUDED.geom;
+        """), {"feed_id": feed_id})
+
+
+def ingest_gtfs_static(feed_key: str) -> None:
+    if feed_key not in GTFS_FEEDS:
+        raise ValueError(f"Unknown GTFS feed key: {feed_key}. Available: {list(GTFS_FEEDS)}")
+
+    feed = GTFS_FEEDS[feed_key]
+    run_id = start_ingestion_run("gtfs_static", feed["feed_id"])
+    counter = RunCounter()
+    try:
+        log.info("Downloading GTFS feed %s", feed["feed_id"])
+        tables, content = download_gtfs_zip(feed["source_url"])
+        raw_zip_path = save_raw_zip(feed["feed_id"], content)
+        upsert_gtfs_feed(feed, raw_zip_path)
+
+        counter.inserted += upsert_gtfs_agency(feed["feed_id"], tables.get("agency", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_stops(feed["feed_id"], tables.get("stops", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_routes(feed["feed_id"], tables.get("routes", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_trips(feed["feed_id"], tables.get("trips", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_calendar(feed["feed_id"], tables.get("calendar", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_calendar_dates(feed["feed_id"], tables.get("calendar_dates", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_stop_times(feed["feed_id"], tables.get("stop_times", pd.DataFrame()))
+        counter.inserted += upsert_gtfs_shapes(feed["feed_id"], tables.get("shapes", pd.DataFrame()))
+
+        update_freshness("gtfs_static", feed["feed_id"], status="fresh", notes="GTFS static feed loaded", next_days=14)
+        finish_ingestion_run(run_id, "success", counter)
+        log.info("GTFS ingestion complete: %s rows processed", counter.inserted)
+    except Exception as exc:
+        finish_ingestion_run(run_id, "failed", counter, str(exc))
+        raise
+
+
+# -----------------------------------------------------------------------------
+# OSM Ingestion
+# -----------------------------------------------------------------------------
+
+def require_osm_libs() -> None:
+    if ox is None or gpd is None:
+        raise RuntimeError("OSM ingestion requires osmnx, geopandas, shapely, and geoalchemy2.")
+
+
+def geocode_polygon(place: str):
+    require_osm_libs()
+    gdf = ox.geocode_to_gdf(place)
+    geom = gdf.geometry.iloc[0]
+    if geom.geom_type == "Polygon":
+        geom = MultiPolygon([geom])
+    elif geom.geom_type != "MultiPolygon":
+        geom = MultiPolygon([geom.convex_hull])
+    return geom
+
+
+def upsert_region(region_name: str, geom) -> str:
+    region_id = slugify(region_name.replace(", Malaysia", ""))
+    wkt = geom.wkt
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO regions (region_id, region_name, country, geom, updated_at)
+            VALUES (:region_id, :region_name, 'Malaysia', ST_Multi(ST_GeomFromText(:wkt, 4326)), NOW())
+            ON CONFLICT (region_id)
+            DO UPDATE SET
+                region_name = EXCLUDED.region_name,
+                geom = EXCLUDED.geom,
+                updated_at = NOW();
+        """), {"region_id": region_id, "region_name": region_name, "wkt": wkt})
+    return region_id
+
+
+def upsert_area(area_name: str, region_id: str, geom, area_type: str = "city") -> str:
+    area_id = slugify(area_name.replace(", Malaysia", ""))
+    wkt = geom.wkt
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO areas (area_id, region_id, area_name, area_type, source, geom, centroid, updated_at)
+            VALUES (
+                :area_id, :region_id, :area_name, :area_type, 'osm_nominatim',
+                ST_Multi(ST_GeomFromText(:wkt, 4326)),
+                ST_Centroid(ST_Multi(ST_GeomFromText(:wkt, 4326))),
+                NOW()
+            )
+            ON CONFLICT (area_id)
+            DO UPDATE SET
+                region_id = EXCLUDED.region_id,
+                area_name = EXCLUDED.area_name,
+                area_type = EXCLUDED.area_type,
+                source = EXCLUDED.source,
+                geom = EXCLUDED.geom,
+                centroid = EXCLUDED.centroid,
+                updated_at = NOW();
+        """), {
+            "area_id": area_id,
+            "region_id": region_id,
+            "area_name": area_name,
+            "area_type": area_type,
+            "wkt": wkt,
+        })
+    return area_id
+
+
+def jsonable_tags(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): str(v) for k, v in value.items() if v is not None}
+
+
+def ingest_osm_graph(region_id: str, polygon) -> int:
+    require_osm_libs()
+    log.info("Downloading OSM road graph for %s", region_id)
+    G = ox.graph_from_polygon(polygon, network_type="drive", simplify=True)
+    nodes, edges = ox.graph_to_gdfs(G, nodes=True, edges=True)
+
+    # Nodes
+    node_rows = []
+    for osm_node_id, row in nodes.iterrows():
+        geom = row.geometry
+        node_rows.append({
+            "osm_node_id": int(osm_node_id),
+            "region_id": region_id,
+            "x": float(row.get("x")) if row.get("x") is not None else None,
+            "y": float(row.get("y")) if row.get("y") is not None else None,
+            "wkt": geom.wkt,
+            "tags": json.dumps({k: str(v) for k, v in row.drop(labels=["geometry"], errors="ignore").to_dict().items() if v is not None}),
+        })
+    if node_rows:
+        temp_stage(pd.DataFrame(node_rows), "stage_osm_nodes")
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO osm_nodes (osm_node_id, region_id, x, y, geom, tags)
+                SELECT osm_node_id::bigint, region_id, x::double precision, y::double precision,
+                       ST_SetSRID(ST_GeomFromText(wkt),4326), tags::jsonb
+                FROM stage_osm_nodes
+                ON CONFLICT (osm_node_id)
+                DO UPDATE SET region_id = EXCLUDED.region_id, x = EXCLUDED.x, y = EXCLUDED.y,
+                              geom = EXCLUDED.geom, tags = EXCLUDED.tags;
+                DROP TABLE stage_osm_nodes;
+            """))
+
+    # Edges
+    edge_rows = []
+    for (u, v, key), row in edges.iterrows():
+        geom = row.geometry
+        if geom is None:
+            continue
+        name = row.get("name")
+        highway = row.get("highway")
+        osmid = row.get("osmid")
+        edge_rows.append({
+            "region_id": region_id,
+            "u": int(u),
+            "v": int(v),
+            "key": int(key),
+            "osmid": json.dumps(osmid) if isinstance(osmid, list) else str(osmid),
+            "highway": json.dumps(highway) if isinstance(highway, list) else str(highway) if highway is not None else None,
+            "name": json.dumps(name) if isinstance(name, list) else str(name) if name is not None else None,
+            "length_m": float(row.get("length", 0)) if row.get("length") is not None else None,
+            "one_way": bool(row.get("oneway")) if row.get("oneway") is not None else None,
+            "maxspeed": str(row.get("maxspeed")) if row.get("maxspeed") is not None else None,
+            "wkt": geom.wkt,
+            "tags": json.dumps({k: str(vv) for k, vv in row.drop(labels=["geometry"], errors="ignore").to_dict().items() if vv is not None}),
+        })
+    if edge_rows:
+        temp_stage(pd.DataFrame(edge_rows), "stage_osm_edges")
+        with engine.begin() as conn:
+            # osm_edges has no natural unique constraint in your schema. Delete region slice first to keep ingestion idempotent.
+            conn.execute(text("DELETE FROM osm_edges WHERE region_id = :region_id"), {"region_id": region_id})
+            conn.execute(text("""
+                INSERT INTO osm_edges (region_id, u, v, key, osmid, highway, name, length_m, one_way, maxspeed, geometry, tags)
+                SELECT region_id, u::bigint, v::bigint, key::integer, osmid, highway, name,
+                       length_m::double precision, one_way::boolean, maxspeed,
+                       ST_SetSRID(ST_GeomFromText(wkt),4326), tags::jsonb
+                FROM stage_osm_edges;
+                DROP TABLE stage_osm_edges;
+            """))
+
+    return len(node_rows) + len(edge_rows)
+
+
+def classify_poi(tags: dict[str, Any]) -> str:
+    if tags.get("shop") in {"mall", "supermarket"}:
+        return str(tags["shop"])
+    if tags.get("amenity") in {"university", "school", "hospital", "bus_station", "ferry_terminal"}:
+        return str(tags["amenity"])
+    if tags.get("office"):
+        return "office"
+    if tags.get("building") in {"apartments", "office", "commercial", "industrial", "retail"}:
+        return str(tags["building"])
+    if tags.get("public_transport"):
+        return str(tags["public_transport"])
+    if tags.get("railway") in {"station", "halt", "tram_stop"}:
+        return "rail_station"
+    if tags.get("highway") == "bus_stop":
+        return "bus_stop"
+    return "other"
+
+
+def ingest_osm_pois_and_stops(area_id: str, region_id: str, polygon) -> int:
+    require_osm_libs()
+    tags = {
+        "amenity": ["university", "school", "hospital", "bus_station", "ferry_terminal"],
+        "building": ["apartments", "office", "commercial", "industrial", "retail"],
+        "shop": ["mall", "supermarket"],
+        "office": True,
+        "public_transport": ["station", "stop_position", "platform"],
+        "railway": ["station", "halt", "tram_stop"],
+        "highway": ["bus_stop"],
+    }
+    log.info("Downloading OSM POIs/stops for %s", area_id)
+    try:
+        features = ox.features_from_polygon(polygon, tags)
+    except Exception as exc:
+        log.warning("No OSM features for %s: %s", area_id, exc)
+        return 0
+    if features.empty:
+        return 0
+
+    poi_rows = []
+    stop_rows = []
+    for idx, row in features.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+        tags_dict = {k: clean_nan(v) for k, v in row.drop(labels=["geometry"], errors="ignore").to_dict().items() if clean_nan(v) is not None}
+        osm_type = idx[0] if isinstance(idx, tuple) else "feature"
+        osm_id = str(idx[1]) if isinstance(idx, tuple) and len(idx) > 1 else str(idx)
+        name = tags_dict.get("name") or tags_dict.get("name:en") or "Unnamed"
+        poi_category = classify_poi(tags_dict)
+        wkt = geom.wkt
+        poi_rows.append({
+            "area_id": area_id,
+            "region_id": region_id,
+            "osm_id": f"{osm_type}/{osm_id}",
+            "name": str(name),
+            "poi_category": poi_category,
+            "amenity": tags_dict.get("amenity"),
+            "shop": tags_dict.get("shop"),
+            "office": tags_dict.get("office"),
+            "building": tags_dict.get("building"),
+            "wkt": wkt,
+            "tags": json.dumps(jsonable_tags(tags_dict)),
+        })
+        if poi_category in {"bus_stop", "bus_station", "stop_position", "platform", "station", "rail_station"}:
+            point_geom = geom.centroid if geom.geom_type != "Point" else geom
+            stop_rows.append({
+                "osm_stop_id": f"{osm_type}/{osm_id}",
+                "area_id": area_id,
+                "region_id": region_id,
+                "stop_name": str(name),
+                "stop_type": poi_category,
+                "osm_id": f"{osm_type}/{osm_id}",
+                "source_tag": "osm",
+                "wkt": point_geom.wkt,
+                "tags": json.dumps(jsonable_tags(tags_dict)),
+            })
+
+    if poi_rows:
+        temp_stage(pd.DataFrame(poi_rows), "stage_osm_pois")
+        with engine.begin() as conn:
+            # No unique constraint on osm_pois, so delete the area slice first.
+            conn.execute(text("DELETE FROM osm_pois WHERE area_id = :area_id"), {"area_id": area_id})
+            conn.execute(text("""
+                INSERT INTO osm_pois (area_id, region_id, osm_id, name, poi_category, amenity, shop, office, building, geom, tags)
+                SELECT area_id, region_id, osm_id, name, poi_category, amenity, shop, office, building,
+                       ST_SetSRID(ST_GeomFromText(wkt),4326), tags::jsonb
+                FROM stage_osm_pois;
+                DROP TABLE stage_osm_pois;
+            """))
+    if stop_rows:
+        temp_stage(pd.DataFrame(stop_rows), "stage_osm_transit_stops")
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO osm_transit_stops (osm_stop_id, area_id, region_id, stop_name, stop_type, osm_id, source_tag, geom, tags)
+                SELECT osm_stop_id, area_id, region_id, stop_name, stop_type, osm_id, source_tag,
+                       ST_SetSRID(ST_GeomFromText(wkt),4326), tags::jsonb
+                FROM stage_osm_transit_stops
+                ON CONFLICT (osm_stop_id)
+                DO UPDATE SET
+                    area_id = EXCLUDED.area_id,
+                    region_id = EXCLUDED.region_id,
+                    stop_name = EXCLUDED.stop_name,
+                    stop_type = EXCLUDED.stop_type,
+                    osm_id = EXCLUDED.osm_id,
+                    source_tag = EXCLUDED.source_tag,
+                    geom = EXCLUDED.geom,
+                    tags = EXCLUDED.tags;
+                DROP TABLE stage_osm_transit_stops;
+            """))
+    return len(poi_rows) + len(stop_rows)
+
+
+def ingest_osm_area(place: str, region_name: str | None = None) -> tuple[str, str]:
+    require_osm_libs()
+    area_geom = geocode_polygon(place)
+    if region_name is None:
+        # For city-level ingestion, region is approximated as the same named place unless provided.
+        region_name = place
+    region_geom = geocode_polygon(region_name)
+    region_id = upsert_region(region_name, region_geom)
+    area_id = upsert_area(place, region_id, area_geom)
+
+    run_id = start_ingestion_run("osm", place, region_id=region_id, area_id=area_id)
+    counter = RunCounter()
+    try:
+        counter.inserted += ingest_osm_graph(region_id, region_geom)
+        counter.inserted += ingest_osm_pois_and_stops(area_id, region_id, area_geom)
+        update_freshness("osm", place, region_id=region_id, area_id=area_id, status="fresh", notes="OSM graph, POIs, and transit stops loaded", next_days=30)
+        finish_ingestion_run(run_id, "success", counter)
+        return region_id, area_id
+    except Exception as exc:
+        finish_ingestion_run(run_id, "failed", counter, str(exc))
+        raise
+
+
+# -----------------------------------------------------------------------------
+# Relationship and summary builders
+# -----------------------------------------------------------------------------
+
+def build_area_gtfs_links(feed_id: str, area_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM area_gtfs_stops WHERE area_id = :area_id AND feed_id = :feed_id"), {"area_id": area_id, "feed_id": feed_id})
+        conn.execute(text("""
+            INSERT INTO area_gtfs_stops (area_id, feed_id, stop_id, distance_to_area_center_m, inside_area)
+            SELECT
+                a.area_id,
+                s.feed_id,
+                s.stop_id,
+                ST_Distance(s.geom::geography, a.centroid::geography) AS distance_to_area_center_m,
+                ST_Contains(a.geom, s.geom) AS inside_area
+            FROM areas a
+            JOIN gtfs_stops s ON ST_DWithin(a.geom::geography, s.geom::geography, 1000)
+            WHERE a.area_id = :area_id AND s.feed_id = :feed_id
+            ON CONFLICT (area_id, feed_id, stop_id)
+            DO UPDATE SET
+                distance_to_area_center_m = EXCLUDED.distance_to_area_center_m,
+                inside_area = EXCLUDED.inside_area;
+        """), {"area_id": area_id, "feed_id": feed_id})
+
+        conn.execute(text("DELETE FROM area_gtfs_routes WHERE area_id = :area_id AND feed_id = :feed_id"), {"area_id": area_id, "feed_id": feed_id})
+        conn.execute(text("""
+            INSERT INTO area_gtfs_routes (area_id, feed_id, route_id, stops_in_area, trips_in_area)
+            SELECT
+                ags.area_id,
+                t.feed_id,
+                t.route_id,
+                COUNT(DISTINCT ags.stop_id) AS stops_in_area,
+                COUNT(DISTINCT st.trip_id) AS trips_in_area
+            FROM area_gtfs_stops ags
+            JOIN gtfs_stop_times st ON st.feed_id = ags.feed_id AND st.stop_id = ags.stop_id
+            JOIN gtfs_trips t ON t.feed_id = st.feed_id AND t.trip_id = st.trip_id
+            WHERE ags.area_id = :area_id AND ags.feed_id = :feed_id AND t.route_id IS NOT NULL
+            GROUP BY ags.area_id, t.feed_id, t.route_id
+            ON CONFLICT (area_id, feed_id, route_id)
+            DO UPDATE SET
+                stops_in_area = EXCLUDED.stops_in_area,
+                trips_in_area = EXCLUDED.trips_in_area;
+        """), {"area_id": area_id, "feed_id": feed_id})
+
+
+def build_osm_gtfs_stop_matches(feed_id: str, area_id: str, max_distance_m: int = 80) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("""
+            DELETE FROM osm_gtfs_stop_matches
+            WHERE feed_id = :feed_id
+              AND osm_stop_id IN (SELECT osm_stop_id FROM osm_transit_stops WHERE area_id = :area_id);
+        """), {"feed_id": feed_id, "area_id": area_id})
+        conn.execute(text("""
+            INSERT INTO osm_gtfs_stop_matches (osm_stop_id, feed_id, gtfs_stop_id, distance_m, match_confidence)
+            SELECT DISTINCT ON (o.osm_stop_id)
+                o.osm_stop_id,
+                s.feed_id,
+                s.stop_id,
+                ST_Distance(o.geom::geography, s.geom::geography) AS distance_m,
+                GREATEST(0, 1 - (ST_Distance(o.geom::geography, s.geom::geography) / :max_distance_m)) AS match_confidence
+            FROM osm_transit_stops o
+            JOIN gtfs_stops s ON s.feed_id = :feed_id
+                             AND ST_DWithin(o.geom::geography, s.geom::geography, :max_distance_m)
+            WHERE o.area_id = :area_id
+            ORDER BY o.osm_stop_id, ST_Distance(o.geom::geography, s.geom::geography)
+            ON CONFLICT (osm_stop_id, feed_id, gtfs_stop_id)
+            DO UPDATE SET
+                distance_m = EXCLUDED.distance_m,
+                match_confidence = EXCLUDED.match_confidence;
+        """), {"feed_id": feed_id, "area_id": area_id, "max_distance_m": max_distance_m})
+
+
+def build_demand_proxy_summary(area_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM demand_proxy_summary WHERE area_id = :area_id AND zone_id IS NULL"), {"area_id": area_id})
+        conn.execute(text("""
+            INSERT INTO demand_proxy_summary (
+                area_id, zone_id, school_count, hospital_count, mall_count, office_count,
+                university_count, residential_building_count, commercial_poi_count,
+                demand_proxy_score, confidence_tier
+            )
+            SELECT
+                :area_id,
+                NULL,
+                COUNT(*) FILTER (WHERE poi_category = 'school')::integer,
+                COUNT(*) FILTER (WHERE poi_category = 'hospital')::integer,
+                COUNT(*) FILTER (WHERE poi_category = 'mall')::integer,
+                COUNT(*) FILTER (WHERE poi_category IN ('office'))::integer,
+                COUNT(*) FILTER (WHERE poi_category = 'university')::integer,
+                COUNT(*) FILTER (WHERE poi_category = 'apartments')::integer,
+                COUNT(*) FILTER (WHERE poi_category IN ('commercial','retail','supermarket'))::integer,
+                (
+                    COUNT(*) FILTER (WHERE poi_category = 'school') * 7.0 +
+                    COUNT(*) FILTER (WHERE poi_category = 'hospital') * 8.0 +
+                    COUNT(*) FILTER (WHERE poi_category = 'mall') * 10.0 +
+                    COUNT(*) FILTER (WHERE poi_category = 'office') * 8.5 +
+                    COUNT(*) FILTER (WHERE poi_category = 'university') * 9.0 +
+                    COUNT(*) FILTER (WHERE poi_category = 'apartments') * 6.0 +
+                    COUNT(*) FILTER (WHERE poi_category IN ('commercial','retail','supermarket')) * 7.0
+                )::double precision AS demand_proxy_score,
+                CASE
+                    WHEN COUNT(*) >= 100 THEN 'high'
+                    WHEN COUNT(*) >= 25 THEN 'medium'
+                    ELSE 'low'
+                END AS confidence_tier
+            FROM osm_pois
+            WHERE area_id = :area_id;
+        """), {"area_id": area_id})
+
+
+def build_route_headway_summary(feed_id: str, area_id: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM route_headway_summary WHERE area_id = :area_id AND feed_id = :feed_id AND zone_id IS NULL"), {"area_id": area_id, "feed_id": feed_id})
+        conn.execute(text("""
+            INSERT INTO route_headway_summary (
+                area_id, zone_id, feed_id, route_id, route_name, mode,
+                stops_in_area, trips_per_day, trips_per_peak_hour,
+                median_headway_min, evidence_score, confidence_tier
+            )
+            WITH route_trips AS (
+                SELECT
+                    agr.area_id,
+                    agr.feed_id,
+                    agr.route_id,
+                    COALESCE(r.route_short_name, r.route_long_name, agr.route_id) AS route_name,
+                    CASE r.route_type
+                        WHEN 0 THEN 'tram'
+                        WHEN 1 THEN 'subway'
+                        WHEN 2 THEN 'rail'
+                        WHEN 3 THEN 'bus'
+                        ELSE 'other'
+                    END AS mode,
+                    agr.stops_in_area,
+                    COUNT(DISTINCT st.trip_id) AS trips_per_day
+                FROM area_gtfs_routes agr
+                JOIN gtfs_routes r ON r.feed_id = agr.feed_id AND r.route_id = agr.route_id
+                JOIN gtfs_trips t ON t.feed_id = agr.feed_id AND t.route_id = agr.route_id
+                JOIN gtfs_stop_times st ON st.feed_id = t.feed_id AND st.trip_id = t.trip_id
+                JOIN area_gtfs_stops ags ON ags.feed_id = st.feed_id AND ags.stop_id = st.stop_id AND ags.area_id = agr.area_id
+                WHERE agr.area_id = :area_id AND agr.feed_id = :feed_id
+                GROUP BY agr.area_id, agr.feed_id, agr.route_id, route_name, mode, agr.stops_in_area
+            )
+            SELECT
+                area_id, NULL, feed_id, route_id, route_name, mode, stops_in_area,
+                trips_per_day::integer,
+                ROUND((trips_per_day::numeric / 16.0), 2)::double precision AS trips_per_peak_hour,
+                CASE WHEN trips_per_day > 0 THEN ROUND((960.0 / trips_per_day)::numeric, 2)::double precision ELSE NULL END AS median_headway_min,
+                LEAST(1.0, trips_per_day / 100.0)::double precision AS evidence_score,
+                CASE WHEN trips_per_day >= 80 THEN 'high' WHEN trips_per_day >= 25 THEN 'medium' ELSE 'low' END AS confidence_tier
+            FROM route_trips;
+        """), {"area_id": area_id, "feed_id": feed_id})
+
+
+def build_area_summaries(feed_id: str, area_id: str) -> None:
+    log.info("Building links and summaries for area=%s feed=%s", area_id, feed_id)
+    build_area_gtfs_links(feed_id, area_id)
+    build_osm_gtfs_stop_matches(feed_id, area_id)
+    build_demand_proxy_summary(area_id)
+    build_route_headway_summary(feed_id, area_id)
+
+
+# -----------------------------------------------------------------------------
+# CLI
+# -----------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Production ingestion for transport_ai")
+    parser.add_argument("--gtfs", choices=list(GTFS_FEEDS.keys()), help="GTFS feed key to ingest")
+    parser.add_argument("--osm-area", help="OSM/Nominatim area name, e.g. 'Kuala Lumpur, Malaysia'")
+    parser.add_argument("--osm-region", help="OSM/Nominatim region name, e.g. 'Kuala Lumpur, Malaysia' or 'Selangor, Malaysia'")
+    parser.add_argument("--build-links", action="store_true", help="Build area-GTFS/OSM relationship tables and summaries")
+    parser.add_argument("--feed-id", default="prasarana_rapid_bus_kl", help="Feed ID to use when building links")
+    parser.add_argument("--area-id", help="Area ID to use when building links. If omitted, derived from --osm-area.")
+    args = parser.parse_args()
+
+    area_id = args.area_id
+
+    if args.gtfs:
+        ingest_gtfs_static(args.gtfs)
+
+    if args.osm_area:
+        _region_id, area_id = ingest_osm_area(args.osm_area, args.osm_region)
+
+    if args.build_links:
+        if not area_id:
+            if not args.osm_area:
+                raise ValueError("For --build-links, provide --area-id or --osm-area.")
+            area_id = slugify(args.osm_area.replace(", Malaysia", ""))
+        build_area_summaries(args.feed_id, area_id)
+
+
+if __name__ == "__main__":
+    main()
