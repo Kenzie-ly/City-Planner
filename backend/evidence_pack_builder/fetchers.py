@@ -43,7 +43,8 @@ def get_transit_coverage_summary(area_id: str) -> dict | None:
                         COUNT(s.stop_id) as stop_count,
                         LEAST(1.0, COUNT(s.stop_id)::DOUBLE PRECISION / 50.0) as coverage_score
                     FROM gtfs_stops s
-                    JOIN areas a ON ST_DWithin(a.geom, s.geom, 0.05)
+                    JOIN areas a ON (ST_Area(a.geom) > 0.1 AND ST_Contains(a.geom, s.geom))
+                                 OR (ST_Area(a.geom) <= 0.1 AND ST_DWithin(a.geom, s.geom, 0.05))
                     WHERE a.area_id = :area_id;
                 """),
                 {"area_id": area_id},

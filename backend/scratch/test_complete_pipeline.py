@@ -44,31 +44,62 @@ def main():
         print("[SUCCESS] Complete Pipeline executed successfully!")
         print("============================================================")
         
-        # --- PRINT SUMMARY ---
-        print("\n📊 --- EVIDENCE PACK SUMMARY ---")
+        # --- PRINT ENRICHED SUMMARY ---
+        print("\n📊 --- ENRICHED EVIDENCE PACK SUMMARY ---")
+        print("="*60)
         
-        # 1. Transit Coverage
+        # 1. Performance Scores
+        print("📈 [Section 1] Performance Scores")
         coverage = pack_dict.get('indicators', {}).get('transit_coverage', {}).get('summary', {}).get('coverage_score', 'N/A')
-        print(f"📍 Transit Coverage Score: {coverage}")
+        print(f"  📍 Transit Coverage Score: {coverage}")
         
-        # 2. Bus Frequency
         routes = pack_dict.get('indicators', {}).get('route_frequency', {}).get('summary', [])
         if routes:
             top_trips = routes[0].get('trips_per_day', 0)
-            print(f"🚌 Bus Frequency: Top route has {top_trips} trips/day")
+            route_name = routes[0].get('route_short_name', 'Unknown')
+            print(f"  🚌 Bus Frequency: Top route ({route_name}) has {top_trips} trips/day")
         else:
-            print("🚌 Bus Frequency: No route data found.")
+            print("  🚌 Bus Frequency: No route data found.")
             
-        # 3. Activity Score
         demand = pack_dict.get('indicators', {}).get('demand_proxy', {}).get('summary', {})
         activity_score = demand.get('estimated_activity_score', 'N/A')
-        print(f"🏢 Activity Score: {activity_score}")
+        print(f"  🏢 Activity Score: {activity_score}")
+        print("-" * 40)
         
-        # 4. Identified Challenges
+        # 2. Population & Growth Insights
+        print("👥 [Section 2] Population & Growth Insights")
+        rag_support = pack_dict.get('rag_support', {})
+        if not rag_support:
+            rag_support = pack_dict.get('indicators', {}).get('rag_support', {})
+            
+        rag_chunks = rag_support.get('rag_by_challenge', [])
+        pop_insights = []
+        if rag_chunks:
+            for chunk in rag_chunks[0].get('chunks', []):
+                # Look for population keywords in the text
+                text_content = chunk.get('text', '') or chunk.get('snippet', '')
+                if any(kw in text_content.lower() for kw in ['population', 'growth', 'surge', 'commuters']):
+                    pop_insights.append(text_content)
+        
+        if pop_insights:
+            for insight in pop_insights[:2]: # Show top 2
+                print(f"  • {insight[:100]}...")
+        else:
+            print("  • No specific population trends found in the RAG sources for this area.")
+        print("-" * 40)
+        
+        # 3. Top Identified Challenges
+        print("⚠️ [Section 3] Top Identified Challenges")
         challenges = pack_dict.get('candidate_problem_directions', {}).get('directions', [])
-        challenge_names = [c.get('challenge_type') for c in challenges if c.get('challenge_type')]
-        print(f"⚠️ Identified Challenges: {', '.join(challenge_names) if challenge_names else 'None'}")
-        
+        if challenges:
+            for i, c in enumerate(challenges[:3]): # Show top 3
+                title = c.get('title', 'Unknown Challenge')
+                reason = c.get('reason_hint', 'No reason provided.')
+                print(f"  {i+1}. {title}")
+                print(f"     Why: {reason[:100]}...")
+        else:
+            print("  • No significant challenges identified.")
+            
         print("="*60 + "\n")
         
         # Save it to a file (Append instead of overwrite)

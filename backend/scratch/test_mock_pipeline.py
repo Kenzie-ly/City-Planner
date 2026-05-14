@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import uuid
+import re
 from datetime import datetime
 
 # Add parent directory to path
@@ -47,37 +48,55 @@ def build_evidence_pack(
 def diagnostic_agent(evidence_pack):
     print("\n[Diagnostic Agent] Processing Evidence Pack...")
     
-    # Extract real POIs from RAG chunks to create specific hotspots!
     rag_chunks = evidence_pack.get('rag_support', [])
     hotspots = []
     
+    # Mapping to use until Step 2 is updated to pull from osm_edges
     road_mapping = {
         "Johor Bahru Sentral": "Jalan Jim Quee",
         "Procleaners Johor Bahru": "Jalan Setia Tropika",
         "Angsana Johor Bahru Mall": "Jalan Tampoi",
         "Johor Bahru City Square": "Jalan Wong Ah Fook"
     }
-
+    
     for chunk in rag_chunks:
         title = chunk.get('title', '')
         text = chunk.get('chunk_text', '') or chunk.get('text', '')
         
-        # If the title starts with "POI: ", it is a specific area!
         if title.startswith("POI: "):
             place_name = title.replace("POI: ", "").strip()
+            
+            # Remove parentheses like (stop_position)
+            clean_name = re.sub(r'\(.*?\)', '', place_name).strip()
             
             # Find the road name from our mapping
             road_name = "Unknown Road"
             for key, value in road_mapping.items():
-                if key in place_name:
+                if key in clean_name:
                     road_name = value
                     break
             
+            # Extract demand score if available in the text (ignoring trailing dots)
+            demand_score = "N/A"
+            score_match = re.search(r'Demand Score:\s*([0-9]+(?:\.[0-9]+)?)', text)
+            if score_match:
+                demand_score = score_match.group(1)
+
+            # Generate a specific issue sentence based on the direction
+            selected_direction = "Transit Coverage Gap" # Default fallback
+            
+            if "Coverage" in selected_direction:
+                issue_text = f"The area around {road_name} is identified as a high-activity hub (Demand Score: {demand_score}), but our data shows a gap in transit coverage nearby."
+            elif "Frequency" in selected_direction:
+                issue_text = f"High demand detected at {road_name} (Demand Score: {demand_score}), but the frequency of nearby bus routes is insufficient."
+            else:
+                issue_text = f"Database records indicate {road_name} as a major trip generator (Demand Score: {demand_score}). Recommend running detailed transport accessibility analysis."
+
             hotspots.append({
                 "id": f"hotspot_{len(hotspots)+1}",
                 "name": f"{place_name} ({road_name})",
-                "issue": f"High-demand area identified from database. Info: {text[:100]}...",
-                "severity": "High" if "station" in place_name.lower() or "mall" in place_name.lower() else "Medium",
+                "issue": issue_text,
+                "severity": "High" if demand_score != "N/A" and float(demand_score) >= 7.0 else "Medium",
                 "recommended_action": "Run detailed transport accessibility analysis for this specific area."
             })
             
