@@ -432,7 +432,7 @@ def format_entities(enriched_assets):
             "entity_type": entity_type,
             "city":        asset.get("city", ""),
             "blurb":       blurb,
-            "style":       style,
+            "style":       {**style, "height": style.get("height", 2.0)}, # Default height to 2m to enable outlines
         }
 
         coords = asset.get("coordinates")

@@ -2482,6 +2482,7 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
 
 def get_context_infrastructure(lat: float, lon: float, intervention_type: str = "general") -> list[dict[str, Any]]:
     # 1. Try Database First (Fast and Reliable)
+    seen_ids = set()
     try:
         from db.database import engine
         from sqlalchemy import text
@@ -2500,6 +2501,9 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             for stop in stops:
                 el_type = stop["stop_type"]
                 name = stop["stop_name"]
+                eid = f"db_station_{stop['lat']}_{stop['lon']}"
+                if eid in seen_ids: continue
+                seen_ids.add(eid)
                 
                 if el_type == "bus_stop":
                     entities.append({
@@ -2531,6 +2535,9 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             for poi in pois:
                 cat = poi["poi_category"] or "poi"
                 name = poi["name"]
+                eid = f"db_poi_{poi['lat']}_{poi['lon']}"
+                if eid in seen_ids: continue
+                seen_ids.add(eid)
                 entities.append({
                     "id": f"db_poi_{poi['lat']}_{poi['lon']}",
                     "entity_type": "point",
@@ -4540,6 +4547,8 @@ Remember:
     elif next_step_name == "Generate solutions":
         next_raw_step_output = format_step_reply("Generate solutions", next_raw_step_output)
     
+    # Sync state but avoid storing massive entity lists in persistence
+    # to prevent HTTP 413 errors.
     state.update(
         {
             "phase": "planning",
@@ -4550,6 +4559,8 @@ Remember:
             "output_key": next_output_key,
         }
     )
+    # Ensure entities are cleared from state before persistence
+    if "entities" in state: del state["entities"]
     return {
         "ok": True,
         "session_id": session_id,
