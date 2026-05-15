@@ -86,255 +86,270 @@ function renderEntities(entities) {
     entities.forEach(entity => {
         let added = null;
 
-        switch (entity.entity_type) {
-            case 'polyline':
-            case 'polyline_existing':
-            case 'polyline_new': {
-                let segments = entity.polyline_positions;
-                if (!segments || segments.length === 0) break;
+        try {
+            switch (entity.entity_type) {
+                case 'polyline':
+                case 'polyline_existing':
+                case 'polyline_new': {
+                    let segments = entity.polyline_positions || entity.path;
+                    if (!segments || segments.length === 0) break;
 
-                // Ensure segments is a list of lists
-                if (!Array.isArray(segments[0])) {
-                    segments = [segments];
-                }
-
-                const isBridge = (entity.entity_type === 'polyline_new');
-                const targetHeight = isBridge ? (entity.style.height ?? 40) : 0;
-                const shouldClamp = !isBridge;
-                const baseWidth = isBridge ? 18 : 12;
-                segments.forEach((positions, sIdx) => {
-                    // VALIDATION: Ensure positions is an array of valid coordinate objects
-                    if (!Array.isArray(positions) || positions.length < 2) return;
-
-                    const validPositions = positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
-                    const isExisting = (entity.entity_type === 'polyline_existing');
-                    const isBridge = (entity.entity_type === 'polyline_new');
-                    const targetHeight = isBridge ? (entity.style.height ?? 40) : 0;
-                    const shouldClamp = !isBridge;
-                    const baseWidth = isBridge ? 18 : (isExisting ? 6 : 12);
-                    const color = safeColor(entity.style.color, (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk'))) ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
-                    const alpha = entity.style.alpha ?? 0.8;
-
-                    let material = color.withAlpha(alpha);
-                    if (isExisting && entity.style.dashed) {
-                        material = new Cesium.PolylineDashMaterialProperty({
-                            color: color.withAlpha(0.6),
-                            dashLength: 16
-                        });
+                    // Ensure segments is a list of lists
+                    if (!Array.isArray(segments[0])) {
+                        segments = [segments];
                     }
 
-                    if (isBridge) {
-                        viewer.entities.add({
-                            id: entity.id + "_base_" + sIdx,
+                    const isBridge = (entity.entity_type === 'polyline_new');
+                    const targetHeight = isBridge ? (entity.style && entity.style.height ? entity.style.height : 40) : 0;
+                    const shouldClamp = !isBridge;
+                    const baseWidth = isBridge ? 18 : 12;
+                    
+                    segments.forEach((positions, sIdx) => {
+                        // VALIDATION: Ensure positions is an array
+                        if (!Array.isArray(positions)) return;
+
+                        const validPositions = positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
+                        if (validPositions.length < 2) return; // Cesium requires at least 2 points for a polyline!
+
+                        const isExisting = (entity.entity_type === 'polyline_existing');
+                        const isBridge = (entity.entity_type === 'polyline_new');
+                        const targetHeight = isBridge ? ((entity.style && entity.style.height) ? entity.style.height : 40) : 0;
+                        const shouldClamp = !isBridge;
+                        const baseWidth = isBridge ? 18 : (isExisting ? 6 : 12);
+                        const safeStyleColor = (entity.style && entity.style.color) ? entity.style.color : undefined;
+                        const isPedestrian = (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk')));
+                        const color = safeColor(safeStyleColor, isPedestrian ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
+                        const alpha = (entity.style && entity.style.alpha) ? entity.style.alpha : 0.8;
+
+                        let material = color.withAlpha(alpha);
+                        if (isExisting && entity.style && entity.style.dashed) {
+                            material = new Cesium.PolylineDashMaterialProperty({
+                                color: color.withAlpha(0.6),
+                                dashLength: 16
+                            });
+                        }
+
+                        if (isBridge) {
+                            viewer.entities.add({
+                                id: entity.id + "_base_" + sIdx,
+                                polyline: {
+                                    positions: Cesium.Cartesian3.fromDegreesArrayHeights(
+                                        validPositions.flatMap(p => [p.lng, p.lat, (p.height || 0) + targetHeight - 2])
+                                    ),
+                                    width: baseWidth + 4,
+                                    material: Cesium.Color.BLACK.withAlpha(0.5),
+                                    clampToGround: false
+                                }
+                            });
+                        }
+
+                        const midIndex = Math.floor(validPositions.length / 2);
+                        const mid = validPositions[midIndex];
+
+                        const addedSeg = viewer.entities.add({
+                            id: entity.id + "_" + sIdx,
+                            name: entity.name,
+                            position: Cesium.Cartesian3.fromDegrees(mid.lng, mid.lat, isBridge ? targetHeight + 20 : 0),
                             polyline: {
                                 positions: Cesium.Cartesian3.fromDegreesArrayHeights(
-                                    validPositions.flatMap(p => [p.lng, p.lat, (p.height ?? 0) + targetHeight - 2])
+                                    validPositions.flatMap(p => [p.lng, p.lat, (p.height || 0) + (isBridge ? targetHeight : 4)])
                                 ),
-                                width: baseWidth + 4,
-                                material: Cesium.Color.BLACK.withAlpha(0.5),
-                                clampToGround: false
-                            }
+                                width: baseWidth,
+                                material: (() => {
+                                    const styleHint = (entity.style && entity.style.hint) ? entity.style.hint.toLowerCase() : '';
+                                    const isActive = isPedestrian || styleHint.includes('pedestrian');
+                                    const baseColor = safeColor(safeStyleColor, isActive ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
+                                    if (isActive) {
+                                        return new Cesium.PolylineDashMaterialProperty({ color: baseColor, gapColor: Cesium.Color.TRANSPARENT, dashLength: 16.0, dashPattern: 255.0 });
+                                    }
+                                    return shouldClamp ?
+                                        new Cesium.ColorMaterialProperty(baseColor.withAlpha(0.8)) :
+                                        new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: baseColor });
+                                })(),
+                                clampToGround: shouldClamp
+                            },
+                            label: sIdx === 0 ? buildLabel(entity, {
+                                heightReference: shouldClamp ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE
+                            }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always') : undefined
                         });
-                    }
 
-                    const midIndex = Math.floor(validPositions.length / 2);
-                    const mid = validPositions[midIndex];
+                        // Ensure ALL segments are tracked for cleanup/interaction
+                        addedSeg.blurb = entity.blurb || '';
+                        addedSeg.entityType = entity.entity_type;
+                        addedEntities.push(addedSeg);
 
-                    const addedSeg = viewer.entities.add({
-                        id: entity.id + "_" + sIdx,
+                        if (sIdx === 0) added = addedSeg;
+                    });
+                    break;
+                }
+
+                case 'point': {
+                    if (!entity.position || typeof entity.position.lng !== 'number' || typeof entity.position.lat !== 'number') break;
+                    added = viewer.entities.add({
+                        id: entity.id,
                         name: entity.name,
-                        position: Cesium.Cartesian3.fromDegrees(mid.lng, mid.lat, isBridge ? targetHeight + 20 : 0),
-                        polyline: {
-                            positions: Cesium.Cartesian3.fromDegreesArrayHeights(
-                                validPositions.flatMap(p => [p.lng, p.lat, (p.height ?? 0) + (isBridge ? targetHeight : 4)])
-                            ),
-                            width: baseWidth,
-                            material: (() => {
-                                const styleHint = entity.style.hint ? entity.style.hint.toLowerCase() : '';
-                                const isActive = (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk'))) || styleHint.includes('pedestrian');
-                                const baseColor = safeColor(entity.style.color, isActive ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
-                                if (isActive) {
-                                    return new Cesium.PolylineDashMaterialProperty({ color: baseColor, gapColor: Cesium.Color.TRANSPARENT, dashLength: 16.0, dashPattern: 255.0 });
-                                }
-                                return shouldClamp ?
-                                    new Cesium.ColorMaterialProperty(baseColor.withAlpha(0.8)) :
-                                    new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: baseColor });
-                            })(),
-                            clampToGround: shouldClamp
+                        position: Cesium.Cartesian3.fromDegrees(entity.position.lng, entity.position.lat, 0),
+                        point: {
+                            pixelSize: (entity.style && entity.style.pixelSize) ? entity.style.pixelSize : 16,
+                            color: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#3B82F6')).withAlpha((entity.style && (entity.style.alpha || entity.style.opacity)) ? (entity.style.alpha || entity.style.opacity) : 1.0),
+                            outlineColor: Cesium.Color.WHITE,
+                            outlineWidth: 2,
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                         },
-                        label: sIdx === 0 ? buildLabel(entity, {
-                            heightReference: shouldClamp ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE
-                        }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always') : undefined
+                        label: buildLabel(entity, {
+                            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+                        }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
+                    });
+                    break;
+                }
+
+                case 'poi': {
+                    // POI entities: lat/lon OR position.lat/position.lng
+                    const lat = entity.lat ?? entity.position?.lat;
+                    const lon = entity.lon ?? entity.lng ?? entity.position?.lng ?? entity.position?.lon;
+                    if (lat == null || lon == null) break;
+
+                    // Colour derived from style_hint string (e.g. "color:blue, size:large")
+                    let poiColor = Cesium.Color.fromCssColorString('#9fb6ff');
+                    const hintStr = String(entity.style_hint || (entity.style && entity.style.color) || '').toLowerCase();
+                    if (hintStr.includes('blue'))   poiColor = Cesium.Color.fromCssColorString('#3B82F6');
+                    else if (hintStr.includes('purple')) poiColor = Cesium.Color.fromCssColorString('#A78BFA');
+                    else if (hintStr.includes('orange')) poiColor = Cesium.Color.fromCssColorString('#F97316');
+                    else if (hintStr.includes('red'))    poiColor = Cesium.Color.fromCssColorString('#EF4444');
+                    else if (hintStr.includes('green'))  poiColor = Cesium.Color.fromCssColorString('#10B981');
+                    else if (hintStr.includes('cyan'))   poiColor = Cesium.Color.fromCssColorString('#06B6D4');
+                    else if (hintStr.includes('yellow')) poiColor = Cesium.Color.fromCssColorString('#F59E0B');
+                    else if (hintStr.includes('#'))      poiColor = safeColor(hintStr.match(/#[0-9a-f]{6}/i)?.[0], poiColor);
+
+                    const pixelSize = hintStr.includes('large') ? 20 : hintStr.includes('small') ? 10 : 14;
+
+                    added = viewer.entities.add({
+                        id: entity.id,
+                        name: entity.name || entity.label || 'Point of Interest',
+                        position: Cesium.Cartesian3.fromDegrees(Number(lon), Number(lat), 0),
+                        point: {
+                            pixelSize: pixelSize,
+                            color: poiColor,
+                            outlineColor: Cesium.Color.WHITE,
+                            outlineWidth: 2,
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+                        },
+                        label: buildLabel(
+                            { ...entity, name: entity.name || entity.label || 'POI' },
+                            { heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+                            entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always'
+                        )
+                    });
+                    break;
+                }
+
+                case 'box': {
+                    if (!entity.building || typeof entity.building.length !== 'number' || typeof entity.building.width !== 'number' || typeof entity.building.height !== 'number') break;
+                    if (!entity.position || typeof entity.position.lng !== 'number' || typeof entity.position.lat !== 'number') break;
+                    
+                    added = viewer.entities.add({
+                        id: entity.id,
+                        name: entity.name,
+                        position: Cesium.Cartesian3.fromDegrees(
+                            entity.position.lng,
+                            entity.position.lat,
+                            (entity.position.height || 0) + (entity.building.height / 2)
+                        ),
+                        box: {
+                            dimensions: new Cesium.Cartesian3(entity.building.length, entity.building.width, entity.building.height),
+                            material: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#FFD700')).withAlpha((entity.style && (entity.style.alpha || entity.style.opacity)) ? (entity.style.alpha || entity.style.opacity) : 0.6),
+                            outline: true,
+                            outlineColor: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#FFD700'))
+                        },
+                        label: buildLabel(entity, {}, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
+                    });
+                    break;
+                }
+
+                case 'polygon': {
+                    if (!entity.polygon_positions || !Array.isArray(entity.polygon_positions) || entity.polygon_positions.length < 3) break;
+                    
+                    const validPts = entity.polygon_positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
+                    if (validPts.length < 3) break;
+
+                    added = viewer.entities.add({
+                        id: entity.id,
+                        name: entity.name,
+                        position: (() => {
+                            const avgLat = validPts.reduce((sum, p) => sum + p.lat, 0) / validPts.length;
+                            const avgLng = validPts.reduce((sum, p) => sum + p.lng, 0) / validPts.length;
+                            return Cesium.Cartesian3.fromDegrees(avgLng, avgLat, ((entity.style && entity.style.height) ? entity.style.height : 0) + 10);
+                        })(),
+                        polygon: {
+                            hierarchy: new Cesium.PolygonHierarchy(
+                                Cesium.Cartesian3.fromDegreesArray(validPts.flatMap(p => [p.lng, p.lat]))
+                            ),
+                            material: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#FFA500')).withAlpha((entity.style && (entity.style.alpha || entity.style.opacity)) ? (entity.style.alpha || entity.style.opacity) : 0.3),
+                            outline: true,
+                            outlineColor: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#FFA500')),
+                            clampToGround: true
+                        },
+                        label: buildLabel(entity, {
+                            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+                        }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
+                    });
+                    break;
+                }
+
+                case 'simulation_vehicle': {
+                    if (!globalMinStart || !entity.path || entity.path.length < 2) break;
+                    const startTime = globalMinStart;
+                    const positionProperty = new Cesium.SampledPositionProperty();
+                    let currentTime = Cesium.JulianDate.addSeconds(startTime, entity.startTimeOffset || 0, new Cesium.JulianDate());
+
+                    entity.path.forEach((node, index) => {
+                        if (!node || typeof node.lng !== 'number' || typeof node.lat !== 'number') return;
+                        const pos = Cesium.Cartesian3.fromDegrees(node.lng, node.lat, (node.height || 0) + 2.5);
+                        if (index === 0) {
+                            positionProperty.addSample(currentTime, pos);
+                        } else {
+                            const prev = entity.path[index - 1];
+                            const d = Cesium.Cartesian3.distance(Cesium.Cartesian3.fromDegrees(prev.lng, prev.lat), Cesium.Cartesian3.fromDegrees(node.lng, node.lat));
+                            const dt = d / ((entity.speed || 60) * (1000 / 3600));
+                            currentTime = Cesium.JulianDate.addSeconds(currentTime, dt, new Cesium.JulianDate());
+                            positionProperty.addSample(currentTime, pos);
+                        }
                     });
 
-                    // Ensure ALL segments are tracked for cleanup/interaction
-                    addedSeg.blurb = entity.blurb ?? '';
-                    addedSeg.entityType = entity.entity_type;
-                    addedEntities.push(addedSeg);
+                    const availability = new Cesium.TimeIntervalCollection([
+                        new Cesium.TimeInterval({
+                            start: Cesium.JulianDate.addSeconds(startTime, entity.startTimeOffset || 0, new Cesium.JulianDate()),
+                            stop: currentTime
+                        })
+                    ]);
 
-                    if (sIdx === 0) added = addedSeg;
-                });
-                break;
-            }
-
-            case 'point': {
-                added = viewer.entities.add({
-                    id: entity.id,
-                    name: entity.name,
-                    position: Cesium.Cartesian3.fromDegrees(entity.position.lng, entity.position.lat, 0),
-                    point: {
-                        pixelSize: entity.style.pixelSize ?? 16,
-                        color: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#3B82F6')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 1.0),
-                        outlineColor: Cesium.Color.WHITE,
-                        outlineWidth: 2,
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    },
-                    label: buildLabel(entity, {
-                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
-                });
-                break;
-            }
-
-            case 'poi': {
-                // POI entities: lat/lon OR position.lat/position.lng
-                const lat = entity.lat ?? entity.position?.lat;
-                const lon = entity.lon ?? entity.lng ?? entity.position?.lng ?? entity.position?.lon;
-                if (lat == null || lon == null) break;
-
-                // Colour derived from style_hint string (e.g. "color:blue, size:large")
-                let poiColor = Cesium.Color.fromCssColorString('#9fb6ff');
-                const hintStr = String(entity.style_hint || entity.style?.color || '').toLowerCase();
-                if (hintStr.includes('blue'))   poiColor = Cesium.Color.fromCssColorString('#3B82F6');
-                else if (hintStr.includes('purple')) poiColor = Cesium.Color.fromCssColorString('#A78BFA');
-                else if (hintStr.includes('orange')) poiColor = Cesium.Color.fromCssColorString('#F97316');
-                else if (hintStr.includes('red'))    poiColor = Cesium.Color.fromCssColorString('#EF4444');
-                else if (hintStr.includes('green'))  poiColor = Cesium.Color.fromCssColorString('#10B981');
-                else if (hintStr.includes('cyan'))   poiColor = Cesium.Color.fromCssColorString('#06B6D4');
-                else if (hintStr.includes('yellow')) poiColor = Cesium.Color.fromCssColorString('#F59E0B');
-                else if (hintStr.includes('#'))      poiColor = safeColor(hintStr.match(/#[0-9a-f]{6}/i)?.[0], poiColor);
-
-                const pixelSize = hintStr.includes('large') ? 20 : hintStr.includes('small') ? 10 : 14;
-
-                added = viewer.entities.add({
-                    id: entity.id,
-                    name: entity.name || entity.label || 'Point of Interest',
-                    position: Cesium.Cartesian3.fromDegrees(Number(lon), Number(lat), 0),
-                    point: {
-                        pixelSize: pixelSize,
-                        color: poiColor,
-                        outlineColor: Cesium.Color.WHITE,
-                        outlineWidth: 2,
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    },
-                    label: buildLabel(
-                        { ...entity, name: entity.name || entity.label || 'POI' },
-                        { heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-                        entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always'
-                    )
-                });
-                break;
-            }
-
-            case 'box': {
-                added = viewer.entities.add({
-                    id: entity.id,
-                    name: entity.name,
-                    position: Cesium.Cartesian3.fromDegrees(
-                        entity.position.lng,
-                        entity.position.lat,
-                        (entity.position.height ?? 0) + (entity.building.height / 2)
-                    ),
-                    box: {
-                        dimensions: new Cesium.Cartesian3(entity.building.length, entity.building.width, entity.building.height),
-                        material: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFD700')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.6),
-                        outline: true,
-                        outlineColor: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFD700'))
-                    },
-                    label: buildLabel(entity, {}, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
-                });
-                break;
-            }
-
-            case 'polygon': {
-                added = viewer.entities.add({
-                    id: entity.id,
-                    name: entity.name,
-                    position: (() => {
-                        if (entity.polygon_positions && entity.polygon_positions.length > 0) {
-                            const pts = entity.polygon_positions;
-                            const avgLat = pts.reduce((sum, p) => sum + p.lat, 0) / pts.length;
-                            const avgLng = pts.reduce((sum, p) => sum + p.lng, 0) / pts.length;
-                            return Cesium.Cartesian3.fromDegrees(avgLng, avgLat, (entity.style.height || 0) + 10);
+                    added = viewer.entities.add({
+                        id: entity.id,
+                        name: entity.name,
+                        availability: availability,
+                        position: positionProperty,
+                        orientation: new Cesium.VelocityOrientationProperty(positionProperty),
+                        box: {
+                            dimensions: getVehicleStyle(entity).dimensions,
+                            material: getVehicleStyle(entity).material,
+                            outline: true,
+                            outlineColor: Cesium.Color.BLACK,
+                            heightReference: Cesium.HeightReference.NONE
                         }
-                        return undefined;
-                    })(),
-                    polygon: {
-                        hierarchy: new Cesium.PolygonHierarchy(
-                            Cesium.Cartesian3.fromDegreesArray(entity.polygon_positions.flatMap(p => [p.lng, p.lat]))
-                        ),
-                        material: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFA500')).withAlpha(entity.style.alpha ?? entity.style.opacity ?? 0.3),
-                        outline: true,
-                        outlineColor: safeColor(entity.style.color, Cesium.Color.fromCssColorString('#FFA500')),
-                        clampToGround: true
-                    },
-                    label: buildLabel(entity, {
-                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                    }, entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always')
-                });
-                break;
+                    });
+                    break;
+                }
             }
 
-            case 'simulation_vehicle': {
-                if (!globalMinStart) break;
-                const startTime = globalMinStart;
-                const positionProperty = new Cesium.SampledPositionProperty();
-                let currentTime = Cesium.JulianDate.addSeconds(startTime, entity.startTimeOffset || 0, new Cesium.JulianDate());
-
-                entity.path.forEach((node, index) => {
-                    const pos = Cesium.Cartesian3.fromDegrees(node.lng, node.lat, (node.height || 0) + 2.5);
-                    if (index === 0) {
-                        positionProperty.addSample(currentTime, pos);
-                    } else {
-                        const prev = entity.path[index - 1];
-                        const d = Cesium.Cartesian3.distance(Cesium.Cartesian3.fromDegrees(prev.lng, prev.lat), Cesium.Cartesian3.fromDegrees(node.lng, node.lat));
-                        const dt = d / ((entity.speed || 60) * (1000 / 3600));
-                        currentTime = Cesium.JulianDate.addSeconds(currentTime, dt, new Cesium.JulianDate());
-                        positionProperty.addSample(currentTime, pos);
-                    }
-                });
-
-                const availability = new Cesium.TimeIntervalCollection([
-                    new Cesium.TimeInterval({
-                        start: Cesium.JulianDate.addSeconds(startTime, entity.startTimeOffset || 0, new Cesium.JulianDate()),
-                        stop: currentTime
-                    })
-                ]);
-
-                added = viewer.entities.add({
-                    id: entity.id,
-                    name: entity.name,
-                    availability: availability,
-                    position: positionProperty,
-                    orientation: new Cesium.VelocityOrientationProperty(positionProperty),
-                    box: {
-                        dimensions: getVehicleStyle(entity).dimensions,
-                        material: getVehicleStyle(entity).material,
-                        outline: true,
-                        outlineColor: Cesium.Color.BLACK,
-                        heightReference: Cesium.HeightReference.NONE
-                    }
-                });
-                break;
+            if (added) {
+                added.blurb = entity.blurb || '';
+                added.entityType = entity.entity_type;
+                addedEntities.push(added);
             }
-        }
-
-        if (added) {
-            added.blurb = entity.blurb ?? '';
-            added.entityType = entity.entity_type;
-            addedEntities.push(added);
+        } catch (entityError) {
+            console.error("Failed to render entity:", entity, entityError);
         }
     });
 

@@ -3201,6 +3201,8 @@
                     flyToCity(clusters[0].label || "Implementation Site", primary.lat, primary.lon);
                 }
             }
+            
+            return entities; // Return the generated entities so they can be added to the payload
         }
 
         function waitForCesiumReady() {
@@ -3315,9 +3317,13 @@
                     console.log("🚦 Entered done block — stage:", data.stage, "show_map:", data.show_map);
                     try {
                         if (Array.isArray(data.implementation_clusters)) {
-                            console.log("🔧 Calling renderImplementationClusters...");
-                            renderImplementationClusters(data.implementation_clusters, { showMap: false });
-                            console.log("✅ renderImplementationClusters done");
+                            console.log("🔧 Generating entities from implementation clusters...");
+                            const clusterEntities = renderImplementationClusters(data.implementation_clusters, { showMap: false });
+                            if (clusterEntities && clusterEntities.length > 0) {
+                                if (!Array.isArray(data.entities)) data.entities = [];
+                                data.entities.push(...clusterEntities);
+                            }
+                            console.log(`✅ Added ${clusterEntities?.length || 0} cluster entities to payload`);
                         }
 
                         console.log("🗺️ Calling showMapView...");
@@ -3591,10 +3597,17 @@
 
         async function addHistory(data) {
             try {
+                // Clone the data to avoid mutating the live map
+                const slimData = JSON.parse(JSON.stringify(data));
+                // Strip heavy context layers to prevent 413 Payload Too Large errors
+                if (slimData.map_layers && slimData.map_layers.context) {
+                    slimData.map_layers.context = []; 
+                }
+                
                 const response = await fetch('https://city-planner-711110564007.asia-southeast1.run.app/add_history', {
                     method: 'POST',
                     headers: await getAuthHeaders(),
-                    body: JSON.stringify({ entities: data })
+                    body: JSON.stringify(slimData)
                 });
                 if (response.ok) await loadHistories();
             } catch (error) { console.log(error) }
