@@ -197,6 +197,47 @@ function renderEntities(entities) {
                 break;
             }
 
+            case 'poi': {
+                // POI entities: lat/lon OR position.lat/position.lng
+                const lat = entity.lat ?? entity.position?.lat;
+                const lon = entity.lon ?? entity.lng ?? entity.position?.lng ?? entity.position?.lon;
+                if (lat == null || lon == null) break;
+
+                // Colour derived from style_hint string (e.g. "color:blue, size:large")
+                let poiColor = Cesium.Color.fromCssColorString('#9fb6ff');
+                const hintStr = String(entity.style_hint || entity.style?.color || '').toLowerCase();
+                if (hintStr.includes('blue'))   poiColor = Cesium.Color.fromCssColorString('#3B82F6');
+                else if (hintStr.includes('purple')) poiColor = Cesium.Color.fromCssColorString('#A78BFA');
+                else if (hintStr.includes('orange')) poiColor = Cesium.Color.fromCssColorString('#F97316');
+                else if (hintStr.includes('red'))    poiColor = Cesium.Color.fromCssColorString('#EF4444');
+                else if (hintStr.includes('green'))  poiColor = Cesium.Color.fromCssColorString('#10B981');
+                else if (hintStr.includes('cyan'))   poiColor = Cesium.Color.fromCssColorString('#06B6D4');
+                else if (hintStr.includes('yellow')) poiColor = Cesium.Color.fromCssColorString('#F59E0B');
+                else if (hintStr.includes('#'))      poiColor = safeColor(hintStr.match(/#[0-9a-f]{6}/i)?.[0], poiColor);
+
+                const pixelSize = hintStr.includes('large') ? 20 : hintStr.includes('small') ? 10 : 14;
+
+                added = viewer.entities.add({
+                    id: entity.id,
+                    name: entity.name || entity.label || 'Point of Interest',
+                    position: Cesium.Cartesian3.fromDegrees(Number(lon), Number(lat), 0),
+                    point: {
+                        pixelSize: pixelSize,
+                        color: poiColor,
+                        outlineColor: Cesium.Color.WHITE,
+                        outlineWidth: 2,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+                    },
+                    label: buildLabel(
+                        { ...entity, name: entity.name || entity.label || 'POI' },
+                        { heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+                        entity.layer === 'context' || entity.layer === 'analysis' ? 'hidden' : 'always'
+                    )
+                });
+                break;
+            }
+
             case 'box': {
                 added = viewer.entities.add({
                     id: entity.id,
@@ -343,5 +384,36 @@ function flyToCamera(camera) {
             roll: Cesium.Math.toRadians(camera.roll ?? 0)
         },
         duration: 3.0
+    });
+}
+
+/**
+ * Clear all entities and data sources from the viewer.
+ * Called before renderImplementationClusters when showMap is true.
+ */
+function clearAllEntities() {
+    if (!viewer) return;
+    viewer.entities.removeAll();
+    viewer.dataSources.removeAll();
+    viewer.clock.shouldAnimate = false;
+}
+
+/**
+ * Fly to a lat/lng coordinate at a given altitude for the 3D building view.
+ * @param {number} lat - Latitude
+ * @param {number} lng - Longitude
+ * @param {number} altitude - Height above ground in meters (default 600m for 3D view)
+ * @param {string} label - Optional label for status display
+ */
+function flyToTarget(lat, lng, altitude = 600, label = 'Planning Site') {
+    if (!viewer) return;
+    viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lng, lat, altitude),
+        orientation: {
+            heading: Cesium.Math.toRadians(0),
+            pitch: Cesium.Math.toRadians(-45),
+            roll: 0
+        },
+        duration: 2.5
     });
 }

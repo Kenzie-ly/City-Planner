@@ -2174,8 +2174,10 @@
                 }
             });
 
-            // Bounds clamp
-            viewer.camera.changed.addEventListener(() => {
+            // Bounds clamp — fires only when the user *manually* stops the camera,
+            // NOT during programmatic flyTo() animations (those use camera.changed
+            // which would cancel the flight on every frame).
+            viewer.camera.moveEnd.addEventListener(() => {
                 const c = Cesium.Cartographic.fromCartesian(viewer.camera.position);
                 const lat = Cesium.Math.toDegrees(c.latitude);
                 const lng = Cesium.Math.toDegrees(c.longitude);
@@ -2391,6 +2393,15 @@
 
             if (viewer && viewer.scene) {
                 viewer.resize();
+                // Deferred resize: on mobile the container is not painted yet
+                // when resize() is called synchronously. A second call after a
+                // short tick lets Cesium recalculate the canvas dimensions.
+                setTimeout(() => {
+                    if (viewer && viewer.scene) {
+                        viewer.resize();
+                        viewer.scene.requestRender();
+                    }
+                }, 150);
             }
         }
 
@@ -3422,32 +3433,52 @@
                         applyMapPayload(data);
                         console.log("✅ applyMapPayload done");
 
+                        // ── Navigate camera — prefer explicit camera from backend ──
+                        if (data.camera && data.camera.center) {
+                            console.log("✈️ Flying via camera object:", data.camera);
+                            flyToCamera(data.camera);
+                        } else if (data.target_lat && data.target_lng) {
+                            console.log("✈️ Flying to target:", data.target_lat, data.target_lng);
+                            if (typeof flyToTarget === 'function') {
+                                flyToTarget(data.target_lat, data.target_lng, 1000, data.city_name || "Planning Site");
+                            } else {
+                                flyToCity(data.city_name || "Target Area", data.target_lat, data.target_lng);
+                            }
+                        }
+
+                        // ── Show/hide simulation controls based on entity types ──
+                        const renderedEntities = Array.isArray(data.entities)
+                            ? data.entities
+                            : getRenderableEntitiesFromLayers(currentMapLayers);
+                        const hasSim = Array.isArray(renderedEntities) && renderedEntities.some(e => e.entity_type === 'simulation_vehicle');
+                        const controls = document.getElementById("simControls");
+                        if (controls) controls.style.display = hasSim ? "flex" : "none";
+
+                        // ── Show warning banner if proposal was blocked ──
+                        if (data.is_blocked) {
+                            const existingBanner = document.getElementById('blockedWarningBanner');
+                            if (!existingBanner) {
+                                const banner = document.createElement('div');
+                                banner.id = 'blockedWarningBanner';
+                                banner.style.cssText = `
+                                    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+                                    background: rgba(239,68,68,0.92); color: #fff; padding: 10px 20px;
+                                    border-radius: 8px; font-size: 13px; z-index: 9999;
+                                    box-shadow: 0 4px 16px rgba(0,0,0,0.3); max-width: 90vw; text-align: center;
+                                `;
+                                banner.innerHTML = `⚠️ AI proposal was flagged as inconsistent — showing real map context only.
+                                    <button onclick="this.parentElement.remove()" style="margin-left:12px;background:none;border:1px solid rgba(255,255,255,0.6);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer">Dismiss</button>`;
+                                document.body.appendChild(banner);
+                                setTimeout(() => banner?.remove(), 8000);
+                            }
+                        }
+
                     } catch (err) {
                         console.error("💥 Error inside done block:", err);
                     }
 
+                    // ── Impact Dashboard ──
                     if ((data.map_layers && typeof data.map_layers === "object") || (Array.isArray(data.entities) && data.entities.length > 0)) {
-                        console.log("📊 About to call applyMapPayload with:", {
-                            has_map_layers: !!data.map_layers,
-                            map_layers_keys: data.map_layers ? Object.keys(data.map_layers) : [],
-                            has_entities: Array.isArray(data.entities),
-                            entity_count: Array.isArray(data.entities) ? data.entities.length : 0
-                        });
-                        applyMapPayload(data);
-
-                        const renderedEntities = Array.isArray(data.entities) ? data.entities : getRenderableEntitiesFromLayers(currentMapLayers);
-                        const hasSim = Array.isArray(renderedEntities) && renderedEntities.some(e => e.entity_type === 'simulation_vehicle');
-                        const controls = document.getElementById("simControls");
-                        if (hasSim) {
-                            controls.style.display = "flex";
-                        } else {
-                            controls.style.display = "none";
-                        }
-
-                        if (data.target_lat && data.target_lng) {
-                            flyToCity(data.city_name || "Target Area", data.target_lat, data.target_lng);
-                        }
-
                         // Populate and show Impact Dashboard if metrics exist
                         if (data.impact_metrics) {
                             const dashboard = document.getElementById('impactDashboard');

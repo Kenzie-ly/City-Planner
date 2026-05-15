@@ -82,7 +82,6 @@ def _tokens(*values: Any) -> set[str]:
         "malaysia",
         "section",
         "sek",
-        "stesen",
         "rapid",
         "kl",
     }
@@ -298,10 +297,15 @@ def validate_geo_consistency(
     warnings: list[str] = []
     checked_points = 0
     route_points: list[dict[str, float]] = []
+
     for raw in analysis_result_raw or []:
-        for point in raw.get("route_geometry", []) or []:
-            if isinstance(point, dict) and {"lat", "lng"} <= set(point.keys()):
-                route_points.append({"lat": float(point["lat"]), "lng": float(point["lng"])})
+        geom = raw.get("route_geometry", []) or []
+        # Support both flat list of points and list of segments (list of lists of points)
+        segments = geom if geom and isinstance(geom[0], list) else [geom]
+        for segment in segments:
+            for point in segment:
+                if isinstance(point, dict) and {"lat", "lng"} <= set(point.keys()):
+                    route_points.append({"lat": float(point["lat"]), "lng": float(point["lng"])})
 
     city_match_pass = True
     route_match_pass = True
@@ -371,11 +375,17 @@ def extract_allowed_numeric_facts(
 
 
 def _station_like_anchor(selected_micro: dict[str, Any]) -> bool:
-    return any(
-        token in _norm(" ".join(selected_micro.get(key, []) or []))
-        for key in ("road_a_queries", "road_b_queries")
-        for token in ("lrt", "mrt", "ktm", "station", "stesen", "interchange", "terminal")
-    )
+    for key in ("road_a_queries", "road_b_queries"):
+        val = selected_micro.get(key, [])
+        # If it's a string, normalize directly to prevent " ".join from splitting chars
+        if isinstance(val, str):
+            text = _norm(val)
+        else:
+            text = _norm(" ".join(val or []))
+            
+        if any(token in text for token in ("lrt", "mrt", "ktm", "station", "stesen", "interchange", "terminal")):
+            return True
+    return False
 
 
 def infer_primary_intervention_family(
@@ -530,7 +540,7 @@ def build_decision_package(
     }
 
 
-NUMERIC_CLAIM_PATTERN = re.compile(r"\b\d+(?:\.\d+)?\s*(?:km|m|minutes?|mins?|hours?|%|percent)\b", re.IGNORECASE)
+NUMERIC_CLAIM_PATTERN = re.compile(r"\b\d+(?:\.\d+)?\s*(?:km|m\b|meters?|minutes?|mins?|hours?|%|percent)\b", re.IGNORECASE)
 
 
 def _rewrite_unsupported_numeric_claims(text: str, allowed_facts: list[str], removed_claims: list[str]) -> str:
