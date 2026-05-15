@@ -139,3 +139,23 @@ def save_solution_options(agent_run_id: str, hotspot_id: str, solutions: list[di
                     "tradeoffs": json.dumps(sol.get("uncertainties", []))
                 }
             )
+
+def save_session_state(session_id: str, state: dict):
+    from db.database import engine
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE user_sessions SET state = :state, updated_at = NOW() WHERE session_id = :session_id"),
+            {"session_id": session_id, "state": json.dumps(state)}
+        )
+
+def load_session_state(session_id: str) -> dict:
+    from db.database import engine
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT state FROM user_sessions WHERE session_id = :session_id"),
+            {"session_id": session_id}
+        ).fetchone()
+        if result and result[0]:
+            return result[0] if isinstance(result[0], dict) else json.loads(result[0])
+    return None
+

@@ -2481,6 +2481,74 @@ def get_transit_connectivity_evidence(city: str, hypothesis: dict[str, Any]) -> 
 
 
 def get_context_infrastructure(lat: float, lon: float, intervention_type: str = "general") -> list[dict[str, Any]]:
+    # 1. Try Database First (Fast and Reliable)
+    try:
+        from db.database import engine
+        from sqlalchemy import text
+        entities = []
+        
+        print(f"  -> Attempting to fetch context from DB for {lat}, {lon}")
+        with engine.connect() as conn:
+            # Fetch transit stops
+            stops = conn.execute(text("""
+                SELECT stop_type, stop_name, ST_Y(geom) as lat, ST_X(geom) as lon
+                FROM osm_transit_stops
+                WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 0.03)
+                LIMIT 50
+            """), {"lat": lat, "lon": lon}).mappings().all()
+            
+            for stop in stops:
+                el_type = stop["stop_type"]
+                name = stop["stop_name"]
+                
+                if el_type == "bus_stop":
+                    entities.append({
+                        "id": f"db_bus_stop_{stop['lat']}_{stop['lon']}",
+                        "entity_type": "point",
+                        "name": name or "Bus Stop",
+                        "blurb": "Existing bus stop (DB)",
+                        "position": {"lat": stop["lat"], "lng": stop["lon"], "height": 0},
+                        "style": {"color": "#3B82F6", "pixelSize": 8}
+                    })
+                elif el_type in ["station", "rail_station", "bus_station", "platform"]:
+                    entities.append({
+                        "id": f"db_station_{stop['lat']}_{stop['lon']}",
+                        "entity_type": "point",
+                        "name": name or "Transit Station",
+                        "blurb": "Existing transit station (DB)",
+                        "position": {"lat": stop["lat"], "lng": stop["lon"], "height": 0},
+                        "style": {"color": "#A78BFA", "pixelSize": 12}
+                    })
+            
+            # Fetch POIs
+            pois = conn.execute(text("""
+                SELECT name, poi_category, ST_Y(ST_Centroid(geom)) as lat, ST_X(ST_Centroid(geom)) as lon
+                FROM osm_pois
+                WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 0.02)
+                LIMIT 30
+            """), {"lat": lat, "lon": lon}).mappings().all()
+            
+            for poi in pois:
+                cat = poi["poi_category"] or "poi"
+                name = poi["name"]
+                entities.append({
+                    "id": f"db_poi_{poi['lat']}_{poi['lon']}",
+                    "entity_type": "point",
+                    "name": name or cat.title(),
+                    "blurb": f"POI: {cat} (DB)",
+                    "position": {"lat": poi["lat"], "lng": poi["lon"], "height": 0},
+                    "style": {"color": "#10B981", "pixelSize": 6}
+                })
+                
+        if entities:
+            print(f"  -> Successfully fetched {len(entities)} context entities from Database.")
+            return entities
+            
+    except Exception as e:
+        print(f"  -> DB context fetch failed: {e}. Falling back to Overpass.")
+
+    # 2. Fallback to Overpass API (If DB is empty or fails)
+    print("  -> No entities found in DB. Falling back to Overpass API...")
     overpass_servers = [
         "https://overpass-api.de/api/interpreter",
         "https://lz4.overpass-api.de/api/interpreter",
@@ -3376,18 +3444,40 @@ def _build_done_response(
         },
     )
 
+    # When blocked: still open the map so real OSM context is visible,
+    # but strip the AI-generated proposal layer to avoid showing bad data.
+    safe_map_layers = dict(map_layers)
+    safe_entities = list(merged_entities)
+    if blocked:
+        safe_map_layers["proposal"] = []
+        safe_entities = [
+            e for e in merged_entities
+            if e.get("layer") in ("context", "analysis", "anchors")
+        ]
+
     return {
         "ok": True,
         "session_id": state.get("session_id"),
         "stage": "done",
         "reply": reply_text,
-        "show_map": not blocked,
-        "entities": [] if blocked else merged_entities,
-        "map_layers": {} if blocked else map_layers,
+        # Always show map so user sees OSM context (bus stops, rail, etc.)
+        # even when the AI proposal is blocked.
+        "show_map": True,
+        "is_blocked": blocked,
+        "entities": safe_entities,
+        "map_layers": safe_map_layers,
         "needs_input": False,
         "city_name": city_name,
         "target_lat": ref_lat,
         "target_lng": ref_lng,
+        # Explicit camera so frontend can fly directly to the solution area.
+        "camera": {
+            "center": {"lat": ref_lat, "lng": ref_lng},
+            "height": 1000,
+            "pitch": -45,
+            "heading": 0,
+            "roll": 0,
+        },
         "impact_metrics": impact_metrics,
         "reliability_band": reliability_band,
         "warnings": warnings,
@@ -3438,6 +3528,7 @@ FEEDBACK: <your greeting and question>
     greeting_text = await run_agent_once(place_intake_agent, session.id, greeting_prompt)
     greeting_parsed = parse_place_result(greeting_text)
     workflow_state[session.id] = {"phase": "intake"}
+    persistence_service.save_session_state(session.id, workflow_state[session.id])
 
     return {
         "ok": True,
@@ -3447,6 +3538,10 @@ FEEDBACK: <your greeting and question>
         "needs_input": True,
     }
 
+
+async def _persist_current_state(session_id: str):
+    if session_id in workflow_state:
+        persistence_service.save_session_state(session_id, workflow_state[session_id])
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
@@ -3460,13 +3555,19 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     # Session Validation - Ensure session exists
     ################################################
     if session_id not in workflow_state:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # Persistence Fallback: Try to reload session from DB
+        persisted_state = persistence_service.load_session_state(session_id)
+        if persisted_state:
+            workflow_state[session_id] = persisted_state
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
 
     current_session = await session_service.get_session(
         app_name=APP_NAME,
         user_id=session_id,
         session_id=session_id,
     )
+    background_tasks.add_task(_persist_current_state, session_id)
     state = workflow_state[session_id]
     phase = state["phase"]
 
