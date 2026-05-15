@@ -778,6 +778,7 @@ ON evidence_packs(selected_challenge_type);
 
 CREATE TABLE agent_runs (
     agent_run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID REFERENCES user_sessions(session_id),
     agent_name TEXT NOT NULL,
     area_id TEXT REFERENCES areas(area_id),
     evidence_pack_id UUID REFERENCES evidence_packs(evidence_pack_id),

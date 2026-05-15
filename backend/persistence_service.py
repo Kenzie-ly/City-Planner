@@ -71,24 +71,28 @@ def save_broad_challenge_cards(agent_run_id: str, area_id: str, challenges: list
                 }
             )
 
-def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict]):
+def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict], challenge_type: str = None):
     from db.database import engine
     with engine.begin() as conn:
         for idx, card in enumerate(hotspots):
             hotspot_id = str(uuid.uuid4())
+            # Use provided challenge_type or try to find it in the card
+            c_type = challenge_type or card.get("selected_challenge_type") or "general_transit"
+            
             # 1. Save to candidate_hotspots (the data entity)
             conn.execute(
                 text("""
-                    INSERT INTO candidate_hotspots (hotspot_id, area_id, challenge_type, hotspot_name, hotspot_type, confidence_tier, related_routes, generated_at)
-                    VALUES (:h_id, :area, :type, :name, :h_type, :conf, :routes, NOW())
+                    INSERT INTO candidate_hotspots (hotspot_id, area_id, challenge_type, hotspot_name, hotspot_type, score, confidence_tier, related_routes, generated_at)
+                    VALUES (:h_id, :area, :type, :name, :h_type, :score, :conf, :routes, NOW())
                 """),
                 {
                     "h_id": hotspot_id,
                     "area": area_id,
-                    "type": card.get("selected_challenge_type"), # Needs to be passed in
-                    "name": card.get("location_label"),
-                    "h_type": card.get("type"),
-                    "conf": card.get("confidence"),
+                    "type": c_type,
+                    "name": card.get("location_label") or card.get("hypothesis", {}).get("location_label"),
+                    "h_type": card.get("type") or card.get("hypothesis", {}).get("type"),
+                    "score": card.get("score") or 0.0,
+                    "conf": card.get("confidence") or card.get("hypothesis", {}).get("confidence"),
                     "routes": json.dumps({"road_a": card.get("road_a_queries"), "road_b": card.get("road_b_queries")})
                 }
             )
@@ -102,10 +106,10 @@ def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict]):
                     "run_id": agent_run_id,
                     "h_id": hotspot_id,
                     "area": area_id,
-                    "type": card.get("selected_challenge_type"),
-                    "title": card.get("location_label"),
-                    "desc": card.get("symptom"),
-                    "conf": card.get("confidence"),
+                    "type": c_type,
+                    "title": card.get("location_label") or card.get("hypothesis", {}).get("location_label"),
+                    "desc": card.get("symptom") or card.get("hypothesis", {}).get("symptom") or "Identified hotspot for intervention",
+                    "conf": card.get("confidence") or card.get("hypothesis", {}).get("confidence"),
                     "order": idx
                 }
             )
