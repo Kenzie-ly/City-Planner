@@ -3965,7 +3965,7 @@ Remember:
         state["selected_specific_card"] = selected_micro
         selected_city = (state.get("target_places") or [])[0]
         try:
-            analysis_result_raw = analyze_selected_micro(selected_micro, selected_city)
+            analysis_result_raw = await asyncio.to_thread(analyze_selected_micro, selected_micro, selected_city)
             analysis_result = make_analysis_result_for_prompt(analysis_result_raw)
             if not analysis_result_raw or not any(item.get("candidates") for item in analysis_result_raw):
                 raise ValueError("No reliable transit-routing candidates were found for this hotspot. Please choose another hotspot with clearer anchor roads or station-access links.")
@@ -4058,7 +4058,8 @@ Remember:
         )
 
         try:
-            decision_package = build_decision_package(
+            decision_package = await asyncio.to_thread(
+                build_decision_package,
                 selected_city=selected_city,
                 selected_micro=selected_micro,
                 analysis_result=analysis_result,
