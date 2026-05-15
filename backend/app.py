@@ -3871,97 +3871,109 @@ Remember:
     # Phase: Specific Card Selection - Handle user selection of micro hotspots
     ################################################
     if phase == "specific_card_selection":
-        raw_step_output = state["last_step_output"]
-        review_prompt = (
-            "STEP NAME: Select micro-symptom\n\n"
-            f"STEP OUTPUT:\n{raw_step_output}\n\n"
-            f"USER RESPONSE: {user_message}"
-        )
-        review_text = await run_agent_with_retry(review_agent, session_id, review_prompt)
-        if is_retry_response(review_text):
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Micro hotspot selection",
-                "reply": extract_retry_feedback(review_text),
-                "needs_input": True,
-            }
-        review_result = parse_review(review_text)
+        clean_msg = user_message.strip()
+        primary = state.get("strict_json", {}).get("PRIMARY_MICRO")
+        secondary = state.get("strict_json", {}).get("SECONDARY_MICRO")
 
-        if review_result["verdict"] == "REVISE":
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Micro hotspot selection",
-                "reply": review_result["detail"] or "Please choose one micro-symptom from the list.",
-                "needs_input": True,
-            }
-
-        if review_result["verdict"] == "REVISE_TOTAL":
-            feedback = review_result["detail"] or "Regenerate hotspots"
-            selected_challenge = state.get("selected_challenge", {})
-            selected_city = (state.get("target_places") or [])[0]
-            previous_signatures = list(state.get("current_specific_signatures") or [])
-            previous_labels = list(state.get("current_specific_labels") or [])
-            try:
-                hotspot_result = await run_hotspot_hypothesis_loop(
-                    session_id,
-                    selected_city,
-                    selected_challenge,
-                    feedback=feedback,
-                    excluded_signatures=previous_signatures,
-                    excluded_labels=previous_labels,
-                )
-            except Exception as exc:
+        if clean_msg == "1" and primary:
+            selected_micro = primary
+            # jump straight past all the review_agent logic
+        elif clean_msg == "2" and secondary:
+            selected_micro = secondary
+            # jump straight past all the review_agent logic
+        else:
+            raw_step_output = state["last_step_output"]
+            review_prompt = (
+                "STEP NAME: Select micro-symptom\n\n"
+                f"STEP OUTPUT:\n{raw_step_output}\n\n"
+                f"USER RESPONSE: {user_message}"
+            )
+            review_text = await run_agent_with_retry(review_agent, session_id, review_prompt)
+            if is_retry_response(review_text):
                 return {
                     "ok": True,
                     "session_id": session_id,
                     "stage": "Micro hotspot selection",
-                    "reply": (
-                        "I could not regenerate stable hotspot cards yet. "
-                        "Please try regenerate again or choose another broad challenge."
-                    ),
+                    "reply": extract_retry_feedback(review_text),
                     "needs_input": True,
-                    "specific_options": _specific_options_from_state(state),
                 }
-            if is_retry_response(hotspot_result):
+            review_result = parse_review(review_text)
+
+            if review_result["verdict"] == "REVISE":
                 return {
                     "ok": True,
                     "session_id": session_id,
                     "stage": "Micro hotspot selection",
-                    "reply": extract_retry_feedback(hotspot_result),
+                    "reply": review_result["detail"] or "Please choose one micro-symptom from the list.",
                     "needs_input": True,
                 }
-            
-            strict_json = {
-                "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
-                "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
-                "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
-                "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
-                "PRIMARY_MICRO": hotspot_result["PRIMARY_MICRO"],
-                "SECONDARY_MICRO": hotspot_result["SECONDARY_MICRO"],
-                "ROUTING_LABELS": {
-                    "PRIMARY_MICRO": extract_routing_labels_from_micro(hotspot_result["PRIMARY_MICRO"]),
-                    "SECONDARY_MICRO": extract_routing_labels_from_micro(hotspot_result["SECONDARY_MICRO"]),
-                },
-            }
-            new_raw_output = json.dumps(strict_json)
-            state["last_step_output"] = new_raw_output
-            state["last_display_reply"] = format_micro_options(strict_json)
-            state["current_specific_signatures"] = hotspot_result.get("displayed_signatures", [])
-            state["current_specific_labels"] = hotspot_result.get("displayed_labels", [])
-            state["specific_regen_count"] = 0
-            
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Micro hotspot selection",
-                "reply": state["last_display_reply"],
-                "needs_input": True,
-                "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
-            }
 
-        selected_micro = safe_json_loads(review_result["final_output"])
+            if review_result["verdict"] == "REVISE_TOTAL":
+                feedback = review_result["detail"] or "Regenerate hotspots"
+                selected_challenge = state.get("selected_challenge", {})
+                selected_city = (state.get("target_places") or [])[0]
+                previous_signatures = list(state.get("current_specific_signatures") or [])
+                previous_labels = list(state.get("current_specific_labels") or [])
+                try:
+                    hotspot_result = await run_hotspot_hypothesis_loop(
+                        session_id,
+                        selected_city,
+                        selected_challenge,
+                        feedback=feedback,
+                        excluded_signatures=previous_signatures,
+                        excluded_labels=previous_labels,
+                    )
+                except Exception as exc:
+                    return {
+                        "ok": True,
+                        "session_id": session_id,
+                        "stage": "Micro hotspot selection",
+                        "reply": (
+                            "I could not regenerate stable hotspot cards yet. "
+                            "Please try regenerate again or choose another broad challenge."
+                        ),
+                        "needs_input": True,
+                        "specific_options": _specific_options_from_state(state),
+                    }
+                if is_retry_response(hotspot_result):
+                    return {
+                        "ok": True,
+                        "session_id": session_id,
+                        "stage": "Micro hotspot selection",
+                        "reply": extract_retry_feedback(hotspot_result),
+                        "needs_input": True,
+                    }
+                
+                strict_json = {
+                    "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+                    "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
+                    "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
+                    "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
+                    "PRIMARY_MICRO": hotspot_result["PRIMARY_MICRO"],
+                    "SECONDARY_MICRO": hotspot_result["SECONDARY_MICRO"],
+                    "ROUTING_LABELS": {
+                        "PRIMARY_MICRO": extract_routing_labels_from_micro(hotspot_result["PRIMARY_MICRO"]),
+                        "SECONDARY_MICRO": extract_routing_labels_from_micro(hotspot_result["SECONDARY_MICRO"]),
+                    },
+                }
+                new_raw_output = json.dumps(strict_json)
+                state["last_step_output"] = new_raw_output
+                state["last_display_reply"] = format_micro_options(strict_json)
+                state["current_specific_signatures"] = hotspot_result.get("displayed_signatures", [])
+                state["current_specific_labels"] = hotspot_result.get("displayed_labels", [])
+                state["specific_regen_count"] = 0
+                
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Micro hotspot selection",
+                    "reply": state["last_display_reply"],
+                    "needs_input": True,
+                    "specific_options": hotspot_result.get("specific_cards", hotspot_result.get("attempts", []))
+                }
+
+            selected_micro = safe_json_loads(review_result["final_output"])
+            
         state["selected_specific_card"] = selected_micro
         selected_city = (state.get("target_places") or [])[0]
         try:
