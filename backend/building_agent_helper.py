@@ -602,6 +602,7 @@ def format_entities(enriched_assets):
                         "id": f"sim_{i}_seg_{j}_v_{v}",
                         "entity_type": "simulation_vehicle",
                         "name": f"{asset['label']} Vehicle {v+1}",
+                        "position": offset_path[0], # Anchor point for labels/tracking
                         "path": offset_path,
                         "speed": speed_kmh,
                         "flow": flow_type,

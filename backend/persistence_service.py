@@ -79,6 +79,11 @@ def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict], ch
             # Use provided challenge_type or try to find it in the card
             c_type = challenge_type or card.get("selected_challenge_type") or "general_transit"
             
+            # Inject hotspot_id back into the card for downstream usage
+            card["hotspot_id"] = hotspot_id
+            if "hypothesis" in card and isinstance(card["hypothesis"], dict):
+                card["hypothesis"]["hotspot_id"] = hotspot_id
+            
             # 1. Save to candidate_hotspots (the data entity)
             conn.execute(
                 text("""

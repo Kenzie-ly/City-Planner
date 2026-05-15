@@ -2967,8 +2967,7 @@ def build_solution_prompt(
 You are given:
 1. the selected transport challenge
 2. the selected micro-symptom
-3. a normalized decision package
-4. the planning decision
+3. a normalized decision package (includes intervention family and evidence basis)
 
 SELECTED_CHALLENGE_JSON:
 {json.dumps(selected_challenge, ensure_ascii=False, indent=2)}
@@ -3002,7 +3001,6 @@ Task:
 def build_building_prompt(
     selected_challenge: dict[str, Any],
     selected_micro: dict[str, Any],
-    planning_result: dict[str, Any],
     solution_result: dict[str, Any],
     decision_package: dict[str, Any],
     route_roads: list[str] | None = None,
@@ -3023,9 +3021,8 @@ co-located on this corridor.
 You are given:
 1. the selected transport challenge
 2. the selected micro-symptom
-3. the decision package
-4. the planning decision
-5. the final solution design
+3. the decision package (ground truth for intervention type)
+4. the final solution design
 {grounding_block}
 SELECTED_CHALLENGE_JSON:
 {json.dumps(selected_challenge, ensure_ascii=False, indent=2)}
@@ -3035,9 +3032,6 @@ SELECTED_MICRO_JSON:
 
 DECISION_PACKAGE_JSON:
 {json.dumps(decision_package, ensure_ascii=False, indent=2)}
-
-PLANNING_RESULT_JSON:
-{json.dumps(planning_result, ensure_ascii=False, indent=2)}
 
 SOLUTION_RESULT_JSON:
 {json.dumps(solution_result, ensure_ascii=False, indent=2)}
@@ -3281,8 +3275,8 @@ def _build_done_response(
     solution = state.get("solution_result", {})
     decision_package = dict(state.get("decision_package") or {})
     claim_audit = dict(state.get("claim_audit") or {})
-    solution = _compose_solution_display(solution, decision_package, str(decision_package.get("reliability_band") or "medium").lower())
-    state["solution_result"] = solution
+    # Use a copy for display to avoid corrupting the raw state if a revision is needed later
+    display_solution = _compose_solution_display(dict(solution), decision_package, str(decision_package.get("reliability_band") or "medium").lower())
     city_center = _get_city_center(city_name)
     
     # Split incoming entities into proposal and existing context if they were pre-mixed
@@ -3334,12 +3328,12 @@ def _build_done_response(
         "removed_claims": list(claim_audit.get("removed_claims") or []),
     }
     impact_metrics = {
-        "societal_impact": solution.get("societal_impact", "No societal impact data available."),
-        "expected_effects": solution.get("expected_effect", []),
-        "complexity": solution.get("implementation_complexity", "Unknown"),
-        "solution_title": solution.get("solution_title", "Proposed Solution"),
-        "detailed_description": solution.get("detailed_description", "No detailed implementation narrative available."),
-        "evidence_basis": solution.get("evidence_basis", ""),
+        "societal_impact": display_solution.get("societal_impact", "No societal impact data available."),
+        "expected_effects": display_solution.get("expected_effect", []),
+        "complexity": display_solution.get("implementation_complexity", "Unknown"),
+        "solution_title": display_solution.get("solution_title", "Proposed Solution"),
+        "detailed_description": display_solution.get("detailed_description", "No detailed implementation narrative available."),
+        "evidence_basis": display_solution.get("evidence_basis", ""),
         "uncertainties": solution.get("uncertainties", []),
         "recommendation_mode": service_match.get("recommendation_mode", "new_service_candidate"),
         "reliability_band": reliability_band,
@@ -4140,39 +4134,46 @@ Remember:
                 input_json={"hotspot": selected_micro, "challenge": state["selected_challenge"]}
             )
             
-            solution_raw = await run_agent_once(solution_agent, session_id, solution_prompt)
-            sanitized_solution = safe_json_loads(solution_raw)
-            claim_audit = audit_solution_claims(sanitized_solution, decision_package)
-            
-            # Save Solution and Log Completion
-            persistence_service.log_agent_completion(run_id, output_json=claim_audit.sanitized_solution)
-            # If we have a list of solutions, save them
-            solutions = claim_audit.sanitized_solution.get("PROPOSED_SOLUTIONS", [])
-            if solutions:
-                persistence_service.save_solution_options(run_id, str(uuid.uuid4()), solutions) # hotspot_id can be dummy or found from DB
-            
-            state["claim_audit"] = {
-                "pass_check": claim_audit.pass_check,
-                "hard_fail": claim_audit.hard_fail,
-                "removed_claims": claim_audit.removed_claims,
-                "rewritten_fields": claim_audit.rewritten_fields,
-                "warnings": claim_audit.warnings,
-            }
-            state["solution_result"] = claim_audit.sanitized_solution
-            state["step_index"] = 1
-            sanitized_solution_raw = json.dumps(claim_audit.sanitized_solution, ensure_ascii=False, indent=2)
-            display_reply = format_step_reply("Generate solutions", sanitized_solution_raw)
-            state["last_step_output"] = sanitized_solution_raw
-            state["last_display_reply"] = display_reply
-            state["last_agent_name"] = solution_agent.name
-            state["output_key"] = "solution_result"
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "stage": "Generate solutions",
-                "reply": display_reply,
-                "needs_input": True,
-            }
+            try:
+                solution_raw = await run_agent_once(solution_agent, session_id, solution_prompt)
+                sanitized_solution = safe_json_loads(solution_raw)
+                claim_audit = audit_solution_claims(sanitized_solution, decision_package)
+                
+                # Save Solution and Log Completion
+                persistence_service.log_agent_completion(run_id, output_json=claim_audit.sanitized_solution)
+                # If we have a list of solutions, save them
+                solutions = claim_audit.sanitized_solution.get("PROPOSED_SOLUTIONS", [])
+                if solutions:
+                    # Use actual hotspot_id from the selection if available, else fallback to dummy
+                    db_hotspot_id = selected_micro.get("hotspot_id") or str(uuid.uuid4())
+                    persistence_service.save_solution_options(run_id, db_hotspot_id, solutions)
+                
+                state["claim_audit"] = {
+                    "pass_check": claim_audit.pass_check,
+                    "hard_fail": claim_audit.hard_fail,
+                    "removed_claims": claim_audit.removed_claims,
+                    "rewritten_fields": claim_audit.rewritten_fields,
+                    "warnings": claim_audit.warnings,
+                }
+                state["solution_result"] = claim_audit.sanitized_solution
+                state["step_index"] = 0  # CRITICAL: Set to 0 so the planning loop reviews this output first
+                sanitized_solution_raw = json.dumps(claim_audit.sanitized_solution, ensure_ascii=False, indent=2)
+                display_reply = format_step_reply("Generate solutions", sanitized_solution_raw)
+                state["last_step_output"] = sanitized_solution_raw
+                state["last_display_reply"] = display_reply
+                state["last_agent_name"] = solution_agent.name
+                state["output_key"] = "solution_result"
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "stage": "Generate solutions",
+                    "reply": display_reply,
+                    "needs_input": True,
+                }
+            except Exception as inner_exc:
+                persistence_service.log_agent_completion(run_id, output_json={}, status="failed", error_message=str(inner_exc))
+                raise inner_exc
+
         except Exception as exc:
             state["phase"] = "specific_card_selection"
             return {
@@ -4217,10 +4218,21 @@ Remember:
         )
         new_raw_step_output = await run_agent_once(step_agent, session_id, rerun_prompt)
 
-        display_reply = format_step_reply(step_name, new_raw_step_output)
-
+        # Normal increment for previous steps
+        state["step_index"] = step_index
         state["last_step_output"] = new_raw_step_output
-        state["last_display_reply"] = display_reply
+        
+        # CRITICAL FIX: Ensure the state variable for this step is updated
+        # so downstream steps don't use stale/rejected data.
+        if output_key:
+            try:
+                state[output_key] = safe_json_loads(new_raw_step_output)
+            except:
+                state[output_key] = new_raw_step_output
+        
+        new_display_reply = format_step_reply(step_name, new_raw_step_output)
+        state["last_display_reply"] = new_display_reply
+        display_reply = new_display_reply
 
         if step_name == "Building simulations":
             city_name = (state.get("target_places") or ["Kuala Lumpur"])[0]
@@ -4284,11 +4296,8 @@ Remember:
         }
 
     selected_output = review_result["final_output"] or raw_step_output
-    if step_name != "Building simulations":
+    if step_name == "Generate solutions":
         parsed_selected_output = safe_json_loads(selected_output)
-    if step_name == "Plan improvements":
-        state["planning_result"] = parsed_selected_output
-    elif step_name == "Generate solutions":
         decision_package = state.get("decision_package") or build_decision_package(
             selected_city=(state.get("target_places") or ["Kuala Lumpur"])[0],
             selected_micro=state.get("selected_micro", {}),
@@ -4355,7 +4364,6 @@ Remember:
         next_prompt = build_building_prompt(
             selected_challenge=state["selected_challenge"],
             selected_micro=state["selected_micro"],
-            planning_result=state["planning_result"],
             solution_result=state["solution_result"],
             decision_package=decision_package,
             route_roads=route_roads or None,
