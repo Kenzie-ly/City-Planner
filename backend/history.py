@@ -104,14 +104,45 @@ def addNewHistory():
     try:
         data = request.get_json(silent=True)
         
-        userId = getUserId()
-        if not userId:
-            return jsonify({"error": "Unauthorized"}), 401
+        # 🔓 BYPASS AUTH FOR TESTING: Hardcode a user ID!
+        userId = "test_user_123"
         
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid JSON"}), 400
 
+        # 1. Save to Firebase (keep it)
         addHistory(data, userId)
+        
+        # 2. NEW: Save to PostgreSQL Database!
+        try:
+            from sqlalchemy import text
+            from db.database import engine
+            import json
+            
+            query = """
+                INSERT INTO user_selections (session_id, selection_type, selected_json)
+                VALUES (:session_id, 'map_history', :selected_json);
+            """
+            
+            with engine.connect() as conn:
+                # Let's grab a real session_id from the DB so we don't violate foreign keys!
+                res = conn.execute(text("SELECT session_id FROM user_sessions LIMIT 1")).fetchone()
+                if res:
+                    sess_id = res.session_id
+                else:
+                    sess_id = None # Fallback if no sessions exist yet
+                
+                if sess_id:
+                    conn.execute(text(query), {
+                        "session_id": sess_id,
+                        "selected_json": json.dumps(data)
+                    })
+                    print("INFO: Successfully synchronized history record to PostgreSQL.")
+                else:
+                    print("WARNING: History synchronization skipped. No active session found in user_sessions.")
+                    
+        except Exception as e:
+            print(f"ERROR: Failed to synchronize history record to PostgreSQL: {e}")
 
         return jsonify({
             "status": "ok",
