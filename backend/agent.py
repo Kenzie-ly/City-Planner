@@ -143,12 +143,23 @@ find_needs_agent = LlmAgent(
           "CHALLENGE_1": {
             "CHALLENGE_TYPE": "<one of the scope items above, e.g., transit_desert>",
             "TITLE": "<user-friendly challenge title>",
+            "CHALLENGE_THEME": "<same as title or more descriptive theme>",
             "BRIEF_DESCRIPTION": "<1-3 sentences synthesizing the indicators and RAG context for the user>",
+            "STATISTICS": {
+              "indicator_name_1": 12.3,
+              "indicator_name_2": 45.6
+            },
+            "CHART_SPEC": {
+              "chart_type": "bar",
+              "labels": ["Label 1", "Label 2"],
+              "values": [12.3, 45.6]
+            },
+            "NOTE": "Labels in CHART_SPEC MUST exactly match the keys used in STATISTICS.",
             "SOURCES": [
               {
                 "publisher": "<publisher name>",
                 "url": "https://...",
-                "published_at": "YYYY-MM-DD or YYYY-MM or YYYY",
+                "published_at": "YYYY-MM-DD",
                 "source_tier": "government | operator | study | major_media | local_media"
               }
             ],

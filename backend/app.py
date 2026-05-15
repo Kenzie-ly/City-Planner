@@ -3447,6 +3447,7 @@ Remember:
                 f"Location confirmed: {', '.join(parsed['places'])}. Moving to the planning phase.\n\n"
                 + planning_response["reply"]
             )
+            return planning_response
 
         return {
             "ok": True,
