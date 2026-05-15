@@ -43,7 +43,7 @@ from reliability import (
     audit_solution_claims,
     validate_geo_consistency,
 )
-import persistence_service
+# import persistence_service # Moved inside handlers
 
 load_dotenv("../.env")
 load_dotenv()
@@ -62,7 +62,7 @@ app.add_middleware(
 )
 
 from sqlalchemy import text
-from db.database import engine
+# from db.database import engine # Moved inside handlers
 from google import genai
 from google.genai import types
 import os
@@ -70,6 +70,7 @@ import json
 
 @app.get("/api/diagnostic/hotspots")
 async def get_diagnostic_hotspots(area_id: str):
+    from db.database import engine
     query = """
         SELECT p.name as poi_name, e.name as road_name, p.poi_category
         FROM osm_pois p
@@ -242,6 +243,7 @@ class SelectHotspotRequest(BaseModel):
 ### Solution Readiness Pack ###
 @app.post("/api/diagnostic/hotspots/select")
 async def select_hotspot(req: SelectHotspotRequest):
+    from db.database import engine
     # 1. Fetch the POI and nearest road from DB
     query = """
         SELECT p.name as poi_name, e.name as road_name, p.poi_category, p.geom
@@ -327,6 +329,7 @@ class GenerateSolutionsRequest(BaseModel):
 
 @app.post("/api/solutions/generate")
 async def generate_solutions(req: GenerateSolutionsRequest):
+    from db.database import engine
     # 1. Fetch the Solution Readiness Pack from DB
     query = """
         SELECT pack_json, area_id 
@@ -1375,6 +1378,7 @@ async def _generate_area_options(session_id: str, city: str) -> list[dict[str, A
     ########################################
 
     # NEW FLOW: Database-driven Indicator Engine & Evidence Pack
+    from db.database import engine
     options = []
     try:
         # 1. Resolve Area (Find area_id for the city)
@@ -3352,6 +3356,7 @@ def analyze_selected_micro(selected_micro: dict[str, Any], selected_city: str) -
 
 @app.post("/api/start")
 async def start(req: StartRequest):
+    from db.database import engine
     session_id = str(uuid.uuid4())
     session = await session_service.create_session(
         app_name=APP_NAME,

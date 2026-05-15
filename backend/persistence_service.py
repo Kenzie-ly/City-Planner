@@ -2,9 +2,10 @@ import uuid
 import json
 from datetime import datetime
 from sqlalchemy import text
-from db.database import engine
+# from db.database import engine # Defer import to runtime
 
 def log_agent_start(session_id: str, agent_name: str, area_id: str = None, evidence_pack_id: str = None, input_json: dict = None) -> str:
+    from db.database import engine
     agent_run_id = str(uuid.uuid4())
     with engine.begin() as conn:
         conn.execute(
@@ -24,6 +25,7 @@ def log_agent_start(session_id: str, agent_name: str, area_id: str = None, evide
     return agent_run_id
 
 def log_agent_completion(agent_run_id: str, output_json: dict, status: str = "success", error_message: str = None):
+    from db.database import engine
     with engine.begin() as conn:
         conn.execute(
             text("""
@@ -40,6 +42,7 @@ def log_agent_completion(agent_run_id: str, output_json: dict, status: str = "su
         )
 
 def save_broad_challenge_cards(agent_run_id: str, area_id: str, challenges: list[dict]):
+    from db.database import engine
     with engine.begin() as conn:
         for idx, card in enumerate(challenges):
             # Try to find a matching problem direction if it exists
@@ -69,6 +72,7 @@ def save_broad_challenge_cards(agent_run_id: str, area_id: str, challenges: list
             )
 
 def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict]):
+    from db.database import engine
     with engine.begin() as conn:
         for idx, card in enumerate(hotspots):
             hotspot_id = str(uuid.uuid4())
@@ -107,6 +111,7 @@ def save_hotspot_cards(agent_run_id: str, area_id: str, hotspots: list[dict]):
             )
 
 def save_solution_options(agent_run_id: str, hotspot_id: str, solutions: list[dict]):
+    from db.database import engine
     with engine.begin() as conn:
         for idx, sol in enumerate(solutions):
             conn.execute(

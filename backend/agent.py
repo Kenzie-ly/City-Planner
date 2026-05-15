@@ -13,9 +13,9 @@ from google.adk.tools.google_search_tool import GoogleSearchTool
 import re
 from building_agent_helper import process_agent_assets, format_entities
 import json
-from area_resolver import resolve_area
-from indicator_engine import run_indicator_engine
-from evidence_pack_builder.evidence_pack_builder import build_general_evidence_pack
+# from area_resolver import resolve_area  # Defer to runtime
+# from indicator_engine import run_indicator_engine # Defer to runtime
+# from evidence_pack_builder.evidence_pack_builder import build_general_evidence_pack # Defer to runtime
 
 # Load API key from .env file
 load_dotenv()
@@ -734,6 +734,10 @@ class InfrastructurePlannerOrchestrator(BaseAgent):
                 if attempt == True:
                     if step_name == "Find needs":
                         # NEW: Resolve area and build evidence pack
+                        from area_resolver import resolve_area
+                        from indicator_engine import run_indicator_engine
+                        from evidence_pack_builder.evidence_pack_builder import build_general_evidence_pack
+                        
                         target_places = ctx.session.state.get("target_places", [])
                         if not target_places:
                             raise RuntimeError("No target places found in session state. Run intake first.")

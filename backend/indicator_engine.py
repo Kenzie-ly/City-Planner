@@ -1,9 +1,10 @@
 from sqlalchemy import text
 
-from db.database import engine
+# from db.database import engine  # Moved inside functions to prevent eager startup connection
 
 
 def build_area_gtfs_links(area_id: str):
+    from db.database import engine
     with engine.begin() as conn:
         # Check if the area is large (like a state) or small (like a neighborhood)
         row = conn.execute(
@@ -73,6 +74,7 @@ def build_area_gtfs_links(area_id: str):
 
 
 def build_route_frequency_summary(area_id: str):
+    from db.database import engine
     with engine.begin() as conn:
         conn.execute(
             text("""
@@ -133,6 +135,7 @@ def build_route_frequency_summary(area_id: str):
 
 
 def build_transit_coverage_summary(area_id: str):
+    from db.database import engine
     with engine.begin() as conn:
         # Check if the area is large (like a state)
         row = conn.execute(
@@ -216,6 +219,7 @@ def build_transit_coverage_summary(area_id: str):
 
 
 def build_demand_proxy_summary(area_id: str):
+    from db.database import engine
     with engine.begin() as conn:
         conn.execute(
             text("""
@@ -268,6 +272,7 @@ def build_demand_proxy_summary(area_id: str):
 
 
 def build_candidate_problem_directions(area_id: str):
+    from db.database import engine
     with engine.begin() as conn:
         conn.execute(
             text("""
