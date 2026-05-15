@@ -2498,12 +2498,14 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                 LIMIT 50
             """), {"lat": lat, "lon": lon}).mappings().all()
             
+            import time
+            suffix = str(int(time.time()))[-4:]
             for stop in stops:
                 el_type = stop["stop_type"]
                 name = stop["stop_name"]
-                # Use a consistent prefix based on type for the ID check
+                # Use a consistent prefix + suffix to ensure global uniqueness
                 prefix = "db_bus_stop" if el_type == "bus_stop" else "db_station"
-                eid = f"{prefix}_{stop['lat']}_{stop['lon']}"
+                eid = f"{prefix}_{stop['lat']}_{stop['lon']}_{suffix}"
                 if eid in seen_ids: continue
                 seen_ids.add(eid)
                 
@@ -2537,7 +2539,7 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             for poi in pois:
                 cat = poi["poi_category"] or "poi"
                 name = poi["name"]
-                eid = f"db_poi_{poi['lat']}_{poi['lon']}"
+                eid = f"db_poi_{poi['lat']}_{poi['lon']}_{suffix}"
                 if eid in seen_ids: continue
                 seen_ids.add(eid)
                 entities.append({
@@ -3374,7 +3376,7 @@ def _build_done_response(
     map_layers = {
         "proposal": [_decorate_layer_entity(ent, layer="proposal", priority=100, label_mode="always") for ent in proposal_entities],
         "anchors": [_decorate_layer_entity(ent, layer="anchors", priority=80, label_mode="zoom") for ent in anchor_entities],
-        "context": [_decorate_layer_entity(ent, layer="context", priority=20, label_mode="hidden", muted=True) for ent in context_entities],
+        "context": [_decorate_layer_entity(ent, layer="context", priority=20, label_mode="hidden", muted=True) for ent in context_entities[:150]], # Hard limit to prevent 413
         "analysis": [_decorate_layer_entity(ent, layer="analysis", priority=10, label_mode="hidden", muted=True) for ent in analysis_entities],
     }
     merged_entities = _flatten_map_layers(map_layers)
