@@ -2501,13 +2501,15 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             for stop in stops:
                 el_type = stop["stop_type"]
                 name = stop["stop_name"]
-                eid = f"db_station_{stop['lat']}_{stop['lon']}"
+                # Use a consistent prefix based on type for the ID check
+                prefix = "db_bus_stop" if el_type == "bus_stop" else "db_station"
+                eid = f"{prefix}_{stop['lat']}_{stop['lon']}"
                 if eid in seen_ids: continue
                 seen_ids.add(eid)
                 
                 if el_type == "bus_stop":
                     entities.append({
-                        "id": f"db_bus_stop_{stop['lat']}_{stop['lon']}",
+                        "id": eid, # Use the already checked unique ID
                         "entity_type": "point",
                         "name": name or "Bus Stop",
                         "blurb": "Existing bus stop (DB)",
@@ -2516,7 +2518,7 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                     })
                 elif el_type in ["station", "rail_station", "bus_station", "platform"]:
                     entities.append({
-                        "id": f"db_station_{stop['lat']}_{stop['lon']}",
+                        "id": eid, # Use the already checked unique ID
                         "entity_type": "point",
                         "name": name or "Transit Station",
                         "blurb": "Existing transit station (DB)",
@@ -3548,7 +3550,13 @@ FEEDBACK: <your greeting and question>
 
 async def _persist_current_state(session_id: str):
     if session_id in workflow_state:
-        persistence_service.save_session_state(session_id, workflow_state[session_id])
+        # Scrub large blocks to prevent HTTP 413 and DB bloat
+        state_copy = dict(workflow_state[session_id])
+        keys_to_scrub = ["entities", "map_layers", "evidence_summary", "analysis_result_raw"]
+        for key in keys_to_scrub:
+            if key in state_copy:
+                del state_copy[key]
+        persistence_service.save_session_state(session_id, state_copy)
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
