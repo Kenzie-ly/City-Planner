@@ -39,6 +39,7 @@
         html,
         body {
             height: 100%;
+            height: 100dvh;
         }
 
         body {
@@ -736,23 +737,6 @@
             transform: none;
         }
 
-        #status {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 20;
-            max-width: 400px;
-            padding: 10px 18px;
-            border-radius: 14px;
-            background: rgba(7, 13, 26, 0.82);
-            border: 1px solid rgba(127, 231, 255, 0.22);
-            color: #fff;
-            font-size: 0.82rem;
-            font-weight: 700;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-            pointer-events: none;
-        }
 
         .buildings-count {
             padding: 10px 18px;
@@ -805,36 +789,6 @@
             background: rgba(0, 51, 102, 0.96);
         }
 
-        /* Banner */
-        #placeBanner {
-            position: absolute;
-            top: 12px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 51, 102, 0.88);
-            color: #fff;
-            padding: 7px 20px;
-            border-radius: 50px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            pointer-events: none;
-            z-index: 10;
-            padding: 12px 18px;
-            border-radius: 999px;
-            background: rgba(7, 13, 26, 0.82);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: #eef5ff;
-            font-size: 0.82rem;
-            font-weight: 700;
-            backdrop-filter: blur(10px);
-            white-space: nowrap;
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
-        }
-
-        #placeBanner.placed {
-            background: rgba(26, 86, 54, 0.94);
-            border-color: rgba(53, 208, 127, 0.22);
-        }
 
         /* ── CHANGE 1: Legend — 6 merged categories, single column with subtitles ── */
         #legend {
@@ -1174,8 +1128,7 @@
 
 
         body.chat-mode .city-chips,
-        body.chat-mode .clear-row,
-        body.chat-mode #status {
+        body.chat-mode .clear-row {
             display: none !important;
         }
 
@@ -1188,10 +1141,6 @@
             display: flex;
         }
 
-        body.map-mode #status {
-            display: block;
-        }
-
         body.map-mode .input-group {
             display: none !important;
         }
@@ -1201,8 +1150,8 @@
             grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
             grid-template-rows: 1fr;
             grid-template-areas: "main side";
-            height: 100%;
-            min-height: 100vh;
+            height: 100vh;
+            height: 100dvh;
             overflow: hidden;
         }
 
@@ -1387,8 +1336,6 @@
 
         @media (max-width: 640px) {
             .container {
-                width: 100%;
-                height: 100%;
                 margin: 0;
                 gap: 10px;
                 padding: 10px;
@@ -1411,7 +1358,8 @@
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                max-width: calc(100vw - 80px); /* enough space for hamburger */
+                max-width: calc(100vw - 80px);
+                /* enough space for hamburger */
             }
 
             .header-subtitle {
@@ -1450,7 +1398,7 @@
             .input-group {
                 left: 10px;
                 right: 10px;
-                bottom: max(10px, env(safe-area-inset-bottom, 10px));
+                bottom: max(12px, env(safe-area-inset-bottom, 12px));
             }
 
             .chat-bubble {
@@ -1833,7 +1781,6 @@
                             <p>Loading map data...</p>
                         </div>
                     </div>
-
 
 
                     <div id="map-popup">
@@ -2234,42 +2181,10 @@
             })();
 
 
-            setupClickToPlace();
             createPopups();
         }
 
         // ── STATE ──
-        let chosenLat = null, chosenLng = null, pinEntity = null;
-        const banner = document.getElementById('placeBanner');
-        const status = document.getElementById('status');
-
-        // ── BUILDING STACK ──
-        const buildingStack = [];
-
-        function updateBuildingUI() {
-            const n = buildingStack.length;
-            document.getElementById('buildingCount').textContent =
-                n === 0 ? 'No buildings placed' : `${n} building${n > 1 ? 's' : ''} on map`;
-            document.getElementById('btnClearLast').disabled = n === 0;
-            document.getElementById('btnClearAll').disabled = n === 0;
-        }
-
-        function clearLast() {
-            if (!viewer) return;
-            if (!buildingStack.length) return;
-            viewer.entities.remove(buildingStack.pop());
-            updateBuildingUI();
-            status.innerText = `↩ Last building removed. ${buildingStack.length} remaining.`;
-        }
-
-        function clearAll() {
-            if (!viewer) return;
-            if (!buildingStack.length) return;
-            buildingStack.forEach(e => viewer.entities.remove(e));
-            buildingStack.length = 0;
-            updateBuildingUI();
-            status.innerText = '🗑 All buildings cleared.';
-        }
 
         // ── COLOR HELPERS ──
         function hexToCesiumColor(hex, alpha) {
@@ -2283,19 +2198,6 @@
         }
 
         // ── BLUE BUILD-SITE PIN ──
-        function makePinCanvas() {
-            const c = document.createElement('canvas');
-            c.width = 28; c.height = 44;
-            const ctx = c.getContext('2d');
-            ctx.beginPath(); ctx.arc(14, 14, 12, 0, Math.PI * 2);
-            ctx.fillStyle = '#003366'; ctx.fill();
-            ctx.strokeStyle = '#00ccff'; ctx.lineWidth = 2.5; ctx.stroke();
-            ctx.beginPath(); ctx.arc(14, 14, 5, 0, Math.PI * 2);
-            ctx.fillStyle = '#00ccff'; ctx.fill();
-            ctx.beginPath(); ctx.moveTo(14, 26); ctx.lineTo(14, 42);
-            ctx.strokeStyle = '#003366'; ctx.lineWidth = 4; ctx.stroke();
-            return c.toDataURL();
-        }
 
         // ── RED NAV PIN ──
         function makeNavPinCanvas() {
@@ -2519,20 +2421,20 @@
                 if (window.innerWidth <= 640 && chatMessages && header) {
                     const st = Math.max(0, chatMessages.scrollTop);
                     const currentProgress = parseFloat(header.style.getPropertyValue('--scroll-progress')) || 0;
-                    
+
                     // Check if the user has hit the absolute bottom of the scrollable area
                     const isAtBottom = st + chatMessages.clientHeight >= chatMessages.scrollHeight - 2;
-                    
+
                     const maxScroll = 60;
                     let progress = Math.min(st / maxScroll, 1);
-                    
+
                     // Prevent layout thrashing at the bottom: 
                     // If the container expanding forced the scrollTop to decrease, but the user is at the bottom,
                     // we lock the progress from decreasing to prevent the infinite bounce loop.
                     if (isAtBottom && st > 0) {
                         progress = Math.max(currentProgress, progress);
                     }
-                    
+
                     header.style.setProperty('--scroll-progress', progress);
                 } else if (header) {
                     header.style.setProperty('--scroll-progress', 0);
@@ -2553,7 +2455,7 @@
                 }, { passive: true });
             }
             window.addEventListener("resize", updateScrollProgress, { passive: true });
-            
+
             // Allow tapping the header to quickly snap it open if it's fully collapsed
             if (header) {
                 header.addEventListener("click", (e) => {
@@ -3191,9 +3093,6 @@
         function flyToCity(name, lat, lng) {
             if (!viewer) return;
 
-            status.innerText = `Flying to ${name}. Click to pin your build location.`;
-            banner.textContent = '📍 Click anywhere on the map to choose a build location';
-            banner.classList.remove('placed');
             if (window.navMarker) { viewer.entities.remove(window.navMarker); window.navMarker = null; }
             viewer.camera.flyTo({
                 destination: Cesium.Cartesian3.fromDegrees(lng, lat, 900),
@@ -3422,6 +3321,7 @@
                         }
 
                         console.log("🗺️ Calling showMapView...");
+                        showLoader();
                         showMapView();
                         console.log("✅ showMapView done");
 
@@ -3431,6 +3331,7 @@
 
                         console.log("📊 Calling applyMapPayload...");
                         applyMapPayload(data);
+                        hideLoader();
                         console.log("✅ applyMapPayload done");
 
                         // ── Navigate camera — prefer explicit camera from backend ──

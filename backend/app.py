@@ -3534,6 +3534,7 @@ FEEDBACK: <your greeting and question>
     greeting_text = await run_agent_once(place_intake_agent, session.id, greeting_prompt)
     greeting_parsed = parse_place_result(greeting_text)
     workflow_state[session.id] = {"phase": "intake"}
+    persistence_service.save_session_state(session.id, workflow_state[session.id])
 
     return {
         "ok": True,
@@ -3543,6 +3544,10 @@ FEEDBACK: <your greeting and question>
         "needs_input": True,
     }
 
+
+async def _persist_current_state(session_id: str):
+    if session_id in workflow_state:
+        persistence_service.save_session_state(session_id, workflow_state[session_id])
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
@@ -3556,13 +3561,19 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     # Session Validation - Ensure session exists
     ################################################
     if session_id not in workflow_state:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # Persistence Fallback: Try to reload session from DB
+        persisted_state = persistence_service.load_session_state(session_id)
+        if persisted_state:
+            workflow_state[session_id] = persisted_state
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
 
     current_session = await session_service.get_session(
         app_name=APP_NAME,
         user_id=session_id,
         session_id=session_id,
     )
+    background_tasks.add_task(_persist_current_state, session_id)
     state = workflow_state[session_id]
     phase = state["phase"]
 
