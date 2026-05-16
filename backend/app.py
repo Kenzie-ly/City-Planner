@@ -1029,8 +1029,10 @@ def build_find_needs_options(raw_step_output: str) -> tuple[list[dict[str, Any]]
             {
                 "id": f"challenge_{idx}",
                 "title": title,
+                "CHALLENGE_THEME": title, # Keep uppercase for backend compatibility
                 "statistics": statistics,
                 "brief_description": brief,
+                "BRIEF_DESCRIPTION": brief, # Keep uppercase for backend compatibility
                 "chart_spec": normalized_chart,
                 "sources": valid_sources,
             }
@@ -1100,8 +1102,10 @@ def build_find_needs_options_legacy_fallback(
             {
                 "id": f"challenge_{idx}",
                 "title": title,
+                "CHALLENGE_THEME": title, # Keep uppercase for backend compatibility
                 "statistics": stats,
                 "brief_description": brief,
+                "BRIEF_DESCRIPTION": brief, # Keep uppercase for backend compatibility
                 "chart_spec": chart,
                 "sources": sources,
             }
@@ -1145,10 +1149,12 @@ def build_generic_find_needs_options(
             {
                 "id": f"challenge_{idx}",
                 "title": f"{area}: {title_suffix}",
+                "CHALLENGE_THEME": f"{area}: {title_suffix}", # Keep uppercase for backend compatibility
                 "statistics": stats,
                 "brief_description": brief,
+                "BRIEF_DESCRIPTION": brief, # Keep uppercase for backend compatibility
                 "chart_spec": {"chart_type": "bar", "labels": labels, "values": values},
-                "sources": carry_sources[:2],
+                "sources": carry_sources[:],
             }
         )
     return options
