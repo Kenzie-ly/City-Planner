@@ -83,10 +83,17 @@ function renderEntities(entities) {
     }
 
     // 4. ADD ENTITIES
-    entities.forEach(entity => {
+    entities.forEach((entity, index) => {
         let added = null;
 
         try {
+            // Eliminate duplicates: If it already exists, skip drawing it!
+            let safeId = entity.id || `entity_${index}`;
+            if (viewer.entities.getById(safeId)) {
+                return; // Skip this duplicate entity
+            }
+            entity.id = safeId;
+
             switch (entity.entity_type) {
                 case 'polyline':
                 case 'polyline_existing':

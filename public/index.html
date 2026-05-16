@@ -2556,11 +2556,25 @@
                 console.log(`📦 Layers found — proposal:${proposal.length}, anchors:${anchors.length}, analysis:${analysis.length}, context:${context.length}`);
             }
 
-            // ✅ Fall back to flat entities array if map_layers yielded nothing
-            if (entities.length === 0 && Array.isArray(data.entities) && data.entities.length > 0) {
-                console.log(`📦 Falling back to data.entities (${data.entities.length})`);
-                entities = data.entities;
+            // ✅ Also merge data.entities (e.g. cluster POIs added by renderImplementationClusters)
+            if (Array.isArray(data.entities) && data.entities.length > 0) {
+                if (entities.length === 0) {
+                    // No map_layers at all — use data.entities directly
+                    entities = data.entities;
+                } else {
+                    // Merge cluster entities in but skip any already in map_layers
+                    entities = [...entities, ...data.entities];
+                }
             }
+
+            // ✅ Final deduplication pass — prevent Cesium "entity already exists" crash
+            const seenIds = new Set();
+            entities = entities.filter(e => {
+                const id = e && e.id;
+                if (!id || seenIds.has(id)) return false;
+                seenIds.add(id);
+                return true;
+            });
 
             if (entities.length === 0) {
                 console.warn("⚠️ No entities to render from any source");
@@ -3320,10 +3334,21 @@
                             console.log("🔧 Generating entities from implementation clusters...");
                             const clusterEntities = renderImplementationClusters(data.implementation_clusters, { showMap: false });
                             if (clusterEntities && clusterEntities.length > 0) {
+                                // Build a set of ALL IDs already in any map layer to avoid duplicates
+                                const existingIds = new Set();
+                                Object.values(data.map_layers || {}).forEach(layer => {
+                                    if (Array.isArray(layer)) layer.forEach(e => existingIds.add(e.id));
+                                });
+                                // Also collect IDs already in data.entities
+                                (data.entities || []).forEach(e => existingIds.add(e.id));
+                                
+                                const uniqueClusterEntities = clusterEntities.filter(e => !existingIds.has(e.id));
+                                console.log(`🔍 Cluster entities: ${clusterEntities.length} total, ${uniqueClusterEntities.length} unique (${clusterEntities.length - uniqueClusterEntities.length} duplicates removed)`);
+                                
                                 if (!Array.isArray(data.entities)) data.entities = [];
-                                data.entities.push(...clusterEntities);
+                                data.entities.push(...uniqueClusterEntities);
                             }
-                            console.log(`✅ Added ${clusterEntities?.length || 0} cluster entities to payload`);
+                            console.log(`✅ Done merging cluster entities into payload`);
                         }
 
                         console.log("🗺️ Calling showMapView...");

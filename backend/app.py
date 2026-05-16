@@ -2496,16 +2496,12 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                 FROM osm_transit_stops
                 WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 0.03)
                 LIMIT 50
-            """), {"lat": lat, "lon": lon}).mappings().all()
-            
-            import time
-            suffix = str(int(time.time()))[-4:]
             for stop in stops:
                 el_type = stop["stop_type"]
                 name = stop["stop_name"]
-                # Use a consistent prefix + suffix to ensure global uniqueness
+                # Use a consistent prefix to ensure global uniqueness based on location
                 prefix = "db_bus_stop" if el_type == "bus_stop" else "db_station"
-                eid = f"{prefix}_{stop['lat']}_{stop['lon']}_{suffix}"
+                eid = f"{prefix}_{stop['lat']}_{stop['lon']}"
                 if eid in seen_ids: continue
                 seen_ids.add(eid)
                 
@@ -2539,11 +2535,11 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
             for poi in pois:
                 cat = poi["poi_category"] or "poi"
                 name = poi["name"]
-                eid = f"db_poi_{poi['lat']}_{poi['lon']}_{suffix}"
+                eid = f"db_poi_{poi['lat']}_{poi['lon']}"
                 if eid in seen_ids: continue
                 seen_ids.add(eid)
                 entities.append({
-                    "id": f"db_poi_{poi['lat']}_{poi['lon']}",
+                    "id": eid,
                     "entity_type": "point",
                     "name": name or cat.title(),
                     "blurb": f"POI: {cat} (DB)",
