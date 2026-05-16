@@ -2808,6 +2808,9 @@
             if (!input) return;
             input.value = promptText;
             input.focus();
+            
+            // ✅ Immediate effect: Trigger submission right away
+            submitPrompt();
         }
 
         async function retryWorkflowConnection() {
