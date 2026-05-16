@@ -2808,9 +2808,6 @@
             if (!input) return;
             input.value = promptText;
             input.focus();
-            
-            // ✅ Immediate effect: Trigger submission right away
-            submitPrompt();
         }
 
         async function retryWorkflowConnection() {
@@ -3523,10 +3520,16 @@
         }
 
         async function getAuthHeaders() {
-            return {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer fake_token_abc`
-            };
+            try {
+                const user = firebase.auth().currentUser;
+                const token = user ? await user.getIdToken() : null;
+                return {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {})
+                };
+            } catch (e) {
+                return { "Content-Type": "application/json" };
+            }
         }
 
 

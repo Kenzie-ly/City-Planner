@@ -6,7 +6,7 @@ require('dotenv').config();
 const app = express();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const WORKFLOW_API_BASE = process.env.WORKFLOW_API_BASE || 'http://localhost:8000';
-const HISTORY_API_BASE = process.env.HISTORY_API_BASE || 'http://localhost:8080';
+const HISTORY_API_BASE = process.env.HISTORY_API_BASE || 'http://localhost:8000';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -14,10 +14,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 async function proxyRequest(req, res, baseUrl, endpoint, method = 'POST') {
     try {
         const url = `${baseUrl}${endpoint}`;
-        const options = {
-            method: method,
-            headers: { 'Content-Type': 'application/json' }
-        };
+        const headers = { 'Content-Type': 'application/json' };
+        // Fix Bug 5: Forward the Authorization header from the browser
+        if (req.headers['authorization']) {
+            headers['Authorization'] = req.headers['authorization'];
+        }
+        const options = { method, headers };
         if (method !== 'GET') {
             options.body = JSON.stringify(req.body || {});
         }
