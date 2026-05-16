@@ -2951,7 +2951,7 @@ def format_micro_options(strict_json: dict[str, Any]) -> str:
         )
 
     return (
-        f"Selected challenge: {strict_json.get('CHALLENGE_THEME', 'N/A')}\n\n"
+        f"Selected challenge: {strict_json.get('CHALLENGE_THEME') or strict_json.get('title') or 'N/A'}\n\n"
         f"{block(1, primary)}\n\n{block(2, secondary)}\n\n"
         "Which micro-symptom would you like to route and analyze further?"
     )
@@ -4019,7 +4019,7 @@ Remember:
             }
 
         strict_json = {
-            "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+            "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME") or selected_challenge.get("title"),
             "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
             "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
             "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
@@ -4120,7 +4120,7 @@ Remember:
                 }
             
             strict_json = {
-                "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+                "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME") or selected_challenge.get("title"),
                 "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
                 "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
                 "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
@@ -4201,7 +4201,7 @@ Remember:
                         "needs_input": True,
                     }
                 strict_json = {
-                    "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME"),
+                    "CHALLENGE_THEME": selected_challenge.get("CHALLENGE_THEME") or selected_challenge.get("title"),
                     "MACRO_ROOT_CAUSE": selected_challenge.get("MACRO_ROOT_CAUSE"),
                     "WHY_IT_MATTERS": selected_challenge.get("WHY_IT_MATTERS"),
                     "EVIDENCE_SUMMARY": selected_challenge.get("EVIDENCE_SUMMARY"),
