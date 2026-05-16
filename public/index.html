@@ -1009,6 +1009,8 @@
             font-size: 0.78rem;
             line-height: 1.4;
             color: #d5e3f0;
+            white-space: pre-wrap; /* Allows newlines to render */
+            margin-top: 8px;
         }
 
         /* City chips */
@@ -2247,7 +2249,7 @@
 
                     popupBadge.textContent = type;
                     popupName.textContent = name;
-                    popupBlurb.textContent = blurb;
+                    popupBlurb.innerHTML = formatReply(blurb);
 
                     const mapFrame = document.querySelector('.map-frame');
                     const rect = mapFrame.getBoundingClientRect();
@@ -2347,6 +2349,9 @@
             formatted = formatted.replace(/(Primary location:)/g, "<strong>$1</strong>");
             formatted = formatted.replace(/(Roads:)/g, "<strong>$1</strong>");
             formatted = formatted.replace(/(Symptom:)/g, "<strong>$1</strong>");
+
+            // Markdown bold (**text**)
+            formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
             // Line breaks
             formatted = formatted.replace(/\n/g, "<br>");

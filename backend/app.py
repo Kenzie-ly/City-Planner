@@ -1929,7 +1929,7 @@ def build_hotspot_hypothesis_prompt(city: str, selected_challenge: dict[str, Any
             "lon": 101.5678,
             "confidence": "low | medium | high",
             "INTERVENTION_RECOMMENDATION": "BUS | TRAIN | BOTH",
-            "INTERVENTION_RATIONALE": "1-2 sentence rationale grounded in this specific hotspot",
+            "INTERVENTION_RATIONALE": "1-2 sentence rationale in plain, human language (avoid jargon; focus on how it helps residents, e.g. 'making bus arrivals more predictable')",
             "LINKED_FEEDER": {{ "needed": true, "type": "BUS", "lat": 3.1234, "lon": 101.5678, "label": "specific feeder node", "rationale": "..." }}
           }},
           ...

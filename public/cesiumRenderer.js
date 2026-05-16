@@ -20,24 +20,43 @@ function renderEntities(entities) {
     const buildLabel = (entity, baseOptions = {}, defaultMode = 'always') => {
         const labelMode = String(entity.label_mode || defaultMode || 'always').toLowerCase();
         if (labelMode === 'hidden' || labelMode === 'hover') return undefined;
+        
+        // Context/Analysis labels should be hidden by default unless very close
+        const isBackground = entity.layer === 'context' || entity.layer === 'analysis';
+        
         const label = {
-            font: '14px Inter, sans-serif',
+            font: isBackground ? '11px Inter, sans-serif' : '13px Inter, sans-serif',
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
+            outlineWidth: 1.5,
             showBackground: true,
-            backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
-            pixelOffset: new Cesium.Cartesian2(0, -30),
+            backgroundColor: Cesium.Color.BLACK.withAlpha(0.5),
+            pixelOffset: new Cesium.Cartesian2(0, -25),
             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            // REMOVED: disableDepthTestDistance - this allows buildings to hide distant labels!
+            distanceDisplayCondition: isBackground 
+                ? new Cesium.DistanceDisplayCondition(0.0, 800.0) 
+                : new Cesium.DistanceDisplayCondition(0.0, 3000.0),
             ...baseOptions,
             text: String(entity.name || 'Entity'),
         };
+        
         if (labelMode === 'zoom') {
-            label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 1400.0);
+            label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 1200.0);
         }
         return label;
+    };
+
+    /**
+     * Helper to safely add entities without ID collisions
+     */
+    const safeAdd = (config) => {
+        if (config.id && viewer.entities.getById(config.id)) {
+            // console.warn("Skipping duplicate entity ID:", config.id);
+            return null;
+        }
+        return viewer.entities.add(config);
     };
 
     // 2. PRE-CALCULATE SIMULATION BOUNDS
@@ -87,13 +106,9 @@ function renderEntities(entities) {
         let added = null;
 
         try {
-            // Eliminate duplicates: If it already exists, skip drawing it!
-            let safeId = entity.id || `entity_${index}`;
-            if (viewer.entities.getById(safeId)) {
-                return; // Skip this duplicate entity
-            }
-            entity.id = safeId;
-
+            // Ensure basic ID safety
+            entity.id = entity.id || `entity_${index}`;
+            
             switch (entity.entity_type) {
                 case 'polyline':
                 case 'polyline_existing':
@@ -106,10 +121,7 @@ function renderEntities(entities) {
                         segments = [segments];
                     }
 
-                    const isBridge = (entity.entity_type === 'polyline_new');
-                    const targetHeight = isBridge ? (entity.style && entity.style.height ? entity.style.height : 40) : 0;
-                    const shouldClamp = !isBridge;
-                    const baseWidth = isBridge ? 18 : 12;
+                    // Note: isBridge/shouldClamp/baseWidth are resolved per-segment inside the loop below
                     
                     segments.forEach((positions, sIdx) => {
                         // VALIDATION: Ensure positions is an array
@@ -125,19 +137,9 @@ function renderEntities(entities) {
                         const baseWidth = isBridge ? 18 : (isExisting ? 6 : 12);
                         const safeStyleColor = (entity.style && entity.style.color) ? entity.style.color : undefined;
                         const isPedestrian = (entity.name && (entity.name.toLowerCase().includes('pedestrian') || entity.name.toLowerCase().includes('walk')));
-                        const color = safeColor(safeStyleColor, isPedestrian ? Cesium.Color.fromCssColorString('#10B981') : Cesium.Color.YELLOW);
-                        const alpha = (entity.style && entity.style.alpha) ? entity.style.alpha : 0.8;
-
-                        let material = color.withAlpha(alpha);
-                        if (isExisting && entity.style && entity.style.dashed) {
-                            material = new Cesium.PolylineDashMaterialProperty({
-                                color: color.withAlpha(0.6),
-                                dashLength: 16
-                            });
-                        }
 
                         if (isBridge) {
-                            viewer.entities.add({
+                            safeAdd({
                                 id: entity.id + "_base_" + sIdx,
                                 polyline: {
                                     positions: Cesium.Cartesian3.fromDegreesArrayHeights(
@@ -150,10 +152,29 @@ function renderEntities(entities) {
                             });
                         }
 
+                        // FIX Bug 1: `mid` must be defined before safeAdd
                         const midIndex = Math.floor(validPositions.length / 2);
                         const mid = validPositions[midIndex];
 
-                        const addedSeg = viewer.entities.add({
+                        // Calculate physical metrics for interpretability
+                        let totalLengthMeters = 0;
+                        for (let i = 1; i < validPositions.length; i++) {
+                            const p1 = Cesium.Cartesian3.fromDegrees(validPositions[i - 1].lng, validPositions[i - 1].lat);
+                            const p2 = Cesium.Cartesian3.fromDegrees(validPositions[i].lng, validPositions[i].lat);
+                            totalLengthMeters += Cesium.Cartesian3.distance(p1, p2);
+                        }
+                        
+                        const lengthText = totalLengthMeters > 1000 
+                            ? (totalLengthMeters / 1000).toFixed(2) + " km" 
+                            : Math.round(totalLengthMeters) + " m";
+                        
+                        const speedKph = entity.speed || (isPedestrian ? 5 : 40);
+                        const travelTimeMinutes = (totalLengthMeters / 1000) / speedKph * 60;
+                        const timeText = travelTimeMinutes < 1 
+                            ? Math.round(travelTimeMinutes * 60) + " sec" 
+                            : travelTimeMinutes.toFixed(1) + " min";
+
+                        const addedSeg = safeAdd({
                             id: entity.id + "_" + sIdx,
                             name: entity.name,
                             position: Cesium.Cartesian3.fromDegrees(mid.lng, mid.lat, isBridge ? targetHeight + 20 : 0),
@@ -181,7 +202,13 @@ function renderEntities(entities) {
                         });
 
                         // Ensure ALL segments are tracked for cleanup/interaction
-                        addedSeg.blurb = entity.blurb || '';
+                        let blurb = entity.blurb || '';
+                        if (sIdx === 0 && totalLengthMeters > 0) {
+                            const stats = `\n\nThis corridor spans **${lengthText}**, and a typical trip would take about **${timeText}**.`;
+                            blurb += stats;
+                        }
+                        
+                        addedSeg.blurb = blurb;
                         addedSeg.entityType = entity.entity_type;
                         addedEntities.push(addedSeg);
 
@@ -192,7 +219,7 @@ function renderEntities(entities) {
 
                 case 'point': {
                     if (!entity.position || typeof entity.position.lng !== 'number' || typeof entity.position.lat !== 'number') break;
-                    added = viewer.entities.add({
+                    added = safeAdd({
                         id: entity.id,
                         name: entity.name,
                         position: Cesium.Cartesian3.fromDegrees(entity.position.lng, entity.position.lat, 0),
@@ -201,7 +228,6 @@ function renderEntities(entities) {
                             color: safeColor((entity.style && entity.style.color) ? entity.style.color : undefined, Cesium.Color.fromCssColorString('#3B82F6')).withAlpha((entity.style && (entity.style.alpha || entity.style.opacity)) ? (entity.style.alpha || entity.style.opacity) : 1.0),
                             outlineColor: Cesium.Color.WHITE,
                             outlineWidth: 2,
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
                             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                         },
                         label: buildLabel(entity, {
@@ -231,7 +257,7 @@ function renderEntities(entities) {
 
                     const pixelSize = hintStr.includes('large') ? 20 : hintStr.includes('small') ? 10 : 14;
 
-                    added = viewer.entities.add({
+                    added = safeAdd({
                         id: entity.id,
                         name: entity.name || entity.label || 'Point of Interest',
                         position: Cesium.Cartesian3.fromDegrees(Number(lon), Number(lat), 0),
@@ -240,7 +266,6 @@ function renderEntities(entities) {
                             color: poiColor,
                             outlineColor: Cesium.Color.WHITE,
                             outlineWidth: 2,
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
                             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
                         },
                         label: buildLabel(
@@ -256,7 +281,7 @@ function renderEntities(entities) {
                     if (!entity.building || typeof entity.building.length !== 'number' || typeof entity.building.width !== 'number' || typeof entity.building.height !== 'number') break;
                     if (!entity.position || typeof entity.position.lng !== 'number' || typeof entity.position.lat !== 'number') break;
                     
-                    added = viewer.entities.add({
+                    added = safeAdd({
                         id: entity.id,
                         name: entity.name,
                         position: Cesium.Cartesian3.fromDegrees(
@@ -281,7 +306,7 @@ function renderEntities(entities) {
                     const validPts = entity.polygon_positions.filter(p => p && typeof p.lng === 'number' && typeof p.lat === 'number');
                     if (validPts.length < 3) break;
 
-                    added = viewer.entities.add({
+                    added = safeAdd({
                         id: entity.id,
                         name: entity.name,
                         position: (() => {
@@ -332,7 +357,7 @@ function renderEntities(entities) {
                         })
                     ]);
 
-                    added = viewer.entities.add({
+                    added = safeAdd({
                         id: entity.id,
                         name: entity.name,
                         availability: availability,
@@ -350,7 +375,9 @@ function renderEntities(entities) {
                 }
             }
 
-            if (added) {
+            // Only push non-polyline types here — polylines manage their own blurb/push per-segment above.
+            const isPolylineType = ['polyline', 'polyline_existing', 'polyline_new'].includes(entity.entity_type);
+            if (added && !isPolylineType) {
                 added.blurb = entity.blurb || '';
                 added.entityType = entity.entity_type;
                 addedEntities.push(added);
