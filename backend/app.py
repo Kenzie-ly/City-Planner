@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import asyncio
+import firebase_admin
+from firebase_admin import firestore, auth as firebase_auth
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -15,6 +18,15 @@ import logging
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize Firebase for History
+try:
+    firebase_admin.initialize_app()
+    db = firestore.client()
+    logger.info("Firebase initialized successfully for History.")
+except Exception as e:
+    logger.error(f"Firebase initialization failed: {e}")
+    db = None
 
 from typing import Any
 import uuid
@@ -132,109 +144,126 @@ async def get_diagnostic_hotspots(area_id: str):
                     
     except Exception as e:
         print(f"Database error: {e}")
-        
-    # Fallback if DB is empty or fails
-    if not db_hotspots:
-        db_hotspots = [
-          {
-            "poi_name": "Johor Bahru Sentral",
-            "road_name": "Jalan Jim Quee",
-            "category": "station",
-            "demand_score": "10.0"
-          },
-          {
-            "poi_name": "City Square",
-            "road_name": "Jalan Wong Ah Fook",
-            "category": "mall",
-            "demand_score": "8.5"
-          }
-        ]
-        
-    # Try to use Gemini to generate smart descriptions!
+
+# --- HISTORY ENDPOINTS (Merged from history.py) ---
+
+def get_user_id(request: Request):
     try:
-        from google import genai
-        print(f"DEBUG: API Key loaded = {os.getenv('GEMINI_API_KEY')[:10]}...")
-        client = genai.Client() # Reads GEMINI_API_KEY
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return None
+        token = header.split("Bearer ")[1].strip()
+        if not token:
+            return None
+        decoded = firebase_auth.verify_id_token(token)
+        return decoded["uid"]
+    except Exception:
+        return None
+
+@app.get("/get_history")
+async def send_history_list(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        # Fallback for local testing or if auth fails
+        user_id = "test_user_123"
+    
+    if not db:
+        return JSONResponse({"error": "Firestore not initialized"}, status_code=500)
         
-        # --- RAG Integration ---
-        articles_context = ""
+    try:
+        docs = db.collection("users") \
+            .document(user_id) \
+            .collection("map_history") \
+            .order_by("last_seen", direction=firestore.Query.DESCENDING) \
+            .stream()
+
+        histories = []
+        for doc in docs:
+            data = doc.to_dict()
+            # Fix Bug 3: Firestore SERVER_TIMESTAMP is a sentinel — convert to string
+            for key in ("created_at", "last_seen"):
+                val = data.get(key)
+                if val is not None and not isinstance(val, (str, int, float, bool)):
+                    data[key] = str(val)
+            histories.append({"id": doc.id, **data})
+        
+        return histories
+    except Exception as e:
+        logger.error(f"Failed to fetch history: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/add_history")
+async def add_new_history(request: Request):
+    try:
+        data = await request.json()
+        user_id = get_user_id(request) or "test_user_123"
+        
+        if not db:
+            return JSONResponse({"error": "Firestore not initialized"}, status_code=500)
+
+        # 1. Save to Firebase
+        payload = {
+            **data,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "last_seen": firestore.SERVER_TIMESTAMP
+        }
+        db.collection("users").document(user_id).collection("map_history").add(payload)
+        
+        # 2. Sync to Postgres (if engine available)
         try:
-            # 1. Generate embedding for the search query
-            response = client.models.embed_content(
-                model='gemini-embedding-2',
-                contents="public transport issues and bus coverage",
-            )
-            query_vector = response.embeddings[0].values
-            vector_str = "[" + ",".join(map(str, query_vector)) + "]"
-            
-            # 2. Query the database using pgvector
+            from db.database import engine
             query = """
-                SELECT title, content, source_type
-                FROM city_problems_rag
-                WHERE city = :city
-                ORDER BY embedding <=> :vector ASC
-                LIMIT 3;
+                INSERT INTO user_selections (session_id, selection_type, selected_json)
+                VALUES (:session_id, 'map_history', :selected_json);
             """
             with engine.connect() as conn:
-                res = conn.execute(text(query), {"vector": vector_str, "city": area_id}).fetchall()
-                for r in res:
-                    articles_context += f"Source Type: {r.source_type}\nTitle: {r.title}\nContent: {r.content}\n\n"
-                    
-            if articles_context:
-                print(f"✅ RAG found {len(res)} articles for {area_id}!")
-            else:
-                print(f"ℹ️ No RAG articles found for {area_id}. Falling back to general knowledge.")
-                
-        except Exception as e:
-            print(f"RAG search failed: {e}. Falling back to general knowledge.")
-            
-        prompt = f"""
-        You are a Transport Infrastructure Solution Expert in Malaysia.
-        I will give you a list of 3 specific Points of Interest (POIs) found in our database that have high activity but likely transit gaps.
-        
-        Real Data Context (Use this to ground your issues if available!):
-        {articles_context if articles_context else "No real articles found for this city. Use your general transport knowledge."}
-        
-        Your task is to generate a smart, realistic, and professional "issue" description and "recommended action" for each POI.
-        If real articles are provided above, try to mention the issues cited in them (like bus delays, congestion, or specific plans).
-        
-        Data:
-        {json.dumps(db_hotspots, indent=2)}
-        
-        Return a STRICT JSON ARRAY of 3 objects with the following keys:
-        - id: "hotspot_1", "hotspot_2", "hotspot_3"
-        - name: The POI name and road name combined nicely (e.g., "1 Mont Kiara (Jalan Kiara)").
-        - issue: 2-3 sentences explaining the problem. Use the real data context if it helps, otherwise use general transport knowledge.
-        - severity: "High" or "Medium".
-        - recommended_action: 1 sentence on what to do next.
-        
-        Do not include markdown formatting or prose.
-        """
-        
-        model_name = os.getenv("PLANNER_MODEL", "gemini-2.5-flash")
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
-        )
-        
-        return json.loads(response.text)
-        
+                res = conn.execute(text("SELECT session_id FROM user_sessions LIMIT 1")).fetchone()
+                sess_id = res.session_id if res else None
+                if sess_id:
+                    conn.execute(text(query), {
+                        "session_id": sess_id,
+                        "selected_json": json.dumps(data)
+                    })
+        except Exception as pg_e:
+            logger.warning(f"Postgres sync failed: {pg_e}")
+
+        return {"status": "ok"}
     except Exception as e:
-        print(f"Gemini error in hotspots: {e}")
-        # Fallback to the fast template if Gemini fails!
-        hotspots = []
-        for i, item in enumerate(db_hotspots):
-            hotspots.append({
-                "id": f"hotspot_{i+1}",
-                "name": f"{item['poi_name']} ({item['road_name']})",
-                "issue": f"The area around {item['road_name']} is identified as a high-activity hub (Demand Score: {item['demand_score']}), but our data shows a gap in transit coverage nearby.",
-                "severity": "High" if float(item['demand_score']) >= 7.0 else "Medium",
-                "recommended_action": "Run detailed transport accessibility analysis for this specific area."
-            })
-        return hotspots
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+@app.post("/delete_history")
+async def delete_selected_history(request: Request):
+    try:
+        data = await request.json()
+        user_id = get_user_id(request) or "test_user_123"
+        data_id = data.get("id")
+        
+        if not db or not data_id:
+            return JSONResponse({"error": "Invalid request"}, status_code=400)
+
+        db.collection("users").document(user_id).collection("map_history").document(data_id).delete()
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+@app.post("/select_history")
+async def select_history(request: Request):
+    try:
+        data = await request.json()
+        user_id = get_user_id(request) or "test_user_123"
+        data_id = data.get("id")
+        
+        if not db or not data_id:
+            return JSONResponse({"error": "Invalid request"}, status_code=400)
+
+        db.collection("users").document(user_id).collection("map_history").document(data_id).update({
+            "last_seen": firestore.SERVER_TIMESTAMP
+        })
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+# --- END HISTORY ENDPOINTS ---
 
 class SelectHotspotRequest(BaseModel):
     poi_name: str
