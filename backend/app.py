@@ -2496,6 +2496,7 @@ def get_context_infrastructure(lat: float, lon: float, intervention_type: str = 
                 FROM osm_transit_stops
                 WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 0.03)
                 LIMIT 50
+            """), {"lat": lat, "lon": lon}).mappings().all()
             for stop in stops:
                 el_type = stop["stop_type"]
                 name = stop["stop_name"]
@@ -3084,7 +3085,7 @@ def build_building_prompt(
     if route_roads:
         roads_str = ", ".join(f'"{r}"' for r in route_roads[:10])
         grounding_block = f"""
-⚠️  CRITICAL SPATIAL GROUNDING RULE:
+CRITICAL SPATIAL GROUNDING RULE:
 The OSMnx routing engine has calculated that this intervention physically passes through
 these real, verified roads: {roads_str}
 You MUST use ONLY these road names (or their direct intersections) as SEARCH_LOCATION for

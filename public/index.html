@@ -1009,7 +1009,8 @@
             font-size: 0.78rem;
             line-height: 1.4;
             color: #d5e3f0;
-            white-space: pre-wrap; /* Allows newlines to render */
+            white-space: pre-wrap;
+            /* Allows newlines to render */
             margin-top: 8px;
         }
 
@@ -1750,17 +1751,13 @@
                                     and infrastructure interventions.</p>
                                 <div class="quick-prompt-grid">
                                     <button class="quick-prompt"
-                                        data-prompt="Analyze traffic congestion and bus reliability issues in Kuala Lumpur.">Kuala
-                                        Lumpur: congestion + bus reliability</button>
+                                        data-prompt="Kuala Lumpur">Kuala Lumpur</button>
                                     <button class="quick-prompt"
-                                        data-prompt="Identify flood mitigation and drainage upgrades for Johor Bahru city center.">Johor
-                                        Bahru: flood & drainage upgrades</button>
+                                        data-prompt="Johor Bahru">Johor Bahru</button>
                                     <button class="quick-prompt"
-                                        data-prompt="Suggest first-last mile mobility improvements around Penang transit nodes.">Penang:
-                                        first/last-mile mobility</button>
+                                        data-prompt="Penang">Penang</button>
                                     <button class="quick-prompt"
-                                        data-prompt="Evaluate logistics bottlenecks and road safety interventions in Kota Kinabalu.">Kota
-                                        Kinabalu: logistics & road safety</button>
+                                        data-prompt="Kota Kinabalu">Kota Kinabalu</button>
                                 </div>
                                 <div class="empty-actions">
                                     <button id="retryWorkflowBtn" class="btn-ghost" type="button">Retry workflow
@@ -2808,9 +2805,6 @@
             if (!input) return;
             input.value = promptText;
             input.focus();
-            
-            // ✅ Immediate effect: Trigger submission right away
-            submitPrompt();
         }
 
         async function retryWorkflowConnection() {
@@ -3223,7 +3217,7 @@
                     flyToCity(clusters[0].label || "Implementation Site", primary.lat, primary.lon);
                 }
             }
-            
+
             return entities; // Return the generated entities so they can be added to the payload
         }
 
@@ -3349,10 +3343,10 @@
                                 });
                                 // Also collect IDs already in data.entities
                                 (data.entities || []).forEach(e => existingIds.add(e.id));
-                                
+
                                 const uniqueClusterEntities = clusterEntities.filter(e => !existingIds.has(e.id));
                                 console.log(`🔍 Cluster entities: ${clusterEntities.length} total, ${uniqueClusterEntities.length} unique (${clusterEntities.length - uniqueClusterEntities.length} duplicates removed)`);
-                                
+
                                 if (!Array.isArray(data.entities)) data.entities = [];
                                 data.entities.push(...uniqueClusterEntities);
                             }
@@ -3523,10 +3517,16 @@
         }
 
         async function getAuthHeaders() {
-            return {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer fake_token_abc`
-            };
+            try {
+                const user = firebase.auth().currentUser;
+                const token = user ? await user.getIdToken() : null;
+                return {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {})
+                };
+            } catch (e) {
+                return { "Content-Type": "application/json" };
+            }
         }
 
 
@@ -3634,9 +3634,9 @@
                 const slimData = JSON.parse(JSON.stringify(data));
                 // Strip heavy context layers to prevent 413 Payload Too Large errors
                 if (slimData.map_layers && slimData.map_layers.context) {
-                    slimData.map_layers.context = []; 
+                    slimData.map_layers.context = [];
                 }
-                
+
                 const response = await fetch('https://city-planner-711110564007.asia-southeast1.run.app/add_history', {
                     method: 'POST',
                     headers: await getAuthHeaders(),
